@@ -83,16 +83,18 @@ class BacktestEngine:
         entry_fee = 0.0
         entry_cost = 0.0
 
+        pending_signal = Signal.HOLD
+
         trades: list[Trade] = []
         equity_curve: list[float] = [self.initial_balance]
 
         for index, candle in enumerate(candles):
             self._validate_candle(candle)
 
-            signal = strategy.generate_signal(candles, index)
-
-            if signal == Signal.BUY and quantity == 0:
-                entry_price = candle.close
+            # Сигнал предыдущей свечи исполняется
+            # на открытии текущей свечи.
+            if pending_signal == Signal.BUY and quantity == 0:
+                entry_price = candle.open
                 entry_timestamp = candle.timestamp
 
                 entry_fee = balance * self.commission_rate
@@ -102,13 +104,22 @@ class BacktestEngine:
                 quantity = available_for_position / entry_price
                 balance = 0.0
 
-            elif signal == Signal.SELL and quantity > 0:
+            elif pending_signal == Signal.SELL and quantity > 0:
                 assert entry_price is not None
                 assert entry_timestamp is not None
 
+                execution_candle = Candle(
+                    timestamp=candle.timestamp,
+                    open=candle.open,
+                    high=candle.open,
+                    low=candle.open,
+                    close=candle.open,
+                    volume=candle.volume,
+                )
+
                 balance, trade = self._close_position(
                     quantity=quantity,
-                    exit_candle=candle,
+                    exit_candle=execution_candle,
                     entry_timestamp=entry_timestamp,
                     entry_price=entry_price,
                     entry_fee=entry_fee,
@@ -123,9 +134,20 @@ class BacktestEngine:
                 entry_fee = 0.0
                 entry_cost = 0.0
 
+            signal = strategy.generate_signal(candles, index)
+
+            if signal == Signal.BUY and quantity == 0:
+                pending_signal = Signal.BUY
+            elif signal == Signal.SELL and quantity > 0:
+                pending_signal = Signal.SELL
+            else:
+                pending_signal = Signal.HOLD
+
             equity = balance + quantity * candle.close
             equity_curve.append(equity)
 
+        # Если позиция осталась открытой, закрываем её
+        # по close последней доступной свечи.
         if quantity > 0:
             last_candle = candles[-1]
 

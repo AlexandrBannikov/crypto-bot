@@ -52,9 +52,9 @@ def test_engine_makes_profitable_trade():
         BuyAndSellStrategy(),
     )
 
-    assert result.final_balance == pytest.approx(1_200)
-    assert result.total_profit == pytest.approx(200)
-    assert result.total_return_percent == pytest.approx(20)
+    assert result.final_balance == pytest.approx(1_000 / 110 * 120)
+    assert result.total_profit == pytest.approx(1_000 / 110 * 120 - 1_000)
+    assert result.total_return_percent == pytest.approx(100 / 11)
     assert len(result.trades) == 1
     assert result.winning_trades == 1
     assert result.losing_trades == 0
@@ -72,9 +72,9 @@ def test_engine_makes_losing_trade():
         BuyAndSellStrategy(),
     )
 
-    assert result.final_balance == pytest.approx(800)
-    assert result.total_profit == pytest.approx(-200)
-    assert result.total_return_percent == pytest.approx(-20)
+    assert result.final_balance == pytest.approx(1_000 / 90 * 80)
+    assert result.total_profit == pytest.approx(1_000 / 90 * 80 - 1_000)
+    assert result.total_return_percent == pytest.approx(-100 / 9)
     assert result.winning_trades == 0
     assert result.losing_trades == 1
     assert result.win_rate_percent == pytest.approx(0)
@@ -117,8 +117,10 @@ def test_engine_closes_open_position_on_last_candle():
         BuyOnlyStrategy(),
     )
 
-    assert result.final_balance == pytest.approx(1_200)
+    assert result.final_balance == pytest.approx(1_000 / 110 * 120)
     assert len(result.trades) == 1
+    assert result.trades[0].entry_timestamp == 1
+    assert result.trades[0].entry_price == pytest.approx(110)
     assert result.trades[0].exit_timestamp == 2
 
 
@@ -203,3 +205,49 @@ def test_engine_rejects_invalid_close_price():
     ):
         engine.run(candles, HoldStrategy())
 
+
+
+def test_signal_executes_at_next_candle_open():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    candles = [
+        Candle(
+            timestamp=0,
+            open=100,
+            high=105,
+            low=95,
+            close=100,
+            volume=1,
+        ),
+        Candle(
+            timestamp=1,
+            open=125,
+            high=135,
+            low=120,
+            close=130,
+            volume=1,
+        ),
+        Candle(
+            timestamp=2,
+            open=140,
+            high=150,
+            low=135,
+            close=150,
+            volume=1,
+        ),
+    ]
+
+    result = engine.run(
+        candles,
+        BuyOnlyStrategy(),
+    )
+
+    trade = result.trades[0]
+
+    assert trade.entry_timestamp == 1
+    assert trade.entry_price == pytest.approx(125)
+    assert trade.exit_price == pytest.approx(150)
+    assert result.final_balance == pytest.approx(1_200)
