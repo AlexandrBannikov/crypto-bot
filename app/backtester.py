@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 import pandas as pd
 
 from app.metrics import (
@@ -22,28 +20,40 @@ def run_backtest(
     if not 0 <= fee_rate < 1:
         raise ValueError("Некорректная комиссия")
 
-    required_columns = {"datetime", "close"}
+    required_columns = {"datetime", "open", "close"}
 
     if not required_columns.issubset(data.columns):
         raise ValueError(
-            "Данные должны содержать колонки datetime и close"
+            "Данные должны содержать колонки datetime, open и close"
         )
+
+    if data.empty:
+        raise ValueError("Нет данных для тестирования")
 
     if len(data) != len(signals):
         raise ValueError(
             "Количество сигналов не совпадает с количеством свечей"
         )
 
-    if data.empty:
-        raise ValueError("Нет данных для тестирования")
-
-    frame = data.copy()
-    frame = frame.sort_values("datetime").reset_index(drop=True)
+    frame = (
+        data.copy()
+        .sort_values("datetime")
+        .reset_index(drop=True)
+    )
 
     signals = signals.reset_index(drop=True)
 
+    valid_signals = {
+        int(Signal.SELL),
+        int(Signal.HOLD),
+        int(Signal.BUY),
+    }
+
+    if not set(signals.astype(int).unique()).issubset(valid_signals):
+        raise ValueError("Обнаружен неизвестный торговый сигнал")
+
     balance = float(start_balance)
-    eth_quantity = 0.0
+    asset_quantity = 0.0
     in_position = False
 
     entry_balance = 0.0
@@ -54,15 +64,22 @@ def run_backtest(
     trades: list[Trade] = []
     equity_curve: list[float] = [start_balance]
 
-    for index, row in frame.iterrows():
-        price = float(row["close"])
-        signal = Signal(int(signals.iloc[index]))
+    # Сигнал свечи index - 1 исполняется на открытии свечи index.
+    for index in range(1, len(frame)):
+        row = frame.iloc[index]
+        execution_signal = Signal(int(signals.iloc[index - 1]))
 
-        if signal == Signal.BUY and not in_position:
+        open_price = float(row["open"])
+        close_price = float(row["close"])
+
+        if open_price <= 0 or close_price <= 0:
+            raise ValueError("Цена должна быть больше нуля")
+
+        if execution_signal == Signal.BUY and not in_position:
             fee = balance * fee_rate
             purchase_amount = balance - fee
 
-            eth_quantity = purchase_amount / price
+            asset_quantity = purchase_amount / open_price
             entry_balance = balance
             balance = 0.0
             in_position = True
@@ -72,15 +89,15 @@ def run_backtest(
                 Trade(
                     side=TradeSide.BUY,
                     timestamp=row["datetime"].to_pydatetime(),
-                    price=price,
-                    quantity=eth_quantity,
+                    price=open_price,
+                    quantity=asset_quantity,
                     fee=fee,
                     balance_after=0.0,
                 )
             )
 
-        elif signal == Signal.SELL and in_position:
-            gross_value = eth_quantity * price
+        elif execution_signal == Signal.SELL and in_position:
+            gross_value = asset_quantity * open_price
             fee = gross_value * fee_rate
             balance = gross_value - fee
             total_fees += fee
@@ -95,19 +112,19 @@ def run_backtest(
                 Trade(
                     side=TradeSide.SELL,
                     timestamp=row["datetime"].to_pydatetime(),
-                    price=price,
-                    quantity=eth_quantity,
+                    price=open_price,
+                    quantity=asset_quantity,
                     fee=fee,
                     balance_after=balance,
                 )
             )
 
-            eth_quantity = 0.0
+            asset_quantity = 0.0
 
         if in_position:
             current_equity = (
-                eth_quantity
-                * price
+                asset_quantity
+                * close_price
                 * (1 - fee_rate)
             )
         else:
@@ -115,11 +132,12 @@ def run_backtest(
 
         equity_curve.append(current_equity)
 
+    # Незакрытую позицию закрываем по последней цене закрытия.
     if in_position:
         last_row = frame.iloc[-1]
         last_price = float(last_row["close"])
 
-        gross_value = eth_quantity * last_price
+        gross_value = asset_quantity * last_price
         fee = gross_value * fee_rate
         balance = gross_value - fee
         total_fees += fee
@@ -134,7 +152,7 @@ def run_backtest(
                 side=TradeSide.SELL,
                 timestamp=last_row["datetime"].to_pydatetime(),
                 price=last_price,
-                quantity=eth_quantity,
+                quantity=asset_quantity,
                 fee=fee,
                 balance_after=balance,
             )
