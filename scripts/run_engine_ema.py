@@ -1,0 +1,128 @@
+from pathlib import Path
+
+import pandas as pd
+
+from app.data_loader import load_market_data
+from app.ema_cross_strategy import EMACrossStrategy
+from app.engine import BacktestEngine, Candle
+
+
+DATA_FILE = Path("data/eth_usdt_1h_full.csv")
+START_BALANCE = 1000.0
+COMMISSION_RATE = 0.001
+
+SHORT_PERIOD = 20
+LONG_PERIOD = 50
+
+
+def dataframe_to_candles(
+    data: pd.DataFrame,
+) -> list[Candle]:
+    candles: list[Candle] = []
+
+    for row in data.itertuples(index=False):
+        candles.append(
+            Candle(
+                timestamp=int(row.datetime.timestamp()),
+                open=float(row.open),
+                high=float(row.high),
+                low=float(row.low),
+                close=float(row.close),
+                volume=float(row.volume),
+            )
+        )
+
+    return candles
+
+
+def main() -> None:
+    data = load_market_data(DATA_FILE)
+
+    # Последняя часовая свеча может быть ещё не закрыта.
+    data = data.iloc[:-1].copy()
+
+    candles = dataframe_to_candles(data)
+
+    strategy = EMACrossStrategy(
+        short_period=SHORT_PERIOD,
+        long_period=LONG_PERIOD,
+    )
+
+    engine = BacktestEngine(
+        initial_balance=START_BALANCE,
+        commission_rate=COMMISSION_RATE,
+    )
+
+    result = engine.run(
+        candles=candles,
+        strategy=strategy,
+    )
+
+    print("=" * 70)
+    print("НОВЫЙ BACKTEST ENGINE — EMA CROSS")
+    print("=" * 70)
+    print(
+        f"Период: {data.iloc[0]['datetime']} — "
+        f"{data.iloc[-1]['datetime']}"
+    )
+    print(f"Свечей: {len(candles)}")
+    print(f"EMA: {SHORT_PERIOD} / {LONG_PERIOD}")
+    print(f"Стартовый баланс: {result.initial_balance:.2f} USDT")
+    print(f"Конечный баланс: {result.final_balance:.2f} USDT")
+    print(f"Прибыль: {result.total_profit:+.2f} USDT")
+    print(f"Доходность: {result.total_return_percent:+.2f}%")
+    print(
+        "Максимальная просадка: "
+        f"{result.max_drawdown_percent:.2f}%"
+    )
+    print(f"Закрытых сделок: {len(result.trades)}")
+    print(f"Прибыльных сделок: {result.winning_trades}")
+    print(f"Убыточных сделок: {result.losing_trades}")
+    print(f"Win rate: {result.win_rate_percent:.2f}%")
+    print(f"Gross profit: {result.gross_profit:.2f} USDT")
+    print(f"Gross loss: {result.gross_loss:.2f} USDT")
+    print(f"Profit factor: {result.profit_factor:.2f}")
+    print(
+        "Средняя прибыльная сделка: "
+        f"{result.average_winning_trade_percent:+.2f}%"
+    )
+    print(
+        "Средняя убыточная сделка: "
+        f"{result.average_losing_trade_percent:+.2f}%"
+    )
+    print(f"Payoff ratio: {result.payoff_ratio:.2f}")
+    print(
+        "Ожидаемый результат сделки: "
+        f"{result.expectancy_percent:+.2f}%"
+    )
+
+    if result.trades:
+        total_fees = sum(
+            trade.entry_fee + trade.exit_fee
+            for trade in result.trades
+        )
+
+        average_trade = sum(
+            trade.profit_percent
+            for trade in result.trades
+        ) / len(result.trades)
+
+        best_trade = max(
+            trade.profit_percent
+            for trade in result.trades
+        )
+
+        worst_trade = min(
+            trade.profit_percent
+            for trade in result.trades
+        )
+
+        print(f"Комиссии: {total_fees:.2f} USDT")
+        print(f"Средняя сделка: {average_trade:+.2f}%")
+        print(f"Лучшая сделка: {best_trade:+.2f}%")
+        print(f"Худшая сделка: {worst_trade:+.2f}%")
+
+
+if __name__ == "__main__":
+    main()
+

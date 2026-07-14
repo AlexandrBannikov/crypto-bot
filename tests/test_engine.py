@@ -251,3 +251,49 @@ def test_signal_executes_at_next_candle_open():
     assert trade.entry_price == pytest.approx(125)
     assert trade.exit_price == pytest.approx(150)
     assert result.final_balance == pytest.approx(1_200)
+
+
+def test_engine_calculates_trade_quality_metrics():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 110, 120),
+        BuyAndSellStrategy(),
+    )
+
+    assert result.gross_profit == pytest.approx(
+        result.total_profit
+    )
+    assert result.gross_loss == pytest.approx(0)
+    assert result.profit_factor == float("inf")
+    assert result.average_winning_trade_percent == pytest.approx(
+        result.trades[0].profit_percent
+    )
+    assert result.average_losing_trade_percent == pytest.approx(0)
+    assert result.payoff_ratio == float("inf")
+    assert result.expectancy_percent == pytest.approx(
+        result.trades[0].profit_percent
+    )
+
+
+def test_engine_metrics_for_no_trades():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 110, 120),
+        HoldStrategy(),
+    )
+
+    assert result.gross_profit == pytest.approx(0)
+    assert result.gross_loss == pytest.approx(0)
+    assert result.profit_factor == pytest.approx(0)
+    assert result.average_winning_trade_percent == pytest.approx(0)
+    assert result.average_losing_trade_percent == pytest.approx(0)
+    assert result.payoff_ratio == pytest.approx(0)
+    assert result.expectancy_percent == pytest.approx(0)

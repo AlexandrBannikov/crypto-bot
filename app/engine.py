@@ -38,6 +38,13 @@ class BacktestResult:
     losing_trades: int
     win_rate_percent: float
     max_drawdown_percent: float
+    gross_profit: float
+    gross_loss: float
+    profit_factor: float
+    average_winning_trade_percent: float
+    average_losing_trade_percent: float
+    payoff_ratio: float
+    expectancy_percent: float
 
 
 class Strategy(Protocol):
@@ -238,6 +245,81 @@ class BacktestEngine:
             equity_curve
         )
 
+        winning_trade_list = [
+            trade
+            for trade in trades
+            if trade.profit > 0
+        ]
+
+        losing_trade_list = [
+            trade
+            for trade in trades
+            if trade.profit < 0
+        ]
+
+        gross_profit = sum(
+            trade.profit
+            for trade in winning_trade_list
+        )
+
+        gross_loss = abs(
+            sum(
+                trade.profit
+                for trade in losing_trade_list
+            )
+        )
+
+        if gross_loss > 0:
+            profit_factor = gross_profit / gross_loss
+        elif gross_profit > 0:
+            profit_factor = float("inf")
+        else:
+            profit_factor = 0.0
+
+        average_winning_trade_percent = (
+            sum(
+                trade.profit_percent
+                for trade in winning_trade_list
+            )
+            / len(winning_trade_list)
+            if winning_trade_list
+            else 0.0
+        )
+
+        average_losing_trade_percent = (
+            sum(
+                trade.profit_percent
+                for trade in losing_trade_list
+            )
+            / len(losing_trade_list)
+            if losing_trade_list
+            else 0.0
+        )
+
+        average_loss_size = abs(
+            average_losing_trade_percent
+        )
+
+        if average_loss_size > 0:
+            payoff_ratio = (
+                average_winning_trade_percent
+                / average_loss_size
+            )
+        elif average_winning_trade_percent > 0:
+            payoff_ratio = float("inf")
+        else:
+            payoff_ratio = 0.0
+
+        expectancy_percent = (
+            sum(
+                trade.profit_percent
+                for trade in trades
+            )
+            / len(trades)
+            if trades
+            else 0.0
+        )
+
         return BacktestResult(
             initial_balance=self.initial_balance,
             final_balance=final_balance,
@@ -248,6 +330,17 @@ class BacktestEngine:
             losing_trades=losing_trades,
             win_rate_percent=win_rate_percent,
             max_drawdown_percent=max_drawdown_percent,
+            gross_profit=gross_profit,
+            gross_loss=gross_loss,
+            profit_factor=profit_factor,
+            average_winning_trade_percent=(
+                average_winning_trade_percent
+            ),
+            average_losing_trade_percent=(
+                average_losing_trade_percent
+            ),
+            payoff_ratio=payoff_ratio,
+            expectancy_percent=expectancy_percent,
         )
 
     @staticmethod
