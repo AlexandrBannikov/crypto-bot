@@ -1,7 +1,7 @@
 import pytest
 
 from app.engine import Candle
-from app.strategies import Signal
+from app.trading_types import TradeAction
 from app.trend_pullback_strategy import (
     TrendPullbackStrategy,
 )
@@ -30,29 +30,27 @@ def make_strategy() -> TrendPullbackStrategy:
         trend_slow_period=4,
         trend_slope_lookback=1,
         trend_min_separation_percent=0,
+        adx_period=2,
+        minimum_adx=0,
     )
 
 
 def test_returns_hold_during_warmup() -> None:
     strategy = make_strategy()
-
-    candles = make_candles(
-        100,
-        101,
-    )
+    candles = make_candles(100, 101)
 
     assert strategy.generate_signal(
         candles,
         0,
-    ) == Signal.HOLD
+    ) == TradeAction.HOLD
 
     assert strategy.generate_signal(
         candles,
         1,
-    ) == Signal.HOLD
+    ) == TradeAction.HOLD
 
 
-def test_generates_buy_after_pullback_in_uptrend() -> None:
+def test_opens_long_after_pullback_in_uptrend() -> None:
     strategy = make_strategy()
 
     candles = make_candles(
@@ -70,10 +68,31 @@ def test_generates_buy_after_pullback_in_uptrend() -> None:
         len(candles) - 1,
     )
 
-    assert signal == Signal.BUY
+    assert signal == TradeAction.OPEN_LONG
 
 
-def test_does_not_buy_pullback_in_downtrend() -> None:
+def test_opens_short_after_rebound_in_downtrend() -> None:
+    strategy = make_strategy()
+
+    candles = make_candles(
+        110,
+        108,
+        106,
+        104,
+        102,
+        106,
+        101,
+    )
+
+    signal = strategy.generate_signal(
+        candles,
+        len(candles) - 1,
+    )
+
+    assert signal == TradeAction.OPEN_SHORT
+
+
+def test_does_not_open_long_in_downtrend() -> None:
     strategy = make_strategy()
 
     candles = make_candles(
@@ -91,10 +110,10 @@ def test_does_not_buy_pullback_in_downtrend() -> None:
         len(candles) - 1,
     )
 
-    assert signal != Signal.BUY
+    assert signal != TradeAction.OPEN_LONG
 
 
-def test_generates_sell_when_uptrend_is_lost() -> None:
+def test_does_not_open_short_in_uptrend() -> None:
     strategy = make_strategy()
 
     candles = make_candles(
@@ -103,8 +122,8 @@ def test_generates_sell_when_uptrend_is_lost() -> None:
         104,
         106,
         108,
-        100,
-        95,
+        104,
+        109,
     )
 
     signal = strategy.generate_signal(
@@ -112,7 +131,7 @@ def test_generates_sell_when_uptrend_is_lost() -> None:
         len(candles) - 1,
     )
 
-    assert signal == Signal.SELL
+    assert signal != TradeAction.OPEN_SHORT
 
 
 def test_returns_hold_without_pullback_cross() -> None:
@@ -133,13 +152,13 @@ def test_returns_hold_without_pullback_cross() -> None:
         len(candles) - 1,
     )
 
-    assert signal == Signal.HOLD
+    assert signal == TradeAction.HOLD
 
 
 def test_strategy_can_be_reused() -> None:
     strategy = make_strategy()
 
-    first = make_candles(
+    rising = make_candles(
         100,
         102,
         104,
@@ -149,29 +168,30 @@ def test_strategy_can_be_reused() -> None:
         109,
     )
 
-    second = make_candles(
+    falling = make_candles(
         110,
         108,
         106,
         104,
         102,
-        100,
+        106,
+        101,
     )
 
     assert strategy.generate_signal(
-        first,
-        len(first) - 1,
-    ) == Signal.BUY
+        rising,
+        len(rising) - 1,
+    ) == TradeAction.OPEN_LONG
 
     assert strategy.generate_signal(
-        second,
+        falling,
         0,
-    ) == Signal.HOLD
+    ) == TradeAction.HOLD
 
     assert strategy.generate_signal(
-        second,
-        len(second) - 1,
-    ) == Signal.SELL
+        falling,
+        len(falling) - 1,
+    ) == TradeAction.OPEN_SHORT
 
 
 def test_rejects_invalid_pullback_period() -> None:
@@ -190,3 +210,81 @@ def test_rejects_invalid_index() -> None:
             candles,
             index=10,
         )
+
+
+def test_adx_filter_blocks_entry_when_threshold_is_too_high() -> None:
+    strategy = TrendPullbackStrategy(
+        pullback_ema_period=2,
+        trend_fast_period=2,
+        trend_slow_period=4,
+        trend_slope_lookback=1,
+        trend_min_separation_percent=0,
+        adx_period=2,
+        minimum_adx=101,
+    )
+
+    candles = make_candles(
+        100,
+        102,
+        104,
+        106,
+        108,
+        104,
+        109,
+    )
+
+    signal = strategy.generate_signal(
+        candles,
+        len(candles) - 1,
+    )
+
+    assert signal == TradeAction.HOLD
+
+
+@pytest.mark.parametrize(
+    ("adx_period", "minimum_adx"),
+    [
+        (0, 25),
+        (-1, 25),
+        (14, -1),
+    ],
+)
+def test_rejects_invalid_adx_configuration(
+    adx_period,
+    minimum_adx,
+) -> None:
+    with pytest.raises(ValueError):
+        TrendPullbackStrategy(
+            adx_period=adx_period,
+            minimum_adx=minimum_adx,
+        )
+
+
+def test_short_entry_can_be_disabled() -> None:
+    strategy = TrendPullbackStrategy(
+        pullback_ema_period=2,
+        trend_fast_period=2,
+        trend_slow_period=4,
+        trend_slope_lookback=1,
+        trend_min_separation_percent=0,
+        adx_period=2,
+        minimum_adx=0,
+        allow_short=False,
+    )
+
+    candles = make_candles(
+        110,
+        108,
+        106,
+        104,
+        102,
+        106,
+        101,
+    )
+
+    signal = strategy.generate_signal(
+        candles,
+        len(candles) - 1,
+    )
+
+    assert signal == TradeAction.HOLD

@@ -297,3 +297,215 @@ def test_engine_metrics_for_no_trades():
     assert result.average_losing_trade_percent == pytest.approx(0)
     assert result.payoff_ratio == pytest.approx(0)
     assert result.expectancy_percent == pytest.approx(0)
+
+
+from app.trading_types import PositionSide, TradeAction
+
+
+class ProfitableShortStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeAction.OPEN_SHORT
+
+        if index == 1:
+            return TradeAction.CLOSE_SHORT
+
+        return TradeAction.HOLD
+
+
+class LosingShortStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeAction.OPEN_SHORT
+
+        if index == 1:
+            return TradeAction.CLOSE_SHORT
+
+        return TradeAction.HOLD
+
+
+def test_engine_makes_profitable_short_trade():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 90, 80),
+        ProfitableShortStrategy(),
+    )
+
+    assert result.final_balance == pytest.approx(
+        1_000 + (1_000 / 90) * 10
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.SHORT
+    assert result.trades[0].entry_price == pytest.approx(90)
+    assert result.trades[0].exit_price == pytest.approx(80)
+    assert result.trades[0].profit > 0
+
+
+def test_engine_makes_losing_short_trade():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 90, 100),
+        LosingShortStrategy(),
+    )
+
+    assert result.final_balance == pytest.approx(
+        1_000 - (1_000 / 90) * 10
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.SHORT
+    assert result.trades[0].profit < 0
+
+
+def test_short_position_is_closed_at_end():
+    class OpenShortOnlyStrategy:
+        def generate_signal(self, candles, index):
+            if index == 0:
+                return TradeAction.OPEN_SHORT
+
+            return TradeAction.HOLD
+
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 90, 80),
+        OpenShortOnlyStrategy(),
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.SHORT
+    assert result.trades[0].exit_timestamp == 2
+    assert result.trades[0].exit_price == pytest.approx(80)
+
+
+def test_legacy_buy_sell_signals_still_open_long():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 110, 120),
+        BuyAndSellStrategy(),
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.LONG
+
+
+from app.trading_types import PositionSide, TradeAction
+
+
+class ProfitableShortStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeAction.OPEN_SHORT
+
+        if index == 1:
+            return TradeAction.CLOSE_SHORT
+
+        return TradeAction.HOLD
+
+
+class LosingShortStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeAction.OPEN_SHORT
+
+        if index == 1:
+            return TradeAction.CLOSE_SHORT
+
+        return TradeAction.HOLD
+
+
+def test_engine_makes_profitable_short_trade():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 90, 80),
+        ProfitableShortStrategy(),
+    )
+
+    assert result.final_balance == pytest.approx(
+        1_000 + (1_000 / 90) * 10
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.SHORT
+    assert result.trades[0].entry_price == pytest.approx(90)
+    assert result.trades[0].exit_price == pytest.approx(80)
+    assert result.trades[0].profit > 0
+
+
+def test_engine_makes_losing_short_trade():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 90, 100),
+        LosingShortStrategy(),
+    )
+
+    assert result.final_balance == pytest.approx(
+        1_000 - (1_000 / 90) * 10
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.SHORT
+    assert result.trades[0].profit < 0
+
+
+def test_short_position_is_closed_at_end():
+    class OpenShortOnlyStrategy:
+        def generate_signal(self, candles, index):
+            if index == 0:
+                return TradeAction.OPEN_SHORT
+
+            return TradeAction.HOLD
+
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 90, 80),
+        OpenShortOnlyStrategy(),
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.SHORT
+    assert result.trades[0].exit_timestamp == 2
+    assert result.trades[0].exit_price == pytest.approx(80)
+
+
+def test_legacy_buy_sell_signals_still_open_long():
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    )
+
+    result = engine.run(
+        make_candles(100, 110, 120),
+        BuyAndSellStrategy(),
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.LONG

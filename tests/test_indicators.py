@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from app.indicators import atr, ema, rsi, sma, true_range
+from app.indicators import adx, atr, ema, rsi, sma, true_range
 
 def test_sma() -> None:
     prices = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0])
@@ -154,3 +154,215 @@ def test_atr_period_must_be_positive() -> None:
     with pytest.raises(ValueError):
         atr(data, period=0)
 
+
+
+def test_adx_for_strong_uptrend() -> None:
+    data = pd.DataFrame(
+        {
+            "high": [
+                float(value + 2)
+                for value in range(100, 150)
+            ],
+            "low": [
+                float(value - 2)
+                for value in range(100, 150)
+            ],
+            "close": [
+                float(value)
+                for value in range(100, 150)
+            ],
+        }
+    )
+
+    result = adx(
+        data,
+        period=14,
+    )
+
+    assert result.iloc[-1] > 20
+
+
+def test_adx_for_strong_downtrend() -> None:
+    prices = list(
+        reversed(
+            [
+                float(value)
+                for value in range(100, 150)
+            ]
+        )
+    )
+
+    data = pd.DataFrame(
+        {
+            "high": [
+                price + 2
+                for price in prices
+            ],
+            "low": [
+                price - 2
+                for price in prices
+            ],
+            "close": prices,
+        }
+    )
+
+    result = adx(
+        data,
+        period=14,
+    )
+
+    assert result.iloc[-1] > 20
+
+
+def test_adx_for_flat_market_is_low() -> None:
+    data = pd.DataFrame(
+        {
+            "high": [101.0] * 60,
+            "low": [99.0] * 60,
+            "close": [100.0] * 60,
+        }
+    )
+
+    result = adx(
+        data,
+        period=14,
+    )
+
+    assert result.iloc[-1] == pytest.approx(0.0)
+
+
+def test_adx_requires_ohlc_columns() -> None:
+    data = pd.DataFrame(
+        {
+            "high": [101.0],
+            "close": [100.0],
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="high, low и close",
+    ):
+        adx(data)
+
+
+def test_adx_period_must_be_positive() -> None:
+    data = pd.DataFrame(
+        {
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.0],
+        }
+    )
+
+    with pytest.raises(ValueError):
+        adx(
+            data,
+            period=0,
+        )
+
+
+def test_adx_for_strong_uptrend() -> None:
+    data = pd.DataFrame(
+        {
+            "high": [
+                float(value + 2)
+                for value in range(100, 150)
+            ],
+            "low": [
+                float(value - 2)
+                for value in range(100, 150)
+            ],
+            "close": [
+                float(value)
+                for value in range(100, 150)
+            ],
+        }
+    )
+
+    result = adx(
+        data,
+        period=14,
+    )
+
+    assert result.iloc[-1] > 20
+
+
+def test_adx_for_strong_downtrend() -> None:
+    prices = list(
+        reversed(
+            [
+                float(value)
+                for value in range(100, 150)
+            ]
+        )
+    )
+
+    data = pd.DataFrame(
+        {
+            "high": [
+                price + 2
+                for price in prices
+            ],
+            "low": [
+                price - 2
+                for price in prices
+            ],
+            "close": prices,
+        }
+    )
+
+    result = adx(
+        data,
+        period=14,
+    )
+
+    assert result.iloc[-1] > 20
+
+
+def test_adx_for_flat_market_is_low() -> None:
+    data = pd.DataFrame(
+        {
+            "high": [101.0] * 60,
+            "low": [99.0] * 60,
+            "close": [100.0] * 60,
+        }
+    )
+
+    result = adx(
+        data,
+        period=14,
+    )
+
+    assert result.iloc[-1] == pytest.approx(0.0)
+
+
+def test_adx_requires_ohlc_columns() -> None:
+    data = pd.DataFrame(
+        {
+            "high": [101.0],
+            "close": [100.0],
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="high, low и close",
+    ):
+        adx(data)
+
+
+def test_adx_period_must_be_positive() -> None:
+    data = pd.DataFrame(
+        {
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.0],
+        }
+    )
+
+    with pytest.raises(ValueError):
+        adx(
+            data,
+            period=0,
+        )

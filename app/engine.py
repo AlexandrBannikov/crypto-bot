@@ -2,11 +2,15 @@ from dataclasses import dataclass
 from typing import Protocol, Sequence
 
 from app.strategies import Signal
+from app.trading_types import (
+    PositionSide,
+    TradeAction,
+)
 
 
 @dataclass(frozen=True)
 class TradeSignal:
-    action: Signal
+    action: Signal | TradeAction
     stop_loss: float | None = None
 
     def __post_init__(self) -> None:
@@ -37,6 +41,7 @@ class Trade:
     exit_fee: float
     profit: float
     profit_percent: float
+    side: PositionSide = PositionSide.LONG
 
 
 @dataclass(frozen=True)
@@ -64,7 +69,7 @@ class Strategy(Protocol):
         self,
         candles: Sequence[Candle],
         index: int,
-    ) -> Signal | TradeSignal:
+    ) -> Signal | TradeSignal | TradeAction:
         ...
 
 
@@ -97,6 +102,8 @@ class BacktestEngine:
             raise ValueError("candles must not be empty")
 
         balance = self.initial_balance
+
+        position_side: PositionSide | None = None
         quantity = 0.0
 
         entry_timestamp: int | None = None
@@ -104,9 +111,7 @@ class BacktestEngine:
         entry_fee = 0.0
         entry_cost = 0.0
 
-        pending_signal = TradeSignal(
-            action=Signal.HOLD,
-        )
+        pending_action = TradeAction.HOLD
 
         trades: list[Trade] = []
         equity_curve: list[float] = [
@@ -116,47 +121,56 @@ class BacktestEngine:
         for index, candle in enumerate(candles):
             self._validate_candle(candle)
 
-            # Сигнал предыдущей свечи исполняется
-            # по цене открытия текущей свечи.
             if (
-                pending_signal.action == Signal.BUY
-                and quantity == 0
+                pending_action == TradeAction.OPEN_LONG
+                and position_side is None
             ):
-                entry_price = candle.open
-                entry_timestamp = candle.timestamp
+                (
+                    position_side,
+                    quantity,
+                    entry_timestamp,
+                    entry_price,
+                    entry_fee,
+                    entry_cost,
+                ) = self._open_position(
+                    side=PositionSide.LONG,
+                    balance=balance,
+                    candle=candle,
+                )
 
-                entry_fee = (
-                    balance * self.commission_rate
-                )
-                entry_cost = balance
-
-                available_for_position = (
-                    balance - entry_fee
-                )
-                quantity = (
-                    available_for_position / entry_price
-                )
                 balance = 0.0
 
             elif (
-                pending_signal.action == Signal.SELL
-                and quantity > 0
+                pending_action == TradeAction.OPEN_SHORT
+                and position_side is None
             ):
-                assert entry_price is not None
-                assert entry_timestamp is not None
-
-                execution_candle = Candle(
-                    timestamp=candle.timestamp,
-                    open=candle.open,
-                    high=candle.open,
-                    low=candle.open,
-                    close=candle.open,
-                    volume=candle.volume,
+                (
+                    position_side,
+                    quantity,
+                    entry_timestamp,
+                    entry_price,
+                    entry_fee,
+                    entry_cost,
+                ) = self._open_position(
+                    side=PositionSide.SHORT,
+                    balance=balance,
+                    candle=candle,
                 )
 
+                balance = 0.0
+
+            elif (
+                pending_action == TradeAction.CLOSE_LONG
+                and position_side == PositionSide.LONG
+            ):
+                assert entry_timestamp is not None
+                assert entry_price is not None
+
                 balance, trade = self._close_position(
+                    side=position_side,
                     quantity=quantity,
-                    exit_candle=execution_candle,
+                    exit_timestamp=candle.timestamp,
+                    exit_price=candle.open,
                     entry_timestamp=entry_timestamp,
                     entry_price=entry_price,
                     entry_fee=entry_fee,
@@ -165,11 +179,43 @@ class BacktestEngine:
 
                 trades.append(trade)
 
-                quantity = 0.0
-                entry_timestamp = None
-                entry_price = None
-                entry_fee = 0.0
-                entry_cost = 0.0
+                (
+                    position_side,
+                    quantity,
+                    entry_timestamp,
+                    entry_price,
+                    entry_fee,
+                    entry_cost,
+                ) = self._empty_position()
+
+            elif (
+                pending_action == TradeAction.CLOSE_SHORT
+                and position_side == PositionSide.SHORT
+            ):
+                assert entry_timestamp is not None
+                assert entry_price is not None
+
+                balance, trade = self._close_position(
+                    side=position_side,
+                    quantity=quantity,
+                    exit_timestamp=candle.timestamp,
+                    exit_price=candle.open,
+                    entry_timestamp=entry_timestamp,
+                    entry_price=entry_price,
+                    entry_fee=entry_fee,
+                    entry_cost=entry_cost,
+                )
+
+                trades.append(trade)
+
+                (
+                    position_side,
+                    quantity,
+                    entry_timestamp,
+                    entry_price,
+                    entry_fee,
+                    entry_cost,
+                ) = self._empty_position()
 
             raw_signal = strategy.generate_signal(
                 candles,
@@ -180,40 +226,34 @@ class BacktestEngine:
                 raw_signal
             )
 
-            if (
-                signal.action == Signal.BUY
-                and quantity == 0
-            ):
-                pending_signal = signal
-
-            elif (
-                signal.action == Signal.SELL
-                and quantity > 0
-            ):
-                pending_signal = signal
-
-            else:
-                pending_signal = TradeSignal(
-                    action=Signal.HOLD,
-                )
-
-            equity = (
-                balance
-                + quantity * candle.close
+            pending_action = self._resolve_pending_action(
+                requested_action=signal.action,
+                position_side=position_side,
             )
+
+            equity = self._calculate_equity(
+                balance=balance,
+                position_side=position_side,
+                quantity=quantity,
+                entry_price=entry_price,
+                entry_fee=entry_fee,
+                entry_cost=entry_cost,
+                current_price=candle.close,
+            )
+
             equity_curve.append(equity)
 
-        # Открытую позицию в конце теста закрываем
-        # по close последней доступной свечи.
-        if quantity > 0:
+        if position_side is not None:
             last_candle = candles[-1]
 
-            assert entry_price is not None
             assert entry_timestamp is not None
+            assert entry_price is not None
 
             balance, trade = self._close_position(
+                side=position_side,
                 quantity=quantity,
-                exit_candle=last_candle,
+                exit_timestamp=last_candle.timestamp,
+                exit_price=last_candle.close,
                 entry_timestamp=entry_timestamp,
                 entry_price=entry_price,
                 entry_fee=entry_fee,
@@ -229,28 +269,74 @@ class BacktestEngine:
             equity_curve=equity_curve,
         )
 
+    def _open_position(
+        self,
+        *,
+        side: PositionSide,
+        balance: float,
+        candle: Candle,
+    ) -> tuple[
+        PositionSide,
+        float,
+        int,
+        float,
+        float,
+        float,
+    ]:
+        entry_price = candle.open
+        entry_fee = balance * self.commission_rate
+        available_capital = balance - entry_fee
+        quantity = available_capital / entry_price
+
+        return (
+            side,
+            quantity,
+            candle.timestamp,
+            entry_price,
+            entry_fee,
+            balance,
+        )
+
     def _close_position(
         self,
         *,
+        side: PositionSide,
         quantity: float,
-        exit_candle: Candle,
+        exit_timestamp: int,
+        exit_price: float,
         entry_timestamp: int,
         entry_price: float,
         entry_fee: float,
         entry_cost: float,
     ) -> tuple[float, Trade]:
-        gross_exit_value = (
-            quantity * exit_candle.close
-        )
-
+        exit_notional = quantity * exit_price
         exit_fee = (
-            gross_exit_value
+            exit_notional
             * self.commission_rate
         )
 
-        final_value = (
-            gross_exit_value - exit_fee
-        )
+        if side == PositionSide.LONG:
+            final_value = (
+                exit_notional
+                - exit_fee
+            )
+
+        else:
+            net_entry_capital = (
+                entry_cost
+                - entry_fee
+            )
+
+            gross_profit = (
+                quantity
+                * (entry_price - exit_price)
+            )
+
+            final_value = (
+                net_entry_capital
+                + gross_profit
+                - exit_fee
+            )
 
         profit = final_value - entry_cost
 
@@ -262,17 +348,147 @@ class BacktestEngine:
 
         trade = Trade(
             entry_timestamp=entry_timestamp,
-            exit_timestamp=exit_candle.timestamp,
+            exit_timestamp=exit_timestamp,
             entry_price=entry_price,
-            exit_price=exit_candle.close,
+            exit_price=exit_price,
             quantity=quantity,
             entry_fee=entry_fee,
             exit_fee=exit_fee,
             profit=profit,
             profit_percent=profit_percent,
+            side=side,
         )
 
         return final_value, trade
+
+    @staticmethod
+    def _empty_position() -> tuple[
+        None,
+        float,
+        None,
+        None,
+        float,
+        float,
+    ]:
+        return (
+            None,
+            0.0,
+            None,
+            None,
+            0.0,
+            0.0,
+        )
+
+    @staticmethod
+    def _resolve_pending_action(
+        *,
+        requested_action: TradeAction,
+        position_side: PositionSide | None,
+    ) -> TradeAction:
+        if position_side is None:
+            if requested_action in {
+                TradeAction.OPEN_LONG,
+                TradeAction.OPEN_SHORT,
+            }:
+                return requested_action
+
+            return TradeAction.HOLD
+
+        if (
+            position_side == PositionSide.LONG
+            and requested_action == TradeAction.CLOSE_LONG
+        ):
+            return requested_action
+
+        if (
+            position_side == PositionSide.SHORT
+            and requested_action == TradeAction.CLOSE_SHORT
+        ):
+            return requested_action
+
+        return TradeAction.HOLD
+
+    @staticmethod
+    def _normalize_signal(
+        signal: Signal | TradeSignal | TradeAction,
+    ) -> TradeSignal:
+        if isinstance(signal, TradeSignal):
+            action = signal.action
+
+            if isinstance(action, TradeAction):
+                return signal
+
+            if action == Signal.BUY:
+                return TradeSignal(
+                    action=TradeAction.OPEN_LONG,
+                    stop_loss=signal.stop_loss,
+                )
+
+            if action == Signal.SELL:
+                return TradeSignal(
+                    action=TradeAction.CLOSE_LONG,
+                    stop_loss=signal.stop_loss,
+                )
+
+            return TradeSignal(
+                action=TradeAction.HOLD,
+                stop_loss=signal.stop_loss,
+            )
+
+        if isinstance(signal, TradeAction):
+            return TradeSignal(
+                action=signal,
+            )
+
+        if isinstance(signal, Signal):
+            if signal == Signal.BUY:
+                action = TradeAction.OPEN_LONG
+            elif signal == Signal.SELL:
+                action = TradeAction.CLOSE_LONG
+            else:
+                action = TradeAction.HOLD
+
+            return TradeSignal(
+                action=action,
+            )
+
+        raise TypeError(
+            "strategy must return Signal, "
+            "TradeAction or TradeSignal"
+        )
+
+    @staticmethod
+    def _calculate_equity(
+        *,
+        balance: float,
+        position_side: PositionSide | None,
+        quantity: float,
+        entry_price: float | None,
+        entry_fee: float,
+        entry_cost: float,
+        current_price: float,
+    ) -> float:
+        if position_side is None:
+            return balance
+
+        assert entry_price is not None
+
+        if position_side == PositionSide.LONG:
+            return quantity * current_price
+
+        net_entry_capital = (
+            entry_cost - entry_fee
+        )
+
+        unrealized_profit = (
+            quantity
+            * (entry_price - current_price)
+        )
+
+        return (
+            net_entry_capital
+            + unrealized_profit
+        )
 
     def _build_result(
         self,
@@ -421,23 +637,6 @@ class BacktestEngine:
         )
 
     @staticmethod
-    def _normalize_signal(
-        signal: Signal | TradeSignal,
-    ) -> TradeSignal:
-        if isinstance(signal, TradeSignal):
-            return signal
-
-        if isinstance(signal, Signal):
-            return TradeSignal(
-                action=signal,
-            )
-
-        raise TypeError(
-            "strategy must return Signal "
-            "or TradeSignal"
-        )
-
-    @staticmethod
     def _calculate_max_drawdown(
         equity_curve: Sequence[float],
     ) -> float:
@@ -478,8 +677,7 @@ class BacktestEngine:
 
         if any(price <= 0 for price in prices):
             raise ValueError(
-                "candle prices must be greater "
-                "than zero"
+                "candle prices must be greater than zero"
             )
 
         if candle.high < candle.low:

@@ -7,7 +7,7 @@ from app.engine import BacktestEngine, Candle
 from app.trend_pullback_strategy import TrendPullbackStrategy
 
 
-DATA_FILE = Path("data/eth_usdt_1h_full.csv")
+DATA_FILE = Path("data/eth_usdt_5m.csv")
 START_BALANCE = 1000.0
 COMMISSION_RATE = 0.001
 
@@ -92,6 +92,64 @@ def print_result(result) -> None:
         print(f"Худшая сделка: {worst_trade:+.2f}%")
 
 
+    for side_name in ("long", "short"):
+        side_trades = [
+            trade
+            for trade in result.trades
+            if trade.side.value == side_name
+        ]
+
+        side_winners = [
+            trade
+            for trade in side_trades
+            if trade.profit > 0
+        ]
+
+        side_losers = [
+            trade
+            for trade in side_trades
+            if trade.profit < 0
+        ]
+
+        side_gross_profit = sum(
+            trade.profit
+            for trade in side_winners
+        )
+
+        side_gross_loss = abs(
+            sum(
+                trade.profit
+                for trade in side_losers
+            )
+        )
+
+        side_profit = sum(
+            trade.profit
+            for trade in side_trades
+        )
+
+        side_win_rate = (
+            len(side_winners)
+            / len(side_trades)
+            * 100
+            if side_trades
+            else 0.0
+        )
+
+        side_profit_factor = (
+            side_gross_profit / side_gross_loss
+            if side_gross_loss > 0
+            else 0.0
+        )
+
+        print()
+        print(f"--- {side_name.upper()} ---")
+        print(f"Сделок: {len(side_trades)}")
+        print(f"Результат: {side_profit:+.2f} USDT")
+        print(f"Win rate: {side_win_rate:.2f}%")
+        print(f"Profit factor: {side_profit_factor:.2f}")
+
+
 def main() -> None:
     data = load_market_data(DATA_FILE)
 
@@ -106,6 +164,9 @@ def main() -> None:
         trend_slow_period=200,
         trend_slope_lookback=5,
         trend_min_separation_percent=0.1,
+        adx_period=14,
+        minimum_adx=25.0,
+        allow_short=False,
     )
 
     engine = BacktestEngine(
