@@ -201,7 +201,7 @@ def test_engine_rejects_invalid_close_price():
 
     with pytest.raises(
         ValueError,
-        match="close price",
+        match="prices must be greater than zero",
     ):
         engine.run(candles, HoldStrategy())
 

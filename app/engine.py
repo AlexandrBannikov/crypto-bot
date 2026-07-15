@@ -5,6 +5,18 @@ from app.strategies import Signal
 
 
 @dataclass(frozen=True)
+class TradeSignal:
+    action: Signal
+    stop_loss: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.stop_loss is not None and self.stop_loss <= 0:
+            raise ValueError(
+                "stop_loss must be greater than zero"
+            )
+
+
+@dataclass(frozen=True)
 class Candle:
     timestamp: int
     open: float
@@ -52,7 +64,7 @@ class Strategy(Protocol):
         self,
         candles: Sequence[Candle],
         index: int,
-    ) -> Signal:
+    ) -> Signal | TradeSignal:
         ...
 
 
@@ -63,12 +75,14 @@ class BacktestEngine:
         commission_rate: float = 0.001,
     ) -> None:
         if initial_balance <= 0:
-            raise ValueError("initial_balance must be greater than zero")
+            raise ValueError(
+                "initial_balance must be greater than zero"
+            )
 
         if not 0 <= commission_rate < 1:
             raise ValueError(
-                "commission_rate must be greater than or equal to zero "
-                "and less than one"
+                "commission_rate must be greater than or equal "
+                "to zero and less than one"
             )
 
         self.initial_balance = initial_balance
@@ -90,28 +104,44 @@ class BacktestEngine:
         entry_fee = 0.0
         entry_cost = 0.0
 
-        pending_signal = Signal.HOLD
+        pending_signal = TradeSignal(
+            action=Signal.HOLD,
+        )
 
         trades: list[Trade] = []
-        equity_curve: list[float] = [self.initial_balance]
+        equity_curve: list[float] = [
+            self.initial_balance
+        ]
 
         for index, candle in enumerate(candles):
             self._validate_candle(candle)
 
             # Сигнал предыдущей свечи исполняется
-            # на открытии текущей свечи.
-            if pending_signal == Signal.BUY and quantity == 0:
+            # по цене открытия текущей свечи.
+            if (
+                pending_signal.action == Signal.BUY
+                and quantity == 0
+            ):
                 entry_price = candle.open
                 entry_timestamp = candle.timestamp
 
-                entry_fee = balance * self.commission_rate
+                entry_fee = (
+                    balance * self.commission_rate
+                )
                 entry_cost = balance
 
-                available_for_position = balance - entry_fee
-                quantity = available_for_position / entry_price
+                available_for_position = (
+                    balance - entry_fee
+                )
+                quantity = (
+                    available_for_position / entry_price
+                )
                 balance = 0.0
 
-            elif pending_signal == Signal.SELL and quantity > 0:
+            elif (
+                pending_signal.action == Signal.SELL
+                and quantity > 0
+            ):
                 assert entry_price is not None
                 assert entry_timestamp is not None
 
@@ -141,19 +171,39 @@ class BacktestEngine:
                 entry_fee = 0.0
                 entry_cost = 0.0
 
-            signal = strategy.generate_signal(candles, index)
+            raw_signal = strategy.generate_signal(
+                candles,
+                index,
+            )
 
-            if signal == Signal.BUY and quantity == 0:
-                pending_signal = Signal.BUY
-            elif signal == Signal.SELL and quantity > 0:
-                pending_signal = Signal.SELL
+            signal = self._normalize_signal(
+                raw_signal
+            )
+
+            if (
+                signal.action == Signal.BUY
+                and quantity == 0
+            ):
+                pending_signal = signal
+
+            elif (
+                signal.action == Signal.SELL
+                and quantity > 0
+            ):
+                pending_signal = signal
+
             else:
-                pending_signal = Signal.HOLD
+                pending_signal = TradeSignal(
+                    action=Signal.HOLD,
+                )
 
-            equity = balance + quantity * candle.close
+            equity = (
+                balance
+                + quantity * candle.close
+            )
             equity_curve.append(equity)
 
-        # Если позиция осталась открытой, закрываем её
+        # Открытую позицию в конце теста закрываем
         # по close последней доступной свечи.
         if quantity > 0:
             last_candle = candles[-1]
@@ -189,11 +239,21 @@ class BacktestEngine:
         entry_fee: float,
         entry_cost: float,
     ) -> tuple[float, Trade]:
-        gross_exit_value = quantity * exit_candle.close
-        exit_fee = gross_exit_value * self.commission_rate
-        final_value = gross_exit_value - exit_fee
+        gross_exit_value = (
+            quantity * exit_candle.close
+        )
+
+        exit_fee = (
+            gross_exit_value
+            * self.commission_rate
+        )
+
+        final_value = (
+            gross_exit_value - exit_fee
+        )
 
         profit = final_value - entry_cost
+
         profit_percent = (
             profit / entry_cost * 100
             if entry_cost > 0
@@ -221,28 +281,15 @@ class BacktestEngine:
         trades: list[Trade],
         equity_curve: Sequence[float],
     ) -> BacktestResult:
-        total_profit = final_balance - self.initial_balance
+        total_profit = (
+            final_balance
+            - self.initial_balance
+        )
+
         total_return_percent = (
-            total_profit / self.initial_balance * 100
-        )
-
-        winning_trades = sum(
-            trade.profit > 0
-            for trade in trades
-        )
-        losing_trades = sum(
-            trade.profit < 0
-            for trade in trades
-        )
-
-        win_rate_percent = (
-            winning_trades / len(trades) * 100
-            if trades
-            else 0.0
-        )
-
-        max_drawdown_percent = self._calculate_max_drawdown(
-            equity_curve
+            total_profit
+            / self.initial_balance
+            * 100
         )
 
         winning_trade_list = [
@@ -257,6 +304,28 @@ class BacktestEngine:
             if trade.profit < 0
         ]
 
+        winning_trades = len(
+            winning_trade_list
+        )
+
+        losing_trades = len(
+            losing_trade_list
+        )
+
+        win_rate_percent = (
+            winning_trades
+            / len(trades)
+            * 100
+            if trades
+            else 0.0
+        )
+
+        max_drawdown_percent = (
+            self._calculate_max_drawdown(
+                equity_curve
+            )
+        )
+
         gross_profit = sum(
             trade.profit
             for trade in winning_trade_list
@@ -270,7 +339,9 @@ class BacktestEngine:
         )
 
         if gross_loss > 0:
-            profit_factor = gross_profit / gross_loss
+            profit_factor = (
+                gross_profit / gross_loss
+            )
         elif gross_profit > 0:
             profit_factor = float("inf")
         else:
@@ -324,12 +395,16 @@ class BacktestEngine:
             initial_balance=self.initial_balance,
             final_balance=final_balance,
             total_profit=total_profit,
-            total_return_percent=total_return_percent,
+            total_return_percent=(
+                total_return_percent
+            ),
             trades=tuple(trades),
             winning_trades=winning_trades,
             losing_trades=losing_trades,
             win_rate_percent=win_rate_percent,
-            max_drawdown_percent=max_drawdown_percent,
+            max_drawdown_percent=(
+                max_drawdown_percent
+            ),
             gross_profit=gross_profit,
             gross_loss=gross_loss,
             profit_factor=profit_factor,
@@ -340,7 +415,26 @@ class BacktestEngine:
                 average_losing_trade_percent
             ),
             payoff_ratio=payoff_ratio,
-            expectancy_percent=expectancy_percent,
+            expectancy_percent=(
+                expectancy_percent
+            ),
+        )
+
+    @staticmethod
+    def _normalize_signal(
+        signal: Signal | TradeSignal,
+    ) -> TradeSignal:
+        if isinstance(signal, TradeSignal):
+            return signal
+
+        if isinstance(signal, Signal):
+            return TradeSignal(
+                action=signal,
+            )
+
+        raise TypeError(
+            "strategy must return Signal "
+            "or TradeSignal"
         )
 
     @staticmethod
@@ -360,23 +454,59 @@ class BacktestEngine:
             if peak == 0:
                 continue
 
-            drawdown = (peak - equity) / peak * 100
-            max_drawdown = max(max_drawdown, drawdown)
+            drawdown = (
+                peak - equity
+            ) / peak * 100
+
+            max_drawdown = max(
+                max_drawdown,
+                drawdown,
+            )
 
         return max_drawdown
 
     @staticmethod
-    def _validate_candle(candle: Candle) -> None:
-        if candle.close <= 0:
-            raise ValueError("candle close price must be greater than zero")
+    def _validate_candle(
+        candle: Candle,
+    ) -> None:
+        prices = [
+            candle.open,
+            candle.high,
+            candle.low,
+            candle.close,
+        ]
+
+        if any(price <= 0 for price in prices):
+            raise ValueError(
+                "candle prices must be greater "
+                "than zero"
+            )
 
         if candle.high < candle.low:
             raise ValueError(
-                "candle high price must not be lower than low price"
+                "candle high price must not be "
+                "lower than low price"
+            )
+
+        if candle.high < max(
+            candle.open,
+            candle.close,
+        ):
+            raise ValueError(
+                "candle high price must not be "
+                "lower than open or close"
+            )
+
+        if candle.low > min(
+            candle.open,
+            candle.close,
+        ):
+            raise ValueError(
+                "candle low price must not be "
+                "higher than open or close"
             )
 
         if candle.volume < 0:
             raise ValueError(
                 "candle volume must not be negative"
             )
-

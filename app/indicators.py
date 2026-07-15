@@ -57,4 +57,47 @@ def rsi(series: pd.Series, period: int = 14) -> pd.Series:
     )
 
     return result
+def true_range(data: pd.DataFrame) -> pd.Series:
+    required_columns = {"high", "low", "close"}
+
+    if not required_columns.issubset(data.columns):
+        raise ValueError(
+            "Для True Range нужны колонки high, low и close"
+        )
+
+    high = data["high"].astype(float)
+    low = data["low"].astype(float)
+    previous_close = data["close"].astype(float).shift(1)
+
+    high_low = high - low
+    high_previous_close = (high - previous_close).abs()
+    low_previous_close = (low - previous_close).abs()
+
+    result = pd.concat(
+        [
+            high_low,
+            high_previous_close,
+            low_previous_close,
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    return result
+
+
+def atr(
+    data: pd.DataFrame,
+    period: int = 14,
+) -> pd.Series:
+    if period <= 0:
+        raise ValueError("Период ATR должен быть больше нуля")
+
+    ranges = true_range(data)
+
+    return ranges.ewm(
+        alpha=1 / period,
+        adjust=False,
+        min_periods=period,
+    ).mean()
+
 
