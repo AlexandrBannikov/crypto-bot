@@ -3,6 +3,7 @@ from pathlib import Path
 from app.candle_mapper import dataframe_to_candles
 from app.data_loader import load_market_data
 from app.ema_cross_strategy import EMACrossStrategy
+from app.ema_trend_strategy import EMATrendStrategy
 from app.engine import BacktestEngine, BacktestResult
 from app.trend_pullback_strategy import TrendPullbackStrategy
 
@@ -56,6 +57,47 @@ def print_result(
     )
 
 
+def calculate_buy_and_hold(
+    first_price: float,
+    last_price: float,
+) -> tuple[float, float]:
+    entry_fee = START_BALANCE * COMMISSION_RATE
+    invested_amount = START_BALANCE - entry_fee
+
+    quantity = invested_amount / first_price
+    gross_value = quantity * last_price
+    exit_fee = gross_value * COMMISSION_RATE
+    final_balance = gross_value - exit_fee
+
+    return_percent = (
+        final_balance / START_BALANCE - 1
+    ) * 100
+
+    return final_balance, return_percent
+
+
+def print_buy_and_hold(
+    first_price: float,
+    last_price: float,
+) -> None:
+    final_balance, return_percent = calculate_buy_and_hold(
+        first_price=first_price,
+        last_price=last_price,
+    )
+
+    print(
+        f"{'Buy & Hold ETH':<28}"
+        f"{return_percent:>+11.2f}%"
+        f"{'-':>11}"
+        f"{'-':>9}"
+        f"{'-':>11}"
+        f"{1:>9}"
+        f"{1:>8}"
+        f"{0:>8}"
+        f"{final_balance:>12.2f}"
+    )
+
+
 def main() -> None:
     data = load_market_data(DATA_FILE)
 
@@ -77,6 +119,15 @@ def main() -> None:
             EMACrossStrategy(
                 short_period=50,
                 long_period=200,
+            ),
+        ),
+        (
+            "EMA Trend 40/300",
+            EMATrendStrategy(
+                fast_period=40,
+                slow_period=300,
+                trend_period=300,
+                trend_slope_lookback=24,
             ),
         ),
         (
@@ -115,6 +166,11 @@ def main() -> None:
     print(f"Комиссия за операцию: {COMMISSION_RATE * 100:.2f}%")
 
     print_header()
+
+    print_buy_and_hold(
+        first_price=float(data.iloc[0]["open"]),
+        last_price=float(data.iloc[-1]["close"]),
+    )
 
     for name, strategy in strategies:
         engine = BacktestEngine(
