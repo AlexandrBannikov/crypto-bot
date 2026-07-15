@@ -1,31 +1,14 @@
 from pathlib import Path
 
-import pandas as pd
-
+from app.candle_mapper import dataframe_to_candles
 from app.data_loader import load_market_data
-from app.engine import BacktestEngine, Candle
+from app.engine import BacktestEngine
 from app.trend_pullback_strategy import TrendPullbackStrategy
 
 
 DATA_FILE = Path("data/eth_usdt_1h_full.csv")
 START_BALANCE = 1000.0
 COMMISSION_RATE = 0.001
-
-
-def dataframe_to_candles(
-    data: pd.DataFrame,
-) -> list[Candle]:
-    return [
-        Candle(
-            timestamp=int(row.datetime.timestamp()),
-            open=float(row.open),
-            high=float(row.high),
-            low=float(row.low),
-            close=float(row.close),
-            volume=float(row.volume),
-        )
-        for row in data.itertuples(index=False)
-    ]
 
 
 def print_result(result) -> None:
