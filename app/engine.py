@@ -112,6 +112,8 @@ class BacktestEngine:
         entry_cost = 0.0
 
         pending_action = TradeAction.HOLD
+        pending_stop_loss: float | None = None
+        active_stop_loss: float | None = None
 
         trades: list[Trade] = []
         equity_curve: list[float] = [
@@ -138,6 +140,8 @@ class BacktestEngine:
                     candle=candle,
                 )
 
+                active_stop_loss = pending_stop_loss
+                pending_stop_loss = None
                 balance = 0.0
 
             elif (
@@ -157,20 +161,52 @@ class BacktestEngine:
                     candle=candle,
                 )
 
+                active_stop_loss = pending_stop_loss
+                pending_stop_loss = None
                 balance = 0.0
 
-            elif (
-                pending_action == TradeAction.CLOSE_LONG
-                and position_side == PositionSide.LONG
-            ):
+            stop_was_hit = (
+                position_side is not None
+                and active_stop_loss is not None
+                and self._stop_was_hit(
+                    side=position_side,
+                    candle=candle,
+                    stop_loss=active_stop_loss,
+                )
+            )
+
+            close_requested = (
+                (
+                    pending_action == TradeAction.CLOSE_LONG
+                    and position_side == PositionSide.LONG
+                )
+                or (
+                    pending_action == TradeAction.CLOSE_SHORT
+                    and position_side == PositionSide.SHORT
+                )
+            )
+
+            if stop_was_hit or close_requested:
+                assert position_side is not None
                 assert entry_timestamp is not None
                 assert entry_price is not None
+
+                if stop_was_hit:
+                    assert active_stop_loss is not None
+
+                    exit_price = self._stop_exit_price(
+                        side=position_side,
+                        candle=candle,
+                        stop_loss=active_stop_loss,
+                    )
+                else:
+                    exit_price = candle.open
 
                 balance, trade = self._close_position(
                     side=position_side,
                     quantity=quantity,
                     exit_timestamp=candle.timestamp,
-                    exit_price=candle.open,
+                    exit_price=exit_price,
                     entry_timestamp=entry_timestamp,
                     entry_price=entry_price,
                     entry_fee=entry_fee,
@@ -188,34 +224,7 @@ class BacktestEngine:
                     entry_cost,
                 ) = self._empty_position()
 
-            elif (
-                pending_action == TradeAction.CLOSE_SHORT
-                and position_side == PositionSide.SHORT
-            ):
-                assert entry_timestamp is not None
-                assert entry_price is not None
-
-                balance, trade = self._close_position(
-                    side=position_side,
-                    quantity=quantity,
-                    exit_timestamp=candle.timestamp,
-                    exit_price=candle.open,
-                    entry_timestamp=entry_timestamp,
-                    entry_price=entry_price,
-                    entry_fee=entry_fee,
-                    entry_cost=entry_cost,
-                )
-
-                trades.append(trade)
-
-                (
-                    position_side,
-                    quantity,
-                    entry_timestamp,
-                    entry_price,
-                    entry_fee,
-                    entry_cost,
-                ) = self._empty_position()
+                active_stop_loss = None
 
             raw_signal = strategy.generate_signal(
                 candles,
@@ -230,6 +239,26 @@ class BacktestEngine:
                 requested_action=signal.action,
                 position_side=position_side,
             )
+
+            if pending_action in {
+                TradeAction.OPEN_LONG,
+                TradeAction.OPEN_SHORT,
+            }:
+                requested_side = (
+                    PositionSide.LONG
+                    if pending_action == TradeAction.OPEN_LONG
+                    else PositionSide.SHORT
+                )
+
+                self._validate_stop_loss(
+                    side=requested_side,
+                    entry_price=candle.close,
+                    stop_loss=signal.stop_loss,
+                )
+
+                pending_stop_loss = signal.stop_loss
+            else:
+                pending_stop_loss = None
 
             equity = self._calculate_equity(
                 balance=balance,
@@ -456,6 +485,64 @@ class BacktestEngine:
             "strategy must return Signal, "
             "TradeAction or TradeSignal"
         )
+
+    @staticmethod
+    def _validate_stop_loss(
+        *,
+        side: PositionSide,
+        entry_price: float,
+        stop_loss: float | None,
+    ) -> None:
+        if stop_loss is None:
+            return
+
+        if (
+            side == PositionSide.LONG
+            and stop_loss >= entry_price
+        ):
+            raise ValueError(
+                "long stop_loss must be lower "
+                "than entry price"
+            )
+
+        if (
+            side == PositionSide.SHORT
+            and stop_loss <= entry_price
+        ):
+            raise ValueError(
+                "short stop_loss must be greater "
+                "than entry price"
+            )
+
+    @staticmethod
+    def _stop_was_hit(
+        *,
+        side: PositionSide,
+        candle: Candle,
+        stop_loss: float,
+    ) -> bool:
+        if side == PositionSide.LONG:
+            return candle.low <= stop_loss
+
+        return candle.high >= stop_loss
+
+    @staticmethod
+    def _stop_exit_price(
+        *,
+        side: PositionSide,
+        candle: Candle,
+        stop_loss: float,
+    ) -> float:
+        if side == PositionSide.LONG:
+            if candle.open <= stop_loss:
+                return candle.open
+
+            return stop_loss
+
+        if candle.open >= stop_loss:
+            return candle.open
+
+        return stop_loss
 
     @staticmethod
     def _calculate_equity(

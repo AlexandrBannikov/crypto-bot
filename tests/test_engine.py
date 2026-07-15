@@ -1,6 +1,6 @@
 import pytest
 
-from app.engine import BacktestEngine, Candle, Signal
+from app.engine import BacktestEngine, Candle, TradeSignal, Signal
 
 
 class BuyAndSellStrategy:
@@ -509,3 +509,114 @@ def test_legacy_buy_sell_signals_still_open_long():
 
     assert len(result.trades) == 1
     assert result.trades[0].side == PositionSide.LONG
+
+
+class LongWithStopStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeSignal(
+                action=TradeAction.OPEN_LONG,
+                stop_loss=95.0,
+            )
+
+        return TradeAction.HOLD
+
+
+class ShortWithStopStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeSignal(
+                action=TradeAction.OPEN_SHORT,
+                stop_loss=105.0,
+            )
+
+        return TradeAction.HOLD
+
+
+class InvalidLongStopStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeSignal(
+                action=TradeAction.OPEN_LONG,
+                stop_loss=105.0,
+            )
+
+        return TradeAction.HOLD
+
+
+def test_long_stop_loss_is_triggered_inside_candle() -> None:
+    candles = [
+        Candle(1, 100, 101, 99, 100, 1),
+        Candle(2, 100, 104, 94, 102, 1),
+        Candle(3, 102, 103, 101, 102, 1),
+    ]
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        candles,
+        LongWithStopStrategy(),
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.LONG
+    assert result.trades[0].exit_timestamp == 2
+    assert result.trades[0].exit_price == pytest.approx(95)
+
+
+def test_long_stop_uses_open_price_after_gap() -> None:
+    candles = [
+        Candle(1, 100, 101, 99, 100, 1),
+        Candle(2, 90, 94, 88, 92, 1),
+    ]
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        candles,
+        LongWithStopStrategy(),
+    )
+
+    assert result.trades[0].exit_price == pytest.approx(90)
+
+
+def test_short_stop_loss_is_triggered_inside_candle() -> None:
+    candles = [
+        Candle(1, 100, 101, 99, 100, 1),
+        Candle(2, 100, 106, 96, 98, 1),
+        Candle(3, 98, 99, 97, 98, 1),
+    ]
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        candles,
+        ShortWithStopStrategy(),
+    )
+
+    assert len(result.trades) == 1
+    assert result.trades[0].side == PositionSide.SHORT
+    assert result.trades[0].exit_timestamp == 2
+    assert result.trades[0].exit_price == pytest.approx(105)
+
+
+def test_rejects_long_stop_above_entry_price() -> None:
+    candles = [
+        Candle(1, 100, 101, 99, 100, 1),
+        Candle(2, 100, 102, 98, 101, 1),
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match="long stop_loss",
+    ):
+        BacktestEngine(
+            initial_balance=1_000,
+            commission_rate=0,
+        ).run(
+            candles,
+            InvalidLongStopStrategy(),
+        )
