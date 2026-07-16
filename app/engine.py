@@ -2,52 +2,14 @@ from dataclasses import dataclass
 from typing import Protocol, Sequence
 
 from app.risk import RiskConfig, RiskManager
+from app.signal_normalizer import normalize_signal
 from app.strategies import Signal
+from app.trade_signal import TradeSignal
 from app.trading_types import (
     ExitReason,
     PositionSide,
     TradeAction,
 )
-
-
-@dataclass(frozen=True)
-class TradeSignal:
-    action: Signal | TradeAction
-    stop_loss: float | None = None
-    trailing_stop_percent: float | None = None
-    break_even_r_multiple: float | None = None
-
-    def __post_init__(self) -> None:
-        if self.stop_loss is not None and self.stop_loss <= 0:
-            raise ValueError(
-                "stop_loss must be greater than zero"
-            )
-
-        if self.trailing_stop_percent is not None:
-            if not 0 < self.trailing_stop_percent < 1:
-                raise ValueError(
-                    "trailing_stop_percent must be greater "
-                    "than zero and less than one"
-                )
-
-            if self.stop_loss is None:
-                raise ValueError(
-                    "stop_loss is required when "
-                    "trailing_stop_percent is set"
-                )
-
-        if self.break_even_r_multiple is not None:
-            if self.break_even_r_multiple <= 0:
-                raise ValueError(
-                    "break_even_r_multiple must be "
-                    "greater than zero"
-                )
-
-            if self.stop_loss is None:
-                raise ValueError(
-                    "stop_loss is required when "
-                    "break_even_r_multiple is set"
-                )
 
 
 @dataclass(frozen=True)
@@ -302,7 +264,7 @@ class BacktestEngine:
                 index,
             )
 
-            signal = self._normalize_signal(
+            signal = normalize_signal(
                 raw_signal
             )
 
@@ -583,64 +545,6 @@ class BacktestEngine:
             return requested_action
 
         return TradeAction.HOLD
-
-    @staticmethod
-    def _normalize_signal(
-        signal: Signal | TradeSignal | TradeAction,
-    ) -> TradeSignal:
-        if isinstance(signal, TradeSignal):
-            action = signal.action
-
-            if isinstance(action, TradeAction):
-                return signal
-
-            if action == Signal.BUY:
-                return TradeSignal(
-                    action=TradeAction.OPEN_LONG,
-                    stop_loss=signal.stop_loss,
-                    trailing_stop_percent=(
-                        signal.trailing_stop_percent
-                    ),
-                )
-
-            if action == Signal.SELL:
-                return TradeSignal(
-                    action=TradeAction.CLOSE_LONG,
-                    stop_loss=signal.stop_loss,
-                    trailing_stop_percent=(
-                        signal.trailing_stop_percent
-                    ),
-                )
-
-            return TradeSignal(
-                action=TradeAction.HOLD,
-                stop_loss=signal.stop_loss,
-                trailing_stop_percent=(
-                    signal.trailing_stop_percent
-                ),
-            )
-
-        if isinstance(signal, TradeAction):
-            return TradeSignal(
-                action=signal,
-            )
-
-        if isinstance(signal, Signal):
-            if signal == Signal.BUY:
-                action = TradeAction.OPEN_LONG
-            elif signal == Signal.SELL:
-                action = TradeAction.CLOSE_LONG
-            else:
-                action = TradeAction.HOLD
-
-            return TradeSignal(
-                action=action,
-            )
-
-        raise TypeError(
-            "strategy must return Signal, "
-            "TradeAction or TradeSignal"
-        )
 
     @staticmethod
     def _validate_stop_loss(
