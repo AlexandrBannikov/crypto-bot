@@ -320,3 +320,218 @@ def test_session_without_position_has_no_stop() -> None:
     assert not session.position_stop_was_hit(
         make_candle(1)
     )
+
+
+def test_closes_profitable_long_position() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.close_position(
+        exit_timestamp=2,
+        exit_price=110,
+        exit_reason=ExitReason.SIGNAL,
+    )
+
+    assert trade.side == PositionSide.LONG
+    assert trade.profit == pytest.approx(20)
+    assert trade.exit_fee == pytest.approx(0)
+    assert trade.exit_reason == ExitReason.SIGNAL
+    assert session.snapshot.balance == pytest.approx(
+        1020
+    )
+    assert session.snapshot.position is None
+
+
+def test_closes_losing_long_position() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.close_position(
+        exit_timestamp=2,
+        exit_price=95,
+        exit_reason=ExitReason.STOP_LOSS,
+    )
+
+    assert trade.profit == pytest.approx(-10)
+    assert session.snapshot.balance == pytest.approx(
+        990
+    )
+
+
+def test_closes_profitable_short_position() -> None:
+    position = PaperPosition(
+        side=PositionSide.SHORT,
+        entry_timestamp=1,
+        entry_price=100,
+        quantity=2,
+        entry_fee=0,
+        entry_cost=200,
+        initial_stop_loss=105,
+        active_stop_loss=105,
+        stop_reason=ExitReason.STOP_LOSS,
+    )
+
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=position,
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.close_position(
+        exit_timestamp=2,
+        exit_price=90,
+        exit_reason=ExitReason.SIGNAL,
+    )
+
+    assert trade.side == PositionSide.SHORT
+    assert trade.profit == pytest.approx(20)
+    assert session.snapshot.balance == pytest.approx(
+        1020
+    )
+
+
+def test_close_position_accounts_for_commission() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=799.8,
+            position=PaperPosition(
+                side=PositionSide.LONG,
+                entry_timestamp=1,
+                entry_price=100,
+                quantity=2,
+                entry_fee=0.2,
+                entry_cost=200.2,
+                initial_stop_loss=95,
+                active_stop_loss=95,
+                stop_reason=ExitReason.STOP_LOSS,
+            ),
+        ),
+        commission_rate=0.001,
+    )
+
+    trade = session.close_position(
+        exit_timestamp=2,
+        exit_price=110,
+        exit_reason=ExitReason.SIGNAL,
+    )
+
+    assert trade.exit_fee == pytest.approx(0.22)
+    assert trade.profit == pytest.approx(19.58)
+    assert session.snapshot.balance == pytest.approx(
+        1019.58
+    )
+
+
+def test_closes_position_at_initial_stop() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.close_position_at_stop(
+        Candle(2, 100, 104, 94, 102, 1)
+    )
+
+    assert trade.exit_price == pytest.approx(95)
+    assert trade.exit_reason == ExitReason.STOP_LOSS
+    assert trade.profit == pytest.approx(-10)
+    assert session.snapshot.position is None
+
+
+def test_closes_position_at_trailing_stop() -> None:
+    position = PaperPosition(
+        side=PositionSide.LONG,
+        entry_timestamp=1,
+        entry_price=100,
+        quantity=2,
+        entry_fee=0,
+        entry_cost=200,
+        initial_stop_loss=95,
+        active_stop_loss=104.5,
+        stop_reason=ExitReason.TRAILING_STOP,
+        trailing_stop_percent=0.05,
+    )
+
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=position,
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.close_position_at_stop(
+        Candle(2, 108, 109, 104, 105, 1)
+    )
+
+    assert trade.exit_price == pytest.approx(104.5)
+    assert (
+        trade.exit_reason
+        == ExitReason.TRAILING_STOP
+    )
+    assert trade.profit == pytest.approx(9)
+    assert session.snapshot.balance == pytest.approx(
+        1009
+    )
+
+
+def test_close_position_rejects_missing_position() -> None:
+    session = PaperTradingSession()
+
+    with pytest.raises(
+        ValueError,
+        match="no open position",
+    ):
+        session.close_position(
+            exit_timestamp=2,
+            exit_price=100,
+            exit_reason=ExitReason.SIGNAL,
+        )
+
+
+def test_close_at_stop_rejects_unhit_stop() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="was not hit",
+    ):
+        session.close_position_at_stop(
+            Candle(2, 100, 105, 96, 102, 1)
+        )
+
+
+@pytest.mark.parametrize(
+    "commission_rate",
+    [-0.1, 1, 1.1],
+)
+def test_session_rejects_invalid_commission(
+    commission_rate: float,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="commission_rate",
+    ):
+        PaperTradingSession(
+            commission_rate=commission_rate,
+        )

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.engine import Candle
+from app.engine import Candle, Trade
 from app.stop_manager import (
     stop_exit_price,
     stop_was_hit,
@@ -209,7 +209,16 @@ class PaperTradingSession:
     def __init__(
         self,
         snapshot: PaperSessionSnapshot | None = None,
+        *,
+        commission_rate: float = 0.001,
     ) -> None:
+        if not 0 <= commission_rate < 1:
+            raise ValueError(
+                "commission_rate must be greater than or equal "
+                "to zero and less than one"
+            )
+
+        self.commission_rate = commission_rate
         self._snapshot = (
             snapshot
             or PaperSessionSnapshot()
@@ -253,6 +262,146 @@ class PaperTradingSession:
         )
 
         return True
+
+    def close_position(
+        self,
+        *,
+        exit_timestamp: int,
+        exit_price: float,
+        exit_reason: ExitReason,
+    ) -> Trade:
+        position = self._snapshot.position
+
+        if position is None:
+            raise ValueError(
+                "session has no open position"
+            )
+
+        if exit_timestamp < position.entry_timestamp:
+            raise ValueError(
+                "exit_timestamp must not be earlier "
+                "than entry_timestamp"
+            )
+
+        if exit_price <= 0:
+            raise ValueError(
+                "exit_price must be greater than zero"
+            )
+
+        exit_notional = (
+            position.quantity * exit_price
+        )
+
+        exit_fee = (
+            exit_notional
+            * self.commission_rate
+        )
+
+        entry_margin = (
+            position.entry_cost
+            - position.entry_fee
+        )
+
+        if position.side == PositionSide.LONG:
+            gross_profit = (
+                position.quantity
+                * (
+                    exit_price
+                    - position.entry_price
+                )
+            )
+        else:
+            gross_profit = (
+                position.quantity
+                * (
+                    position.entry_price
+                    - exit_price
+                )
+            )
+
+        released_capital = (
+            entry_margin
+            + gross_profit
+            - exit_fee
+        )
+
+        profit = (
+            released_capital
+            - position.entry_cost
+        )
+
+        profit_percent = (
+            profit
+            / position.entry_cost
+            * 100
+        )
+
+        trade = Trade(
+            entry_timestamp=position.entry_timestamp,
+            exit_timestamp=exit_timestamp,
+            entry_price=position.entry_price,
+            exit_price=exit_price,
+            quantity=position.quantity,
+            entry_fee=position.entry_fee,
+            exit_fee=exit_fee,
+            profit=profit,
+            profit_percent=profit_percent,
+            side=position.side,
+            exit_reason=exit_reason,
+        )
+
+        self._snapshot = PaperSessionSnapshot(
+            balance=(
+                self._snapshot.balance
+                + released_capital
+            ),
+            last_candle_timestamp=(
+                self._snapshot.last_candle_timestamp
+            ),
+            pending_action=TradeAction.HOLD,
+            pending_stop_loss=None,
+            pending_reference_price=None,
+            pending_trailing_stop_percent=None,
+            position=None,
+        )
+
+        return trade
+
+    def close_position_at_stop(
+        self,
+        candle: Candle,
+    ) -> Trade:
+        position = self._snapshot.position
+
+        if position is None:
+            raise ValueError(
+                "session has no open position"
+            )
+
+        if position.active_stop_loss is None:
+            raise ValueError(
+                "position has no active stop"
+            )
+
+        if not self.position_stop_was_hit(candle):
+            raise ValueError(
+                "position stop was not hit"
+            )
+
+        exit_price = self.position_stop_exit_price(
+            candle
+        )
+
+        exit_reason = (
+            position.stop_reason
+            or ExitReason.STOP_LOSS
+        )
+
+        return self.close_position(
+            exit_timestamp=candle.timestamp,
+            exit_price=exit_price,
+            exit_reason=exit_reason,
+        )
 
     def position_stop_was_hit(
         self,
