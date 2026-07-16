@@ -258,3 +258,82 @@ def test_run_session_rejects_empty_feed(
             feed=StaticFeed(()),
             strategy=HoldStrategy(),
         )
+
+
+def test_does_not_record_same_trade_twice(
+    tmp_path: Path,
+) -> None:
+    trader = PaperTrader(
+        PaperTraderConfig(
+            log_file=tmp_path / "paper.csv",
+        )
+    )
+
+    trade = make_trade()
+
+    assert trader.record_trade(trade) is True
+    assert trader.record_trade(trade) is False
+
+    rows = list(
+        csv.reader(
+            (tmp_path / "paper.csv").open(
+                encoding="utf-8",
+            )
+        )
+    )
+
+    assert len(rows) == 2
+
+
+def test_record_trades_returns_number_of_new_rows(
+    tmp_path: Path,
+) -> None:
+    trader = PaperTrader(
+        PaperTraderConfig(
+            log_file=tmp_path / "paper.csv",
+        )
+    )
+
+    first = make_trade(
+        entry_timestamp=1,
+        exit_timestamp=2,
+    )
+    second = make_trade(
+        entry_timestamp=3,
+        exit_timestamp=4,
+    )
+
+    assert trader.record_trades(
+        (first, second)
+    ) == 2
+
+    assert trader.record_trades(
+        (first, second)
+    ) == 0
+
+
+def test_counts_recorded_trades(
+    tmp_path: Path,
+) -> None:
+    trader = PaperTrader(
+        PaperTraderConfig(
+            log_file=tmp_path / "paper.csv",
+        )
+    )
+
+    assert trader.count_recorded_trades() == 0
+
+    trader.record_trades(
+        (
+            make_trade(
+                entry_timestamp=1,
+                exit_timestamp=2,
+            ),
+            make_trade(
+                entry_timestamp=3,
+                exit_timestamp=4,
+            ),
+        )
+    )
+
+    assert trader.count_recorded_trades() == 2
