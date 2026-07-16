@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from app.risk import RiskConfig, RiskManager
 from app.strategies import Signal
 from app.trading_types import (
     PositionSide,
@@ -78,6 +79,7 @@ class BacktestEngine:
         self,
         initial_balance: float = 10_000.0,
         commission_rate: float = 0.001,
+        risk_config: RiskConfig | None = None,
     ) -> None:
         if initial_balance <= 0:
             raise ValueError(
@@ -92,6 +94,7 @@ class BacktestEngine:
 
         self.initial_balance = initial_balance
         self.commission_rate = commission_rate
+        self.risk_manager = RiskManager(risk_config)
 
     def run(
         self,
