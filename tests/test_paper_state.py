@@ -74,7 +74,7 @@ def test_rejects_invalid_state_file(
     ("field", "value"),
     [
         ("last_candle_timestamp", -1),
-        ("virtual_balance", 0),
+        ("virtual_balance", -1),
         ("recorded_trades", -1),
     ],
 )
@@ -188,3 +188,26 @@ def test_legacy_state_creates_snapshot() -> None:
     assert state.session_snapshot.balance == pytest.approx(
         900
     )
+
+
+def test_allows_zero_free_balance_with_open_position() -> None:
+    state = PaperSessionState(
+        last_candle_timestamp=2,
+        virtual_balance=0,
+        recorded_trades=0,
+        session_snapshot=PaperSessionSnapshot(
+            balance=0,
+            last_candle_timestamp=2,
+            position=PaperPosition(
+                side=PositionSide.LONG,
+                entry_timestamp=2,
+                entry_price=100,
+                quantity=10,
+                entry_fee=0,
+                entry_cost=1000,
+            ),
+        ),
+    )
+
+    assert state.virtual_balance == pytest.approx(0)
+    assert state.session_snapshot.balance == pytest.approx(0)

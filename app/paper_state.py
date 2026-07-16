@@ -30,9 +30,9 @@ class PaperSessionState:
                 "last_candle_timestamp must not be negative"
             )
 
-        if self.virtual_balance <= 0:
+        if self.virtual_balance < 0:
             raise ValueError(
-                "virtual_balance must be greater than zero"
+                "virtual_balance must not be negative"
             )
 
         if self.recorded_trades < 0:
