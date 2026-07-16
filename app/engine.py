@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from app.candle import Candle
 from app.risk import RiskConfig, RiskManager
 from app.signal_normalizer import normalize_signal
 from app.strategies import Signal
@@ -10,16 +11,6 @@ from app.trading_types import (
     PositionSide,
     TradeAction,
 )
-
-
-@dataclass(frozen=True)
-class Candle:
-    timestamp: int
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float = 0.0
 
 
 @dataclass(frozen=True)
