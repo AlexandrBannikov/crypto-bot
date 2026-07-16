@@ -11,3 +11,5 @@ reports/*.png
 
 data/*.db
 
+state/
+logs/
