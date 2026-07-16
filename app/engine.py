@@ -13,12 +13,26 @@ from app.trading_types import (
 class TradeSignal:
     action: Signal | TradeAction
     stop_loss: float | None = None
+    trailing_stop_percent: float | None = None
 
     def __post_init__(self) -> None:
         if self.stop_loss is not None and self.stop_loss <= 0:
             raise ValueError(
                 "stop_loss must be greater than zero"
             )
+
+        if self.trailing_stop_percent is not None:
+            if not 0 < self.trailing_stop_percent < 1:
+                raise ValueError(
+                    "trailing_stop_percent must be greater "
+                    "than zero and less than one"
+                )
+
+            if self.stop_loss is None:
+                raise ValueError(
+                    "stop_loss is required when "
+                    "trailing_stop_percent is set"
+                )
 
 
 @dataclass(frozen=True)
@@ -117,7 +131,10 @@ class BacktestEngine:
         pending_action = TradeAction.HOLD
         pending_stop_loss: float | None = None
         pending_reference_price: float | None = None
+        pending_trailing_stop_percent: float | None = None
+
         active_stop_loss: float | None = None
+        active_trailing_stop_percent: float | None = None
 
         trades: list[Trade] = []
         equity_curve: list[float] = [
@@ -148,8 +165,13 @@ class BacktestEngine:
                 )
 
                 active_stop_loss = pending_stop_loss
+                active_trailing_stop_percent = (
+                    pending_trailing_stop_percent
+                )
+
                 pending_stop_loss = None
                 pending_reference_price = None
+                pending_trailing_stop_percent = None
 
             elif (
                 pending_action == TradeAction.OPEN_SHORT
@@ -172,8 +194,13 @@ class BacktestEngine:
                 )
 
                 active_stop_loss = pending_stop_loss
+                active_trailing_stop_percent = (
+                    pending_trailing_stop_percent
+                )
+
                 pending_stop_loss = None
                 pending_reference_price = None
+                pending_trailing_stop_percent = None
 
             stop_was_hit = (
                 position_side is not None
@@ -236,6 +263,7 @@ class BacktestEngine:
                 ) = self._empty_position()
 
                 active_stop_loss = None
+                active_trailing_stop_percent = None
 
             raw_signal = strategy.generate_signal(
                 candles,
@@ -269,9 +297,27 @@ class BacktestEngine:
 
                 pending_stop_loss = signal.stop_loss
                 pending_reference_price = candle.close
+                pending_trailing_stop_percent = (
+                    signal.trailing_stop_percent
+                )
             else:
                 pending_stop_loss = None
                 pending_reference_price = None
+                pending_trailing_stop_percent = None
+
+            if (
+                position_side is not None
+                and active_stop_loss is not None
+                and active_trailing_stop_percent is not None
+            ):
+                active_stop_loss = self._trail_stop(
+                    side=position_side,
+                    current_stop=active_stop_loss,
+                    close_price=candle.close,
+                    trailing_stop_percent=(
+                        active_trailing_stop_percent
+                    ),
+                )
 
             equity = self._calculate_equity(
                 balance=balance,
@@ -510,17 +556,26 @@ class BacktestEngine:
                 return TradeSignal(
                     action=TradeAction.OPEN_LONG,
                     stop_loss=signal.stop_loss,
+                    trailing_stop_percent=(
+                        signal.trailing_stop_percent
+                    ),
                 )
 
             if action == Signal.SELL:
                 return TradeSignal(
                     action=TradeAction.CLOSE_LONG,
                     stop_loss=signal.stop_loss,
+                    trailing_stop_percent=(
+                        signal.trailing_stop_percent
+                    ),
                 )
 
             return TradeSignal(
                 action=TradeAction.HOLD,
                 stop_loss=signal.stop_loss,
+                trailing_stop_percent=(
+                    signal.trailing_stop_percent
+                ),
             )
 
         if isinstance(signal, TradeAction):
@@ -572,6 +627,35 @@ class BacktestEngine:
                 "short stop_loss must be greater "
                 "than entry price"
             )
+
+    @staticmethod
+    def _trail_stop(
+        *,
+        side: PositionSide,
+        current_stop: float,
+        close_price: float,
+        trailing_stop_percent: float,
+    ) -> float:
+        if side == PositionSide.LONG:
+            candidate_stop = (
+                close_price
+                * (1 - trailing_stop_percent)
+            )
+
+            return max(
+                current_stop,
+                candidate_stop,
+            )
+
+        candidate_stop = (
+            close_price
+            * (1 + trailing_stop_percent)
+        )
+
+        return min(
+            current_stop,
+            candidate_stop,
+        )
 
     @staticmethod
     def _stop_was_hit(

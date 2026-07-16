@@ -582,3 +582,126 @@ def test_engine_sizes_short_position_by_risk() -> None:
     assert trade.quantity == pytest.approx(5)
     assert trade.profit == pytest.approx(50)
     assert result.final_balance == pytest.approx(1_050)
+
+
+class LongTrailingStopStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeSignal(
+                action=TradeAction.OPEN_LONG,
+                stop_loss=95.0,
+                trailing_stop_percent=0.05,
+            )
+
+        return TradeAction.HOLD
+
+
+class ShortTrailingStopStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeSignal(
+                action=TradeAction.OPEN_SHORT,
+                stop_loss=105.0,
+                trailing_stop_percent=0.05,
+            )
+
+        return TradeAction.HOLD
+
+
+def test_rejects_trailing_stop_without_initial_stop() -> None:
+    with pytest.raises(
+        ValueError,
+        match="stop_loss is required",
+    ):
+        TradeSignal(
+            action=TradeAction.OPEN_LONG,
+            trailing_stop_percent=0.05,
+        )
+
+
+@pytest.mark.parametrize(
+    "trailing_stop_percent",
+    [0, -0.01, 1, 1.1],
+)
+def test_rejects_invalid_trailing_stop_percent(
+    trailing_stop_percent: float,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="trailing_stop_percent",
+    ):
+        TradeSignal(
+            action=TradeAction.OPEN_LONG,
+            stop_loss=95,
+            trailing_stop_percent=trailing_stop_percent,
+        )
+
+
+def test_long_trailing_stop_protects_profit() -> None:
+    candles = [
+        Candle(1, 100, 101, 99, 100, 1),
+        Candle(2, 100, 111, 99, 110, 1),
+        Candle(3, 108, 109, 104, 105, 1),
+    ]
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        candles,
+        LongTrailingStopStrategy(),
+    )
+
+    trade = result.trades[0]
+
+    # После закрытия свечи по 110 стоп становится:
+    # 110 * 0.95 = 104.5.
+    assert trade.entry_price == pytest.approx(100)
+    assert trade.exit_price == pytest.approx(104.5)
+    assert trade.quantity == pytest.approx(2)
+    assert trade.profit == pytest.approx(9)
+    assert result.final_balance == pytest.approx(1_009)
+
+
+def test_short_trailing_stop_protects_profit() -> None:
+    candles = [
+        Candle(1, 100, 101, 99, 100, 1),
+        Candle(2, 100, 101, 89, 90, 1),
+        Candle(3, 92, 95, 91, 94, 1),
+    ]
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        candles,
+        ShortTrailingStopStrategy(),
+    )
+
+    trade = result.trades[0]
+
+    # После закрытия свечи по 90 стоп становится:
+    # 90 * 1.05 = 94.5.
+    assert trade.entry_price == pytest.approx(100)
+    assert trade.exit_price == pytest.approx(94.5)
+    assert trade.quantity == pytest.approx(2)
+    assert trade.profit == pytest.approx(11)
+    assert result.final_balance == pytest.approx(1_011)
+
+
+def test_long_trailing_stop_never_moves_down() -> None:
+    assert BacktestEngine._trail_stop(
+        side=PositionSide.LONG,
+        current_stop=105,
+        close_price=100,
+        trailing_stop_percent=0.05,
+    ) == pytest.approx(105)
+
+
+def test_short_trailing_stop_never_moves_up() -> None:
+    assert BacktestEngine._trail_stop(
+        side=PositionSide.SHORT,
+        current_stop=95,
+        close_price=100,
+        trailing_stop_percent=0.05,
+    ) == pytest.approx(95)
