@@ -12,3 +12,12 @@ class TradeAction(str, Enum):
     CLOSE_LONG = "close_long"
     OPEN_SHORT = "open_short"
     CLOSE_SHORT = "close_short"
+
+
+
+class ExitReason(str, Enum):
+    SIGNAL = "signal"
+    STOP_LOSS = "stop_loss"
+    TRAILING_STOP = "trailing_stop"
+    BREAK_EVEN = "break_even"
+    END_OF_DATA = "end_of_data"

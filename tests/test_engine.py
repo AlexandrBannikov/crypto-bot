@@ -705,3 +705,61 @@ def test_short_trailing_stop_never_moves_up() -> None:
         close_price=100,
         trailing_stop_percent=0.05,
     ) == pytest.approx(95)
+
+
+def test_rejects_break_even_without_stop_loss() -> None:
+    with pytest.raises(
+        ValueError,
+        match="stop_loss is required",
+    ):
+        TradeSignal(
+            action=TradeAction.OPEN_LONG,
+            break_even_r_multiple=1.0,
+        )
+
+
+@pytest.mark.parametrize(
+    "break_even_r_multiple",
+    [0, -1],
+)
+def test_rejects_invalid_break_even(
+    break_even_r_multiple,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="break_even_r_multiple",
+    ):
+        TradeSignal(
+            action=TradeAction.OPEN_LONG,
+            stop_loss=95,
+            break_even_r_multiple=break_even_r_multiple,
+        )
+
+
+def test_accepts_break_even_configuration() -> None:
+    signal = TradeSignal(
+        action=TradeAction.OPEN_LONG,
+        stop_loss=95,
+        break_even_r_multiple=1.5,
+    )
+
+    assert signal.break_even_r_multiple == pytest.approx(1.5)
+
+
+def test_trade_default_exit_reason_is_signal() -> None:
+    from app.engine import Trade
+    from app.trading_types import ExitReason
+
+    trade = Trade(
+        entry_timestamp=1,
+        exit_timestamp=2,
+        entry_price=100,
+        exit_price=110,
+        quantity=1,
+        entry_fee=0,
+        exit_fee=0,
+        profit=10,
+        profit_percent=10,
+    )
+
+    assert trade.exit_reason == ExitReason.SIGNAL
