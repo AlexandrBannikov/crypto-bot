@@ -495,11 +495,6 @@ class PaperTradingSession:
         entry_price = candle.open
 
         if stop_loss is None:
-            if risk_reference_price is not None:
-                raise ValueError(
-                    "risk_reference_price requires stop_loss"
-                )
-
             if trailing_stop_percent is not None:
                 raise ValueError(
                     "stop_loss is required for trailing stop"
