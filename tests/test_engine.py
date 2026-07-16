@@ -763,3 +763,88 @@ def test_trade_default_exit_reason_is_signal() -> None:
     )
 
     assert trade.exit_reason == ExitReason.SIGNAL
+
+
+def test_signal_close_has_signal_exit_reason() -> None:
+    from app.trading_types import ExitReason
+
+    class CloseBeforeLastCandleStrategy:
+        def generate_signal(self, candles, index):
+            if index == 0:
+                return Signal.BUY
+
+            if index == 2:
+                return Signal.SELL
+
+            return Signal.HOLD
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        make_candles(100, 110, 120, 125),
+        CloseBeforeLastCandleStrategy(),
+    )
+
+    assert result.trades[0].exit_reason == ExitReason.SIGNAL
+    assert result.trades[0].exit_price == pytest.approx(125)
+
+
+def test_initial_stop_has_stop_loss_exit_reason() -> None:
+    from app.trading_types import ExitReason
+
+    candles = [
+        Candle(1, 100, 101, 99, 100, 1),
+        Candle(2, 100, 104, 94, 102, 1),
+        Candle(3, 102, 103, 101, 102, 1),
+    ]
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        candles,
+        LongWithStopStrategy(),
+    )
+
+    assert result.trades[0].exit_reason == ExitReason.STOP_LOSS
+
+
+def test_trailed_stop_has_trailing_stop_exit_reason() -> None:
+    from app.trading_types import ExitReason
+
+    candles = [
+        Candle(1, 100, 101, 99, 100, 1),
+        Candle(2, 100, 111, 99, 110, 1),
+        Candle(3, 108, 109, 104, 105, 1),
+    ]
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        candles,
+        LongTrailingStopStrategy(),
+    )
+
+    assert (
+        result.trades[0].exit_reason
+        == ExitReason.TRAILING_STOP
+    )
+
+
+def test_end_of_data_has_end_of_data_exit_reason() -> None:
+    from app.trading_types import ExitReason
+
+    result = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+    ).run(
+        make_candles(100, 110, 120),
+        BuyOnlyStrategy(),
+    )
+
+    assert (
+        result.trades[0].exit_reason
+        == ExitReason.END_OF_DATA
+    )

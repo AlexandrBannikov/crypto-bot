@@ -150,6 +150,7 @@ class BacktestEngine:
         pending_trailing_stop_percent: float | None = None
 
         active_stop_loss: float | None = None
+        active_stop_reason: ExitReason | None = None
         active_trailing_stop_percent: float | None = None
 
         trades: list[Trade] = []
@@ -181,6 +182,11 @@ class BacktestEngine:
                 )
 
                 active_stop_loss = pending_stop_loss
+                active_stop_reason = (
+                    ExitReason.STOP_LOSS
+                    if pending_stop_loss is not None
+                    else None
+                )
                 active_trailing_stop_percent = (
                     pending_trailing_stop_percent
                 )
@@ -210,6 +216,11 @@ class BacktestEngine:
                 )
 
                 active_stop_loss = pending_stop_loss
+                active_stop_reason = (
+                    ExitReason.STOP_LOSS
+                    if pending_stop_loss is not None
+                    else None
+                )
                 active_trailing_stop_percent = (
                     pending_trailing_stop_percent
                 )
@@ -246,14 +257,17 @@ class BacktestEngine:
 
                 if stop_was_hit:
                     assert active_stop_loss is not None
+                    assert active_stop_reason is not None
 
                     exit_price = self._stop_exit_price(
                         side=position_side,
                         candle=candle,
                         stop_loss=active_stop_loss,
                     )
+                    exit_reason = active_stop_reason
                 else:
                     exit_price = candle.open
+                    exit_reason = ExitReason.SIGNAL
 
                 released_capital, trade = self._close_position(
                     side=position_side,
@@ -264,6 +278,7 @@ class BacktestEngine:
                     entry_price=entry_price,
                     entry_fee=entry_fee,
                     entry_cost=entry_cost,
+                    exit_reason=exit_reason,
                 )
 
                 balance += released_capital
@@ -279,6 +294,7 @@ class BacktestEngine:
                 ) = self._empty_position()
 
                 active_stop_loss = None
+                active_stop_reason = None
                 active_trailing_stop_percent = None
 
             raw_signal = strategy.generate_signal(
@@ -326,7 +342,7 @@ class BacktestEngine:
                 and active_stop_loss is not None
                 and active_trailing_stop_percent is not None
             ):
-                active_stop_loss = self._trail_stop(
+                trailed_stop = self._trail_stop(
                     side=position_side,
                     current_stop=active_stop_loss,
                     close_price=candle.close,
@@ -334,6 +350,13 @@ class BacktestEngine:
                         active_trailing_stop_percent
                     ),
                 )
+
+                if trailed_stop != active_stop_loss:
+                    active_stop_reason = (
+                        ExitReason.TRAILING_STOP
+                    )
+
+                active_stop_loss = trailed_stop
 
             equity = self._calculate_equity(
                 balance=balance,
@@ -362,6 +385,7 @@ class BacktestEngine:
                 entry_price=entry_price,
                 entry_fee=entry_fee,
                 entry_cost=entry_cost,
+                exit_reason=ExitReason.END_OF_DATA,
             )
 
             balance += released_capital
@@ -462,6 +486,7 @@ class BacktestEngine:
         entry_price: float,
         entry_fee: float,
         entry_cost: float,
+        exit_reason: ExitReason,
     ) -> tuple[float, Trade]:
         exit_notional = quantity * exit_price
         exit_fee = (
@@ -507,6 +532,7 @@ class BacktestEngine:
             profit=profit,
             profit_percent=profit_percent,
             side=side,
+            exit_reason=exit_reason,
         )
 
         return released_capital, trade
