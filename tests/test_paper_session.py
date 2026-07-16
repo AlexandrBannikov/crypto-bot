@@ -535,3 +535,106 @@ def test_session_rejects_invalid_commission(
         PaperTradingSession(
             commission_rate=commission_rate,
         )
+
+
+def test_process_closed_candle_ignores_duplicate() -> None:
+    session = PaperTradingSession()
+
+    assert session.process_closed_candle(
+        make_candle(100)
+    ) is None
+
+    assert session.process_closed_candle(
+        make_candle(100)
+    ) is None
+
+    assert (
+        session.snapshot.last_candle_timestamp
+        == 100
+    )
+
+
+def test_process_closed_candle_closes_position_at_stop() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.process_closed_candle(
+        Candle(2, 100, 104, 94, 102, 1)
+    )
+
+    assert trade is not None
+    assert trade.exit_price == pytest.approx(95)
+    assert trade.exit_reason == ExitReason.STOP_LOSS
+    assert trade.profit == pytest.approx(-10)
+    assert session.snapshot.position is None
+    assert (
+        session.snapshot.last_candle_timestamp
+        == 2
+    )
+
+
+def test_process_closed_candle_updates_trailing_stop() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(
+                trailing_stop_percent=0.05,
+            ),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.process_closed_candle(
+        Candle(2, 105, 111, 104, 110, 1)
+    )
+
+    assert trade is None
+    assert session.snapshot.position is not None
+    assert (
+        session.snapshot.position.active_stop_loss
+        == pytest.approx(104.5)
+    )
+    assert (
+        session.snapshot.position.stop_reason
+        == ExitReason.TRAILING_STOP
+    )
+
+
+def test_process_closed_candle_checks_stop_before_trailing() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(
+                trailing_stop_percent=0.05,
+            ),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.process_closed_candle(
+        Candle(2, 100, 120, 94, 110, 1)
+    )
+
+    assert trade is not None
+    assert trade.exit_price == pytest.approx(95)
+    assert trade.exit_reason == ExitReason.STOP_LOSS
+    assert session.snapshot.position is None
+
+
+def test_process_closed_candle_without_position() -> None:
+    session = PaperTradingSession()
+
+    trade = session.process_closed_candle(
+        make_candle(100)
+    )
+
+    assert trade is None
+    assert (
+        session.snapshot.last_candle_timestamp
+        == 100
+    )

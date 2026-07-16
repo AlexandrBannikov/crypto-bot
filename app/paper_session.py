@@ -263,6 +263,21 @@ class PaperTradingSession:
 
         return True
 
+    def process_closed_candle(
+        self,
+        candle: Candle,
+    ) -> Trade | None:
+        if not self.accept_closed_candle(candle):
+            return None
+
+        if self.position_stop_was_hit(candle):
+            return self.close_position_at_stop(candle)
+
+        self.update_trailing_stop(
+            close_price=candle.close,
+        )
+
+        return None
     def close_position(
         self,
         *,
