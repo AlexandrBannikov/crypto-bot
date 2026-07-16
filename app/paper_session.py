@@ -1,6 +1,11 @@
 from dataclasses import dataclass
 
 from app.engine import Candle
+from app.stop_manager import (
+    stop_exit_price,
+    stop_was_hit,
+    trail_stop,
+)
 from app.trading_types import (
     ExitReason,
     PositionSide,
@@ -16,7 +21,8 @@ class PaperPosition:
     quantity: float
     entry_fee: float
     entry_cost: float
-    stop_loss: float | None = None
+    initial_stop_loss: float | None = None
+    active_stop_loss: float | None = None
     stop_reason: ExitReason | None = None
     trailing_stop_percent: float | None = None
 
@@ -51,20 +57,20 @@ class PaperPosition:
                 "entry_fee must not exceed entry_cost"
             )
 
-        if self.stop_loss is not None:
-            if self.stop_loss <= 0:
+        if self.initial_stop_loss is not None:
+            if self.initial_stop_loss <= 0:
                 raise ValueError(
                     "stop_loss must be greater than zero"
                 )
 
             if self.side == PositionSide.LONG:
-                if self.stop_loss >= self.entry_price:
+                if self.initial_stop_loss >= self.entry_price:
                     raise ValueError(
                         "LONG stop_loss must be below "
                         "entry_price"
                     )
 
-            elif self.stop_loss <= self.entry_price:
+            elif self.initial_stop_loss <= self.entry_price:
                 raise ValueError(
                     "SHORT stop_loss must be above "
                     "entry_price"
@@ -78,9 +84,21 @@ class PaperPosition:
 
         elif self.stop_reason is not None:
             raise ValueError(
-                "stop_loss is required when "
+                "initial_stop_loss is required when "
                 "stop_reason is set"
             )
+
+        if self.active_stop_loss is not None:
+            if self.active_stop_loss <= 0:
+                raise ValueError(
+                    "active_stop_loss must be greater than zero"
+                )
+
+            if self.initial_stop_loss is None:
+                raise ValueError(
+                    "initial_stop_loss is required when "
+                    "active_stop_loss is set"
+                )
 
         if self.trailing_stop_percent is not None:
             if not 0 < self.trailing_stop_percent < 1:
@@ -89,7 +107,7 @@ class PaperPosition:
                     "greater than zero and less than one"
                 )
 
-            if self.stop_loss is None:
+            if self.active_stop_loss is None:
                 raise ValueError(
                     "stop_loss is required for trailing stop"
                 )
@@ -232,6 +250,107 @@ class PaperTradingSession:
                 .pending_trailing_stop_percent
             ),
             position=self._snapshot.position,
+        )
+
+        return True
+
+    def position_stop_was_hit(
+        self,
+        candle: Candle,
+    ) -> bool:
+        position = self._snapshot.position
+
+        if (
+            position is None
+            or position.active_stop_loss is None
+        ):
+            return False
+
+        return stop_was_hit(
+            side=position.side,
+            candle=candle,
+            stop_loss=position.active_stop_loss,
+        )
+
+    def position_stop_exit_price(
+        self,
+        candle: Candle,
+    ) -> float:
+        position = self._snapshot.position
+
+        if position is None:
+            raise ValueError(
+                "session has no open position"
+            )
+
+        if position.active_stop_loss is None:
+            raise ValueError(
+                "position has no stop_loss"
+            )
+
+        return stop_exit_price(
+            side=position.side,
+            candle=candle,
+            stop_loss=position.active_stop_loss,
+        )
+
+    def update_trailing_stop(
+        self,
+        close_price: float,
+    ) -> bool:
+        position = self._snapshot.position
+
+        if (
+            position is None
+            or position.active_stop_loss is None
+            or position.trailing_stop_percent is None
+        ):
+            return False
+
+        updated_stop = trail_stop(
+            side=position.side,
+            current_stop=position.active_stop_loss,
+            close_price=close_price,
+            trailing_stop_percent=(
+                position.trailing_stop_percent
+            ),
+        )
+
+        if updated_stop == position.active_stop_loss:
+            return False
+
+        updated_position = PaperPosition(
+            side=position.side,
+            entry_timestamp=position.entry_timestamp,
+            entry_price=position.entry_price,
+            quantity=position.quantity,
+            entry_fee=position.entry_fee,
+            entry_cost=position.entry_cost,
+            initial_stop_loss=position.initial_stop_loss,
+            active_stop_loss=updated_stop,
+            stop_reason=ExitReason.TRAILING_STOP,
+            trailing_stop_percent=(
+                position.trailing_stop_percent
+            ),
+        )
+
+        self._snapshot = PaperSessionSnapshot(
+            balance=self._snapshot.balance,
+            last_candle_timestamp=(
+                self._snapshot.last_candle_timestamp
+            ),
+            pending_action=self._snapshot.pending_action,
+            pending_stop_loss=(
+                self._snapshot.pending_stop_loss
+            ),
+            pending_reference_price=(
+                self._snapshot.pending_reference_price
+            ),
+            pending_trailing_stop_percent=(
+                self._snapshot
+                .pending_trailing_stop_percent
+            ),
+            position=updated_position,
         )
 
         return True

@@ -93,7 +93,8 @@ def test_preserves_existing_position() -> None:
         quantity=2,
         entry_fee=0.2,
         entry_cost=200.2,
-        stop_loss=95,
+        initial_stop_loss=95,
+        active_stop_loss=95,
         stop_reason=ExitReason.STOP_LOSS,
         trailing_stop_percent=0.05,
     )
@@ -155,7 +156,8 @@ def test_rejects_long_stop_above_entry() -> None:
             quantity=1,
             entry_fee=0,
             entry_cost=100,
-            stop_loss=105,
+            initial_stop_loss=105,
+            active_stop_loss=105,
             stop_reason=ExitReason.STOP_LOSS,
         )
 
@@ -172,7 +174,8 @@ def test_rejects_short_stop_below_entry() -> None:
             quantity=1,
             entry_fee=0,
             entry_cost=100,
-            stop_loss=95,
+            initial_stop_loss=95,
+        active_stop_loss=95,
             stop_reason=ExitReason.STOP_LOSS,
         )
 
@@ -215,3 +218,105 @@ def test_rejects_invalid_candle() -> None:
                 volume=1,
             )
         )
+
+
+def make_long_position(
+    *,
+    stop_loss: float = 95,
+    trailing_stop_percent: float | None = None,
+) -> PaperPosition:
+    return PaperPosition(
+        side=PositionSide.LONG,
+        entry_timestamp=1,
+        entry_price=100,
+        quantity=2,
+        entry_fee=0,
+        entry_cost=200,
+        initial_stop_loss=95,
+        active_stop_loss=stop_loss,
+        stop_reason=ExitReason.STOP_LOSS,
+        trailing_stop_percent=trailing_stop_percent,
+    )
+
+
+def test_session_detects_position_stop() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        )
+    )
+
+    assert session.position_stop_was_hit(
+        Candle(2, 100, 105, 94, 102, 1)
+    )
+
+
+def test_session_returns_stop_exit_price_after_gap() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        )
+    )
+
+    exit_price = session.position_stop_exit_price(
+        Candle(2, 90, 94, 88, 92, 1)
+    )
+
+    assert exit_price == pytest.approx(90)
+
+
+def test_session_updates_long_trailing_stop() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(
+                trailing_stop_percent=0.05,
+            ),
+        )
+    )
+
+    changed = session.update_trailing_stop(
+        close_price=110,
+    )
+
+    assert changed is True
+    assert (
+        session.snapshot.position.active_stop_loss
+        == pytest.approx(104.5)
+    )
+    assert (
+        session.snapshot.position.stop_reason
+        == ExitReason.TRAILING_STOP
+    )
+
+
+def test_session_does_not_move_trailing_stop_back() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(
+                stop_loss=105,
+                trailing_stop_percent=0.05,
+            ),
+        )
+    )
+
+    changed = session.update_trailing_stop(
+        close_price=100,
+    )
+
+    assert changed is False
+    assert (
+        session.snapshot.position.active_stop_loss
+        == pytest.approx(105)
+    )
+
+
+def test_session_without_position_has_no_stop() -> None:
+    session = PaperTradingSession()
+
+    assert not session.position_stop_was_hit(
+        make_candle(1)
+    )
