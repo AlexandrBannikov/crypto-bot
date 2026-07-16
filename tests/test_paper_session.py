@@ -1,6 +1,7 @@
 import pytest
 
 from app.engine import Candle
+from app.risk import RiskConfig
 from app.paper_session import (
     PaperPosition,
     PaperSessionSnapshot,
@@ -638,3 +639,89 @@ def test_process_closed_candle_without_position() -> None:
         session.snapshot.last_candle_timestamp
         == 100
     )
+
+
+def test_opens_long_position_without_stop() -> None:
+    session = PaperTradingSession(
+        commission_rate=0.001,
+    )
+
+    position = session.open_position(
+        side=PositionSide.LONG,
+        candle=Candle(
+            timestamp=2,
+            open=100,
+            high=105,
+            low=99,
+            close=104,
+            volume=1,
+        ),
+    )
+
+    assert position.side == PositionSide.LONG
+    assert position.entry_timestamp == 2
+    assert position.entry_price == pytest.approx(100)
+    assert position.quantity == pytest.approx(9.99)
+    assert position.entry_fee == pytest.approx(1)
+    assert position.entry_cost == pytest.approx(1000)
+    assert position.active_stop_loss is None
+    assert session.snapshot.balance == pytest.approx(0)
+    assert session.snapshot.position == position
+
+
+def test_opens_position_using_risk_manager() -> None:
+    session = PaperTradingSession(
+        commission_rate=0.001,
+        risk_config=RiskConfig(
+            risk_per_trade=0.01,
+            max_position_fraction=1,
+            leverage=2,
+        ),
+    )
+
+    position = session.open_position(
+        side=PositionSide.LONG,
+        candle=Candle(
+            timestamp=2,
+            open=100,
+            high=105,
+            low=99,
+            close=104,
+            volume=1,
+        ),
+        stop_loss=95,
+        risk_reference_price=100,
+        trailing_stop_percent=0.05,
+    )
+
+    assert position.quantity == pytest.approx(2)
+    assert position.entry_fee == pytest.approx(0.2)
+    assert position.entry_cost == pytest.approx(100.2)
+    assert position.initial_stop_loss == pytest.approx(95)
+    assert position.active_stop_loss == pytest.approx(95)
+    assert position.stop_reason == ExitReason.STOP_LOSS
+    assert (
+        position.trailing_stop_percent
+        == pytest.approx(0.05)
+    )
+    assert session.snapshot.balance == pytest.approx(
+        899.8
+    )
+
+
+def test_rejects_opening_second_position() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="already has an open position",
+    ):
+        session.open_position(
+            side=PositionSide.SHORT,
+            candle=make_candle(2),
+        )

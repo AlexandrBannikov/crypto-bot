@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from app.engine import Candle, Trade
+from app.risk import RiskConfig, RiskManager
 from app.stop_manager import (
     stop_exit_price,
     stop_was_hit,
@@ -211,6 +212,7 @@ class PaperTradingSession:
         snapshot: PaperSessionSnapshot | None = None,
         *,
         commission_rate: float = 0.001,
+        risk_config: RiskConfig | None = None,
     ) -> None:
         if not 0 <= commission_rate < 1:
             raise ValueError(
@@ -219,6 +221,7 @@ class PaperTradingSession:
             )
 
         self.commission_rate = commission_rate
+        self.risk_manager = RiskManager(risk_config)
         self._snapshot = (
             snapshot
             or PaperSessionSnapshot()
@@ -278,6 +281,132 @@ class PaperTradingSession:
         )
 
         return None
+    def open_position(
+        self,
+        *,
+        side: PositionSide,
+        candle: Candle,
+        stop_loss: float | None = None,
+        risk_reference_price: float | None = None,
+        trailing_stop_percent: float | None = None,
+    ) -> PaperPosition:
+        self._validate_candle(candle)
+
+        if self._snapshot.position is not None:
+            raise ValueError(
+                "session already has an open position"
+            )
+
+        if side not in {
+            PositionSide.LONG,
+            PositionSide.SHORT,
+        }:
+            raise ValueError(
+                "unsupported position side"
+            )
+
+        balance = self._snapshot.balance
+
+        if balance <= 0:
+            raise ValueError(
+                "session balance must be greater than zero"
+            )
+
+        entry_price = candle.open
+
+        if stop_loss is None:
+            if risk_reference_price is not None:
+                raise ValueError(
+                    "risk_reference_price requires stop_loss"
+                )
+
+            if trailing_stop_percent is not None:
+                raise ValueError(
+                    "stop_loss is required for trailing stop"
+                )
+
+            entry_fee = (
+                balance * self.commission_rate
+            )
+            position_value = balance - entry_fee
+            capital_used = position_value
+        else:
+            if risk_reference_price is None:
+                raise ValueError(
+                    "risk_reference_price is required "
+                    "when stop_loss is set"
+                )
+
+            position_size = (
+                self.risk_manager.calculate_position_size(
+                    balance=balance,
+                    entry_price=risk_reference_price,
+                    stop_loss=stop_loss,
+                    side=side,
+                )
+            )
+
+            leverage = (
+                self.risk_manager.config.leverage
+            )
+
+            maximum_affordable_position_value = (
+                balance
+                / (
+                    (1 / leverage)
+                    + self.commission_rate
+                )
+            )
+
+            position_value = min(
+                position_size.position_value,
+                maximum_affordable_position_value,
+            )
+
+            capital_used = (
+                position_value / leverage
+            )
+            entry_fee = (
+                position_value
+                * self.commission_rate
+            )
+
+        quantity = position_value / entry_price
+        entry_cost = capital_used + entry_fee
+
+        position = PaperPosition(
+            side=side,
+            entry_timestamp=candle.timestamp,
+            entry_price=entry_price,
+            quantity=quantity,
+            entry_fee=entry_fee,
+            entry_cost=entry_cost,
+            initial_stop_loss=stop_loss,
+            active_stop_loss=stop_loss,
+            stop_reason=(
+                ExitReason.STOP_LOSS
+                if stop_loss is not None
+                else None
+            ),
+            trailing_stop_percent=(
+                trailing_stop_percent
+            ),
+        )
+
+        self._snapshot = PaperSessionSnapshot(
+            balance=balance - entry_cost,
+            last_candle_timestamp=(
+                self._snapshot.last_candle_timestamp
+            ),
+            pending_action=TradeAction.HOLD,
+            pending_stop_loss=None,
+            pending_reference_price=None,
+            pending_trailing_stop_percent=None,
+            position=position,
+        )
+
+        return position
+
     def close_position(
         self,
         *,
