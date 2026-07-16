@@ -725,3 +725,151 @@ def test_rejects_opening_second_position() -> None:
             side=PositionSide.SHORT,
             candle=make_candle(2),
         )
+
+
+def test_queues_open_long_action() -> None:
+    session = PaperTradingSession()
+
+    session.queue_action(
+        action=TradeAction.OPEN_LONG,
+        reference_price=100,
+        stop_loss=95,
+        trailing_stop_percent=0.05,
+    )
+
+    assert (
+        session.snapshot.pending_action
+        == TradeAction.OPEN_LONG
+    )
+    assert (
+        session.snapshot.pending_reference_price
+        == pytest.approx(100)
+    )
+    assert (
+        session.snapshot.pending_stop_loss
+        == pytest.approx(95)
+    )
+    assert (
+        session.snapshot.pending_trailing_stop_percent
+        == pytest.approx(0.05)
+    )
+
+
+def test_ignores_close_action_without_position() -> None:
+    session = PaperTradingSession()
+
+    session.queue_action(
+        action=TradeAction.CLOSE_LONG,
+        reference_price=100,
+    )
+
+    assert (
+        session.snapshot.pending_action
+        == TradeAction.HOLD
+    )
+
+
+def test_queues_close_for_matching_position() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        )
+    )
+
+    session.queue_action(
+        action=TradeAction.CLOSE_LONG,
+        reference_price=100,
+    )
+
+    assert (
+        session.snapshot.pending_action
+        == TradeAction.CLOSE_LONG
+    )
+
+
+def test_executes_pending_open_on_candle_open() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            pending_action=TradeAction.OPEN_LONG,
+            pending_stop_loss=95,
+            pending_reference_price=100,
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.execute_pending_action(
+        Candle(2, 102, 105, 101, 104, 1)
+    )
+
+    assert trade is None
+    assert session.snapshot.position is not None
+    assert (
+        session.snapshot.position.entry_price
+        == pytest.approx(102)
+    )
+    assert (
+        session.snapshot.position.entry_timestamp
+        == 2
+    )
+    assert (
+        session.snapshot.pending_action
+        == TradeAction.HOLD
+    )
+
+
+def test_executes_pending_close_on_candle_open() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            pending_action=TradeAction.CLOSE_LONG,
+            position=make_long_position(),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.execute_pending_action(
+        Candle(2, 110, 112, 108, 111, 1)
+    )
+
+    assert trade is not None
+    assert trade.exit_price == pytest.approx(110)
+    assert trade.exit_reason == ExitReason.SIGNAL
+    assert session.snapshot.position is None
+    assert session.snapshot.balance == pytest.approx(
+        1020
+    )
+
+
+def test_pending_close_does_not_close_wrong_side() -> None:
+    position = PaperPosition(
+        side=PositionSide.SHORT,
+        entry_timestamp=1,
+        entry_price=100,
+        quantity=2,
+        entry_fee=0,
+        entry_cost=200,
+        initial_stop_loss=105,
+        active_stop_loss=105,
+        stop_reason=ExitReason.STOP_LOSS,
+    )
+
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            pending_action=TradeAction.CLOSE_LONG,
+            position=position,
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.execute_pending_action(
+        Candle(2, 90, 92, 88, 89, 1)
+    )
+
+    assert trade is None
+    assert session.snapshot.position == position
+    assert (
+        session.snapshot.pending_action
+        == TradeAction.HOLD
+    )

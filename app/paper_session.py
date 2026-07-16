@@ -281,6 +281,186 @@ class PaperTradingSession:
         )
 
         return None
+
+    def queue_action(
+        self,
+        *,
+        action: TradeAction,
+        reference_price: float,
+        stop_loss: float | None = None,
+        trailing_stop_percent: float | None = None,
+    ) -> None:
+        if reference_price <= 0:
+            raise ValueError(
+                "reference_price must be greater than zero"
+            )
+
+        position = self._snapshot.position
+
+        if position is None:
+            resolved_action = (
+                action
+                if action in {
+                    TradeAction.OPEN_LONG,
+                    TradeAction.OPEN_SHORT,
+                }
+                else TradeAction.HOLD
+            )
+        elif (
+            position.side == PositionSide.LONG
+            and action == TradeAction.CLOSE_LONG
+        ):
+            resolved_action = action
+        elif (
+            position.side == PositionSide.SHORT
+            and action == TradeAction.CLOSE_SHORT
+        ):
+            resolved_action = action
+        else:
+            resolved_action = TradeAction.HOLD
+
+        if resolved_action in {
+            TradeAction.OPEN_LONG,
+            TradeAction.OPEN_SHORT,
+        }:
+            requested_side = (
+                PositionSide.LONG
+                if resolved_action == TradeAction.OPEN_LONG
+                else PositionSide.SHORT
+            )
+
+            if stop_loss is not None:
+                if (
+                    requested_side == PositionSide.LONG
+                    and stop_loss >= reference_price
+                ):
+                    raise ValueError(
+                        "long stop_loss must be lower "
+                        "than reference_price"
+                    )
+
+                if (
+                    requested_side == PositionSide.SHORT
+                    and stop_loss <= reference_price
+                ):
+                    raise ValueError(
+                        "short stop_loss must be higher "
+                        "than reference_price"
+                    )
+
+            pending_reference_price = reference_price
+            pending_stop_loss = stop_loss
+            pending_trailing_stop_percent = (
+                trailing_stop_percent
+            )
+        else:
+            pending_reference_price = None
+            pending_stop_loss = None
+            pending_trailing_stop_percent = None
+
+        self._snapshot = PaperSessionSnapshot(
+            balance=self._snapshot.balance,
+            last_candle_timestamp=(
+                self._snapshot.last_candle_timestamp
+            ),
+            pending_action=resolved_action,
+            pending_stop_loss=pending_stop_loss,
+            pending_reference_price=(
+                pending_reference_price
+            ),
+            pending_trailing_stop_percent=(
+                pending_trailing_stop_percent
+            ),
+            position=self._snapshot.position,
+        )
+
+    def execute_pending_action(
+        self,
+        candle: Candle,
+    ) -> Trade | None:
+        self._validate_candle(candle)
+
+        action = self._snapshot.pending_action
+        position = self._snapshot.position
+
+        if (
+            action == TradeAction.OPEN_LONG
+            and position is None
+        ):
+            self.open_position(
+                side=PositionSide.LONG,
+                candle=candle,
+                stop_loss=(
+                    self._snapshot.pending_stop_loss
+                ),
+                risk_reference_price=(
+                    self._snapshot
+                    .pending_reference_price
+                ),
+                trailing_stop_percent=(
+                    self._snapshot
+                    .pending_trailing_stop_percent
+                ),
+            )
+            return None
+
+        if (
+            action == TradeAction.OPEN_SHORT
+            and position is None
+        ):
+            self.open_position(
+                side=PositionSide.SHORT,
+                candle=candle,
+                stop_loss=(
+                    self._snapshot.pending_stop_loss
+                ),
+                risk_reference_price=(
+                    self._snapshot
+                    .pending_reference_price
+                ),
+                trailing_stop_percent=(
+                    self._snapshot
+                    .pending_trailing_stop_percent
+                ),
+            )
+            return None
+
+        if (
+            action == TradeAction.CLOSE_LONG
+            and position is not None
+            and position.side == PositionSide.LONG
+        ):
+            return self.close_position(
+                exit_timestamp=candle.timestamp,
+                exit_price=candle.open,
+                exit_reason=ExitReason.SIGNAL,
+            )
+
+        if (
+            action == TradeAction.CLOSE_SHORT
+            and position is not None
+            and position.side == PositionSide.SHORT
+        ):
+            return self.close_position(
+                exit_timestamp=candle.timestamp,
+                exit_price=candle.open,
+                exit_reason=ExitReason.SIGNAL,
+            )
+
+        self._snapshot = PaperSessionSnapshot(
+            balance=self._snapshot.balance,
+            last_candle_timestamp=(
+                self._snapshot.last_candle_timestamp
+            ),
+            pending_action=TradeAction.HOLD,
+            pending_stop_loss=None,
+            pending_reference_price=None,
+            pending_trailing_stop_percent=None,
+            position=self._snapshot.position,
+        )
+
+        return None
+
     def open_position(
         self,
         *,
