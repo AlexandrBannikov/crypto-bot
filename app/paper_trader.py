@@ -1,11 +1,27 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol, Sequence
 import csv
 
-from app.engine import Trade
+from app.engine import (
+    BacktestEngine,
+    BacktestResult,
+    Candle,
+    Strategy,
+    Trade,
+)
+from app.market_data import MarketDataFeed
 
 
-@dataclass(slots=True)
+class TradeRecorder(Protocol):
+    def record_trade(
+        self,
+        trade: Trade,
+    ) -> None:
+        ...
+
+
+@dataclass(frozen=True, slots=True)
 class PaperTraderConfig:
     log_file: Path = Path("logs/paper_trades.csv")
 
@@ -31,8 +47,9 @@ class PaperTrader:
         with self.config.log_file.open(
             "a",
             newline="",
-        ) as f:
-            writer = csv.writer(f)
+            encoding="utf-8",
+        ) as file:
+            writer = csv.writer(file)
 
             if not file_exists:
                 writer.writerow(
@@ -42,6 +59,9 @@ class PaperTrader:
                         "side",
                         "entry_price",
                         "exit_price",
+                        "quantity",
+                        "entry_fee",
+                        "exit_fee",
                         "profit",
                         "profit_percent",
                         "exit_reason",
@@ -55,8 +75,43 @@ class PaperTrader:
                     trade.side.value,
                     trade.entry_price,
                     trade.exit_price,
+                    trade.quantity,
+                    trade.entry_fee,
+                    trade.exit_fee,
                     trade.profit,
                     trade.profit_percent,
                     trade.exit_reason.value,
                 ]
             )
+
+    def record_trades(
+        self,
+        trades: Sequence[Trade],
+    ) -> None:
+        for trade in trades:
+            self.record_trade(trade)
+
+    def run_session(
+        self,
+        *,
+        feed: MarketDataFeed,
+        strategy: Strategy,
+        engine: BacktestEngine | None = None,
+    ) -> BacktestResult:
+        candles = tuple(feed.get_candles())
+
+        if not candles:
+            raise ValueError(
+                "market data feed returned no candles"
+            )
+
+        trading_engine = engine or BacktestEngine()
+
+        result = trading_engine.run(
+            candles,
+            strategy,
+        )
+
+        self.record_trades(result.trades)
+
+        return result
