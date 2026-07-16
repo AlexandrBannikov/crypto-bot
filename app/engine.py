@@ -4,6 +4,11 @@ from typing import Protocol, Sequence
 from app.candle import Candle
 from app.risk import RiskConfig, RiskManager
 from app.signal_normalizer import normalize_signal
+from app.stop_manager import (
+    stop_exit_price,
+    stop_was_hit,
+    trail_stop,
+)
 from app.strategies import Signal
 from app.trade_signal import TradeSignal
 from app.trading_types import (
@@ -182,10 +187,10 @@ class BacktestEngine:
                 pending_reference_price = None
                 pending_trailing_stop_percent = None
 
-            stop_was_hit = (
+            stop_triggered = (
                 position_side is not None
                 and active_stop_loss is not None
-                and self._stop_was_hit(
+                and stop_was_hit(
                     side=position_side,
                     candle=candle,
                     stop_loss=active_stop_loss,
@@ -203,16 +208,16 @@ class BacktestEngine:
                 )
             )
 
-            if stop_was_hit or close_requested:
+            if stop_triggered or close_requested:
                 assert position_side is not None
                 assert entry_timestamp is not None
                 assert entry_price is not None
 
-                if stop_was_hit:
+                if stop_triggered:
                     assert active_stop_loss is not None
                     assert active_stop_reason is not None
 
-                    exit_price = self._stop_exit_price(
+                    exit_price = stop_exit_price(
                         side=position_side,
                         candle=candle,
                         stop_loss=active_stop_loss,
@@ -295,7 +300,7 @@ class BacktestEngine:
                 and active_stop_loss is not None
                 and active_trailing_stop_percent is not None
             ):
-                trailed_stop = self._trail_stop(
+                trailed_stop = trail_stop(
                     side=position_side,
                     current_stop=active_stop_loss,
                     close_price=candle.close,
