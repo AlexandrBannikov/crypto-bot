@@ -1,5 +1,6 @@
 import pytest
 
+from app.risk import RiskConfig
 from app.engine import BacktestEngine, Candle, TradeSignal, Signal
 
 
@@ -515,3 +516,69 @@ def test_rejects_long_stop_above_entry_price() -> None:
             candles,
             InvalidLongStopStrategy(),
         )
+
+
+class RiskSizedLongStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeSignal(
+                action=TradeAction.OPEN_LONG,
+                stop_loss=98.0,
+            )
+
+        return TradeAction.HOLD
+
+
+class RiskSizedShortStrategy:
+    def generate_signal(self, candles, index):
+        if index == 0:
+            return TradeSignal(
+                action=TradeAction.OPEN_SHORT,
+                stop_loss=102.0,
+            )
+
+        return TradeAction.HOLD
+
+
+def test_engine_sizes_long_position_by_risk() -> None:
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+        risk_config=RiskConfig(
+            risk_per_trade=0.01,
+        ),
+    )
+
+    result = engine.run(
+        make_candles(100, 100, 110),
+        RiskSizedLongStrategy(),
+    )
+
+    trade = result.trades[0]
+
+    # Риск 10 USDT, расстояние до стопа 2%.
+    # Размер позиции: 10 / 0.02 = 500 USDT.
+    assert trade.quantity == pytest.approx(5)
+    assert trade.profit == pytest.approx(50)
+    assert result.final_balance == pytest.approx(1_050)
+
+
+def test_engine_sizes_short_position_by_risk() -> None:
+    engine = BacktestEngine(
+        initial_balance=1_000,
+        commission_rate=0,
+        risk_config=RiskConfig(
+            risk_per_trade=0.01,
+        ),
+    )
+
+    result = engine.run(
+        make_candles(100, 100, 90),
+        RiskSizedShortStrategy(),
+    )
+
+    trade = result.trades[0]
+
+    assert trade.quantity == pytest.approx(5)
+    assert trade.profit == pytest.approx(50)
+    assert result.final_balance == pytest.approx(1_050)

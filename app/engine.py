@@ -116,6 +116,7 @@ class BacktestEngine:
 
         pending_action = TradeAction.HOLD
         pending_stop_loss: float | None = None
+        pending_reference_price: float | None = None
         active_stop_loss: float | None = None
 
         trades: list[Trade] = []
@@ -137,15 +138,18 @@ class BacktestEngine:
                     entry_price,
                     entry_fee,
                     entry_cost,
+                    balance,
                 ) = self._open_position(
                     side=PositionSide.LONG,
                     balance=balance,
                     candle=candle,
+                    stop_loss=pending_stop_loss,
+                    risk_reference_price=pending_reference_price,
                 )
 
                 active_stop_loss = pending_stop_loss
                 pending_stop_loss = None
-                balance = 0.0
+                pending_reference_price = None
 
             elif (
                 pending_action == TradeAction.OPEN_SHORT
@@ -158,15 +162,18 @@ class BacktestEngine:
                     entry_price,
                     entry_fee,
                     entry_cost,
+                    balance,
                 ) = self._open_position(
                     side=PositionSide.SHORT,
                     balance=balance,
                     candle=candle,
+                    stop_loss=pending_stop_loss,
+                    risk_reference_price=pending_reference_price,
                 )
 
                 active_stop_loss = pending_stop_loss
                 pending_stop_loss = None
-                balance = 0.0
+                pending_reference_price = None
 
             stop_was_hit = (
                 position_side is not None
@@ -205,7 +212,7 @@ class BacktestEngine:
                 else:
                     exit_price = candle.open
 
-                balance, trade = self._close_position(
+                released_capital, trade = self._close_position(
                     side=position_side,
                     quantity=quantity,
                     exit_timestamp=candle.timestamp,
@@ -216,6 +223,7 @@ class BacktestEngine:
                     entry_cost=entry_cost,
                 )
 
+                balance += released_capital
                 trades.append(trade)
 
                 (
@@ -260,8 +268,10 @@ class BacktestEngine:
                 )
 
                 pending_stop_loss = signal.stop_loss
+                pending_reference_price = candle.close
             else:
                 pending_stop_loss = None
+                pending_reference_price = None
 
             equity = self._calculate_equity(
                 balance=balance,
@@ -281,7 +291,7 @@ class BacktestEngine:
             assert entry_timestamp is not None
             assert entry_price is not None
 
-            balance, trade = self._close_position(
+            released_capital, trade = self._close_position(
                 side=position_side,
                 quantity=quantity,
                 exit_timestamp=last_candle.timestamp,
@@ -292,6 +302,7 @@ class BacktestEngine:
                 entry_cost=entry_cost,
             )
 
+            balance += released_capital
             trades.append(trade)
             equity_curve.append(balance)
 
@@ -307,6 +318,8 @@ class BacktestEngine:
         side: PositionSide,
         balance: float,
         candle: Candle,
+        stop_loss: float | None,
+        risk_reference_price: float | None,
     ) -> tuple[
         PositionSide,
         float,
@@ -314,11 +327,57 @@ class BacktestEngine:
         float,
         float,
         float,
+        float,
     ]:
         entry_price = candle.open
-        entry_fee = balance * self.commission_rate
-        available_capital = balance - entry_fee
-        quantity = available_capital / entry_price
+
+        if stop_loss is None:
+            # Сохраняем прежнее поведение для стратегий без стопа:
+            # весь баланс участвует в позиции.
+            entry_fee = balance * self.commission_rate
+            position_value = balance - entry_fee
+            capital_used = position_value
+        else:
+            if risk_reference_price is None:
+                raise ValueError(
+                    "risk_reference_price is required "
+                    "when stop_loss is set"
+                )
+
+            position_size = (
+                self.risk_manager.calculate_position_size(
+                    balance=balance,
+                    entry_price=risk_reference_price,
+                    stop_loss=stop_loss,
+                    side=side,
+                )
+            )
+
+            leverage = self.risk_manager.config.leverage
+
+            # Комиссия также должна помещаться в свободный баланс.
+            maximum_affordable_position_value = (
+                balance
+                / (
+                    (1 / leverage)
+                    + self.commission_rate
+                )
+            )
+
+            position_value = min(
+                position_size.position_value,
+                maximum_affordable_position_value,
+            )
+
+            capital_used = position_value / leverage
+            entry_fee = (
+                position_value
+                * self.commission_rate
+            )
+
+        quantity = position_value / entry_price
+        entry_cost = capital_used + entry_fee
+        remaining_balance = balance - entry_cost
 
         return (
             side,
@@ -326,7 +385,8 @@ class BacktestEngine:
             candle.timestamp,
             entry_price,
             entry_fee,
-            balance,
+            entry_cost,
+            remaining_balance,
         )
 
     def _close_position(
@@ -347,30 +407,26 @@ class BacktestEngine:
             * self.commission_rate
         )
 
+        entry_margin = entry_cost - entry_fee
+
         if side == PositionSide.LONG:
-            final_value = (
-                exit_notional
-                - exit_fee
+            gross_profit = (
+                quantity
+                * (exit_price - entry_price)
             )
-
         else:
-            net_entry_capital = (
-                entry_cost
-                - entry_fee
-            )
-
             gross_profit = (
                 quantity
                 * (entry_price - exit_price)
             )
 
-            final_value = (
-                net_entry_capital
-                + gross_profit
-                - exit_fee
-            )
+        released_capital = (
+            entry_margin
+            + gross_profit
+            - exit_fee
+        )
 
-        profit = final_value - entry_cost
+        profit = released_capital - entry_cost
 
         profit_percent = (
             profit / entry_cost * 100
@@ -391,7 +447,7 @@ class BacktestEngine:
             side=side,
         )
 
-        return final_value, trade
+        return released_capital, trade
 
     @staticmethod
     def _empty_position() -> tuple[
@@ -563,20 +619,22 @@ class BacktestEngine:
 
         assert entry_price is not None
 
+        entry_margin = entry_cost - entry_fee
+
         if position_side == PositionSide.LONG:
-            return quantity * current_price
-
-        net_entry_capital = (
-            entry_cost - entry_fee
-        )
-
-        unrealized_profit = (
-            quantity
-            * (entry_price - current_price)
-        )
+            unrealized_profit = (
+                quantity
+                * (current_price - entry_price)
+            )
+        else:
+            unrealized_profit = (
+                quantity
+                * (entry_price - current_price)
+            )
 
         return (
-            net_entry_capital
+            balance
+            + entry_margin
             + unrealized_profit
         )
 
