@@ -873,3 +873,64 @@ def test_pending_close_does_not_close_wrong_side() -> None:
         session.snapshot.pending_action
         == TradeAction.HOLD
     )
+
+
+def test_process_closed_candle_ignores_duplicate() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            last_candle_timestamp=10,
+        )
+    )
+
+    result = session.process_closed_candle(
+        Candle(10, 100, 105, 95, 102, 1)
+    )
+
+    assert result is None
+    assert session.snapshot.last_candle_timestamp == 10
+
+
+def test_process_closed_candle_closes_at_stop() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.process_closed_candle(
+        Candle(2, 100, 104, 94, 102, 1)
+    )
+
+    assert trade is not None
+    assert trade.exit_reason == ExitReason.STOP_LOSS
+    assert trade.exit_price == pytest.approx(95)
+    assert session.snapshot.position is None
+    assert session.snapshot.last_candle_timestamp == 2
+
+
+def test_process_closed_candle_updates_trailing_stop() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            position=make_long_position(
+                trailing_stop_percent=0.05,
+            ),
+        ),
+        commission_rate=0,
+    )
+
+    trade = session.process_closed_candle(
+        Candle(2, 100, 111, 99, 110, 1)
+    )
+
+    assert trade is None
+    assert (
+        session.snapshot.position.active_stop_loss
+        == pytest.approx(104.5)
+    )
+    assert (
+        session.snapshot.position.stop_reason
+        == ExitReason.TRAILING_STOP
+    )
