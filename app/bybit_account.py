@@ -31,3 +31,29 @@ class BybitAccountConfig:
 
         object.__setattr__(self, "api_key", api_key)
         object.__setattr__(self, "api_secret", api_secret)
+
+
+from decimal import Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class WalletBalance:
+    coin: str
+    wallet_balance: Decimal
+    available_balance: Decimal
+
+    def __post_init__(self) -> None:
+        coin = self.coin.strip().upper()
+
+        if not coin:
+            raise ValueError("coin must not be empty")
+
+        if self.wallet_balance < 0 or self.available_balance < 0:
+            raise ValueError("balance must not be negative")
+
+        if self.available_balance > self.wallet_balance:
+            raise ValueError(
+                "available_balance must not exceed wallet_balance"
+            )
+
+        object.__setattr__(self, "coin", coin)
