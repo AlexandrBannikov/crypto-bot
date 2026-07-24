@@ -1,10 +1,6 @@
 from collections.abc import Sequence
 
 from app.engine import Candle, Strategy, Trade
-from app.order_executor import (
-    OrderExecutor,
-    PaperOrderExecutor,
-)
 from app.paper_session import PaperTradingSession
 from app.signal_normalizer import normalize_signal
 
@@ -15,14 +11,9 @@ class PaperTradingEngine:
         *,
         session: PaperTradingSession,
         strategy: Strategy,
-        executor: OrderExecutor | None = None,
     ) -> None:
         self.session = session
         self.strategy = strategy
-        self.executor = (
-            executor
-            or PaperOrderExecutor(session)
-        )
 
     def run_iteration(
         self,
@@ -50,7 +41,7 @@ class PaperTradingEngine:
             index = candles.index(candle)
 
             pending_trade = (
-                self.executor.execute_pending_action(
+                self.session.execute_pending_action(
                     candle
                 )
             )
@@ -59,7 +50,7 @@ class PaperTradingEngine:
                 trades.append(pending_trade)
 
             stop_trade = (
-                self.executor.process_closed_candle(
+                self.session.process_closed_candle(
                     candle
                 )
             )
@@ -78,9 +69,13 @@ class PaperTradingEngine:
                 raw_signal
             )
 
-            self.executor.queue_signal(
-                signal=signal,
+            self.session.queue_action(
+                action=signal.action,
                 reference_price=candle.close,
+                stop_loss=signal.stop_loss,
+                trailing_stop_percent=(
+                    signal.trailing_stop_percent
+                ),
             )
 
         return tuple(trades)

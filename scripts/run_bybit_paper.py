@@ -10,9 +10,15 @@ from app.ema_cross_stop_strategy import (
 )
 from app.engine import Strategy
 from app.market_data import MarketDataFeed
-from app.trading_engine import (
-    TradingEngine,
-    TradingEngineConfig,
+from app.paper_engine import PaperTradingEngine
+from app.paper_session import PaperTradingSession
+from app.paper_state import (
+    PaperSessionState,
+    PaperStateStore,
+)
+from app.paper_trader import (
+    PaperTrader,
+    PaperTraderConfig,
 )
 from app.risk import RiskConfig
 
@@ -49,30 +55,86 @@ def run_once(
     commission_rate: float = COMMISSION_RATE,
     risk_config: RiskConfig | None = None,
 ) -> PaperRunResult:
-    result = TradingEngine(
-        feed=feed,
+    candles = tuple(feed.get_candles())
+
+    if not candles:
+        raise ValueError(
+            "market data feed returned no candles"
+        )
+
+    state_store = PaperStateStore(state_file)
+    previous_state = state_store.load(
+        default_balance=initial_balance,
+    )
+
+    snapshot = previous_state.session_snapshot
+
+    if snapshot is None:
+        raise ValueError(
+            "paper state has no session snapshot"
+        )
+
+    previous_timestamp = (
+        snapshot.last_candle_timestamp
+    )
+
+    processed_candles = sum(
+        1
+        for candle in candles
+        if (
+            previous_timestamp is None
+            or candle.timestamp > previous_timestamp
+        )
+    )
+
+    session = PaperTradingSession(
+        snapshot=snapshot,
+        commission_rate=commission_rate,
+        risk_config=risk_config,
+    )
+
+    engine = PaperTradingEngine(
+        session=session,
         strategy=strategy,
-        config=TradingEngineConfig(
-            state_file=Path(state_file),
+    )
+
+    trades = engine.run_iteration(candles)
+
+    trader = PaperTrader(
+        PaperTraderConfig(
             log_file=Path(log_file),
-            initial_balance=initial_balance,
-            commission_rate=commission_rate,
-            risk_config=risk_config,
-        ),
-    ).run_once()
+        )
+    )
+
+    new_trades = trader.record_trades(trades)
+    total_recorded = trader.count_recorded_trades()
+
+    updated_snapshot = session.snapshot
+
+    state_store.save(
+        PaperSessionState(
+            last_candle_timestamp=(
+                updated_snapshot
+                .last_candle_timestamp
+            ),
+            virtual_balance=updated_snapshot.balance,
+            recorded_trades=total_recorded,
+            session_snapshot=updated_snapshot,
+        )
+    )
 
     return PaperRunResult(
-        received_candles=result.received_candles,
-        processed_candles=result.processed_candles,
-        new_trades=result.new_trades,
-        total_recorded_trades=(
-            result.total_recorded_trades
-        ),
+        received_candles=len(candles),
+        processed_candles=processed_candles,
+        new_trades=new_trades,
+        total_recorded_trades=total_recorded,
         last_candle_timestamp=(
-            result.last_candle_timestamp
+            updated_snapshot.last_candle_timestamp
         ),
-        virtual_balance=result.virtual_balance,
-        has_open_position=result.has_open_position,
+        virtual_balance=updated_snapshot.balance,
+        has_open_position=(
+            updated_snapshot.position is not None
+        ),
     )
 
 
