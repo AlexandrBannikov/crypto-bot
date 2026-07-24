@@ -47,6 +47,8 @@ class BybitMarketDataConfig:
     category: str = "spot"
     limit: int = 200
     timeout_seconds: float = 10.0
+    max_retries: int = 3
+    retry_delay_seconds: float = 1.0
     closed_candles_only: bool = True
     base_url: str = BYBIT_API_URL
 
@@ -82,6 +84,16 @@ class BybitMarketDataConfig:
                 "timeout_seconds must be greater than zero"
             )
 
+        if self.max_retries < 1:
+            raise ValueError(
+                "max_retries must be greater than zero"
+            )
+
+        if self.retry_delay_seconds < 0:
+            raise ValueError(
+                "retry_delay_seconds must not be negative"
+            )
+
         if not self.base_url.strip():
             raise ValueError(
                 "base_url must not be empty"
@@ -112,16 +124,32 @@ class BybitMarketDataFeed:
         )
 
     def get_candles(self) -> tuple[Candle, ...]:
-        payload = self._http_get_json(
-            self.config.base_url + KLINE_PATH,
-            {
-                "category": self.config.category,
-                "symbol": self.config.symbol,
-                "interval": self.config.interval,
-                "limit": self.config.limit,
-            },
-            self.config.timeout_seconds,
-        )
+        request_params = {
+            "category": self.config.category,
+            "symbol": self.config.symbol,
+            "interval": self.config.interval,
+            "limit": self.config.limit,
+        }
+
+        for attempt in range(
+            1,
+            self.config.max_retries + 1,
+        ):
+            try:
+                payload = self._http_get_json(
+                    self.config.base_url + KLINE_PATH,
+                    request_params,
+                    self.config.timeout_seconds,
+                )
+                break
+            except ConnectionError:
+                if attempt >= self.config.max_retries:
+                    raise
+
+                if self.config.retry_delay_seconds > 0:
+                    time.sleep(
+                        self.config.retry_delay_seconds
+                    )
 
         rows = self._extract_rows(payload)
         now_ms = self._clock_ms()

@@ -258,3 +258,53 @@ def test_rejects_invalid_configuration(
 
     with pytest.raises(ValueError):
         BybitMarketDataConfig(**kwargs)
+
+
+def test_retries_after_connection_error() -> None:
+    attempts = {"count": 0}
+
+    payload = make_payload(
+        [make_row(0)]
+    )
+
+    def fake_http_get(*_):
+        attempts["count"] += 1
+
+        if attempts["count"] == 1:
+            raise ConnectionError("temporary")
+
+        return payload
+
+    feed = BybitMarketDataFeed(
+        BybitMarketDataConfig(
+            retry_delay_seconds=0,
+        ),
+        http_get_json=fake_http_get,
+        clock_ms=lambda: 2 * HOUR_MS,
+    )
+
+    candles = feed.get_candles()
+
+    assert len(candles) == 1
+    assert attempts["count"] == 2
+
+
+def test_fails_after_all_retry_attempts() -> None:
+    attempts = {"count": 0}
+
+    def fake_http_get(*_):
+        attempts["count"] += 1
+        raise ConnectionError("network down")
+
+    feed = BybitMarketDataFeed(
+        BybitMarketDataConfig(
+            retry_delay_seconds=0,
+        ),
+        http_get_json=fake_http_get,
+        clock_ms=lambda: 2 * HOUR_MS,
+    )
+
+    with pytest.raises(ConnectionError):
+        feed.get_candles()
+
+    assert attempts["count"] == 3
