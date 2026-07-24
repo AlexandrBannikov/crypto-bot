@@ -133,3 +133,53 @@ def test_detector_detects_range() -> None:
     regime = detector.detect(candles)
 
     assert regime.trend is MarketTrend.RANGE
+
+
+def test_detector_uses_adx_to_detect_range() -> None:
+    detector = MarketRegimeDetector(
+        fast_ema_period=3,
+        slow_ema_period=5,
+        adx_period=3,
+        adx_threshold=20.0,
+    )
+
+    candles = [
+        Candle(
+            timestamp=index,
+            open=100.0,
+            high=100.1,
+            low=99.9,
+            close=100.0 + index * 0.001,
+            volume=10.0,
+        )
+        for index in range(20)
+    ]
+
+    regime = detector.detect(candles)
+
+    assert regime.trend is MarketTrend.RANGE
+
+
+def test_detector_uses_ema_direction_when_adx_is_strong() -> None:
+    detector = MarketRegimeDetector(
+        fast_ema_period=3,
+        slow_ema_period=5,
+        adx_period=3,
+        adx_threshold=20.0,
+    )
+
+    candles = [
+        Candle(
+            timestamp=index,
+            open=100.0 + index,
+            high=101.0 + index,
+            low=99.0 + index,
+            close=100.5 + index,
+            volume=10.0,
+        )
+        for index in range(20)
+    ]
+
+    regime = detector.detect(candles)
+
+    assert regime.trend is MarketTrend.TREND_UP
