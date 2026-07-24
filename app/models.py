@@ -31,3 +31,21 @@ class BacktestResult:
     win_rate_percent: float
     trades: list[Trade]
 
+
+
+@dataclass
+class PaperStatistics:
+    start_balance: float
+    current_balance: float
+    net_profit: float
+    return_percent: float
+    total_trades: int
+    winning_trades: int
+    losing_trades: int
+    win_rate_percent: float
+    gross_profit: float
+    gross_loss: float
+    profit_factor: float
+    average_win: float
+    average_loss: float
+    max_drawdown_percent: float
