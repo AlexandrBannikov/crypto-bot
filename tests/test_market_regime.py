@@ -183,3 +183,56 @@ def test_detector_uses_ema_direction_when_adx_is_strong() -> None:
     regime = detector.detect(candles)
 
     assert regime.trend is MarketTrend.TREND_UP
+
+
+def test_detector_detects_high_volatility_with_atr() -> None:
+    detector = MarketRegimeDetector(
+        fast_ema_period=3,
+        slow_ema_period=5,
+        adx_period=3,
+        atr_period=3,
+        high_volatility_threshold=0.02,
+    )
+
+    candles = [
+        Candle(
+            timestamp=index,
+            open=100.0,
+            high=110.0,
+            low=90.0,
+            close=100.0 + index * 0.1,
+            volume=10.0,
+        )
+        for index in range(20)
+    ]
+
+    regime = detector.detect(candles)
+
+    assert regime.volatility is MarketVolatility.HIGH
+
+
+def test_detector_detects_low_volatility_with_atr() -> None:
+    detector = MarketRegimeDetector(
+        fast_ema_period=3,
+        slow_ema_period=5,
+        adx_period=3,
+        atr_period=3,
+        low_volatility_threshold=0.005,
+        high_volatility_threshold=0.02,
+    )
+
+    candles = [
+        Candle(
+            timestamp=index,
+            open=100.0,
+            high=100.1,
+            low=99.9,
+            close=100.0,
+            volume=10.0,
+        )
+        for index in range(20)
+    ]
+
+    regime = detector.detect(candles)
+
+    assert regime.volatility is MarketVolatility.LOW

@@ -5,7 +5,7 @@ from enum import Enum
 import pandas as pd
 
 from app.candle import Candle
-from app.indicators import adx, ema
+from app.indicators import adx, atr, ema
 
 
 class MarketTrend(str, Enum):
@@ -39,6 +39,9 @@ class MarketRegimeDetector:
         slow_ema_period: int = 50,
         adx_period: int = 14,
         adx_threshold: float = 20.0,
+        atr_period: int = 14,
+        low_volatility_threshold: float = 0.005,
+        high_volatility_threshold: float = 0.02,
     ) -> None:
         if fast_ema_period <= 0:
             raise ValueError("fast_ema_period must be greater than zero")
@@ -57,10 +60,32 @@ class MarketRegimeDetector:
         if adx_threshold < 0:
             raise ValueError("adx_threshold must not be negative")
 
+        if atr_period <= 0:
+            raise ValueError("atr_period must be greater than zero")
+
+        if low_volatility_threshold < 0:
+            raise ValueError(
+                "low_volatility_threshold must not be negative"
+            )
+
+        if high_volatility_threshold <= 0:
+            raise ValueError(
+                "high_volatility_threshold must be greater than zero"
+            )
+
+        if low_volatility_threshold >= high_volatility_threshold:
+            raise ValueError(
+                "low_volatility_threshold must be less than "
+                "high_volatility_threshold"
+            )
+
         self.fast_ema_period = fast_ema_period
         self.slow_ema_period = slow_ema_period
         self.adx_period = adx_period
         self.adx_threshold = adx_threshold
+        self.atr_period = atr_period
+        self.low_volatility_threshold = low_volatility_threshold
+        self.high_volatility_threshold = high_volatility_threshold
 
     def detect(self, candles: Sequence[Candle]) -> MarketRegime:
         if len(candles) < 2:
@@ -82,9 +107,11 @@ class MarketRegimeDetector:
         else:
             trend = self._detect_simple_trend(candles)
 
+        volatility = self._detect_volatility(candles)
+
         return MarketRegime(
             trend=trend,
-            volatility=MarketVolatility.NORMAL,
+            volatility=volatility,
             confidence=1.0,
         )
 
@@ -106,6 +133,35 @@ class MarketRegimeDetector:
             return MarketTrend.RANGE
 
         return self._detect_ema_trend(candles)
+
+    def _detect_volatility(
+        self,
+        candles: Sequence[Candle],
+    ) -> MarketVolatility:
+        if len(candles) < self.atr_period:
+            return MarketVolatility.NORMAL
+
+        data = self._candles_to_dataframe(candles)
+
+        atr_value = atr(
+            data,
+            period=self.atr_period,
+        ).iloc[-1]
+
+        last_close = candles[-1].close
+
+        if pd.isna(atr_value) or last_close == 0:
+            return MarketVolatility.NORMAL
+
+        relative_atr = float(atr_value) / abs(float(last_close))
+
+        if relative_atr >= self.high_volatility_threshold:
+            return MarketVolatility.HIGH
+
+        if relative_atr <= self.low_volatility_threshold:
+            return MarketVolatility.LOW
+
+        return MarketVolatility.NORMAL
 
     def _detect_ema_trend(
         self,
