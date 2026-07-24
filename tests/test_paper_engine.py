@@ -1,11 +1,13 @@
 from app.engine import Candle
 from app.paper_engine import PaperTradingEngine
 from app.paper_session import (
+    PaperPosition,
     PaperSessionSnapshot,
     PaperTradingSession,
 )
 from app.strategies import Signal
 from app.trading_types import (
+    ExitReason,
     PositionSide,
     TradeAction,
 )
@@ -131,4 +133,100 @@ def test_ignores_duplicate_iteration() -> None:
     assert (
         session.snapshot.last_candle_timestamp
         == 3
+    )
+
+
+
+def make_long_position(
+    *,
+    active_stop_loss: float = 95,
+    trailing_stop_percent: float | None = None,
+) -> PaperPosition:
+    return PaperPosition(
+        side=PositionSide.LONG,
+        entry_timestamp=1,
+        entry_price=100,
+        quantity=2,
+        entry_fee=0,
+        entry_cost=200,
+        initial_stop_loss=95,
+        active_stop_loss=active_stop_loss,
+        stop_reason=ExitReason.STOP_LOSS,
+        trailing_stop_percent=trailing_stop_percent,
+    )
+
+
+def test_closes_position_when_stop_is_hit() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            last_candle_timestamp=1,
+            position=make_long_position(),
+        ),
+        commission_rate=0,
+    )
+
+    engine = PaperTradingEngine(
+        session=session,
+        strategy=HoldStrategy(),
+    )
+
+    trades = engine.run_iteration(
+        (
+            Candle(1, 100, 101, 99, 100, 1),
+            Candle(2, 100, 105, 94, 102, 1),
+        )
+    )
+
+    assert len(trades) == 1
+
+    trade = trades[0]
+
+    assert trade.exit_reason == ExitReason.STOP_LOSS
+    assert trade.exit_price == 95
+    assert session.snapshot.position is None
+    assert session.snapshot.balance == 990
+    assert (
+        session.snapshot.last_candle_timestamp
+        == 2
+    )
+
+
+def test_updates_trailing_stop_during_iteration() -> None:
+    session = PaperTradingSession(
+        PaperSessionSnapshot(
+            balance=800,
+            last_candle_timestamp=1,
+            position=make_long_position(
+                trailing_stop_percent=0.05,
+            ),
+        ),
+        commission_rate=0,
+    )
+
+    engine = PaperTradingEngine(
+        session=session,
+        strategy=HoldStrategy(),
+    )
+
+    trades = engine.run_iteration(
+        (
+            Candle(1, 100, 101, 99, 100, 1),
+            Candle(2, 100, 111, 99, 110, 1),
+        )
+    )
+
+    assert trades == ()
+
+    position = session.snapshot.position
+
+    assert position is not None
+    assert position.active_stop_loss == 104.5
+    assert (
+        position.stop_reason
+        == ExitReason.TRAILING_STOP
+    )
+    assert (
+        session.snapshot.last_candle_timestamp
+        == 2
     )
