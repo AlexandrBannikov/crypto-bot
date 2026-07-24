@@ -1,0 +1,759 @@
+From 5707ad70c66edc1d132ab6512f22855366bc1aee Mon Sep 17 00:00:00 2001
+From: alexandrbannikov <798241777212@yandex.ru>
+Date: Fri, 24 Jul 2026 22:29:37 +0500
+Subject: [PATCH] Align Bybit runner with spot trading
+
+---
+ app/spot_trading_engine.py             | 300 +++++++++++++++++++++++++
+ scripts/check_bybit_mainnet_account.py |  60 +++++
+ scripts/run_bybit_testnet_trading.py   |  42 ++--
+ tests/test_spot_trading_engine.py      | 258 +++++++++++++++++++++
+ 4 files changed, 641 insertions(+), 19 deletions(-)
+ create mode 100644 app/spot_trading_engine.py
+ create mode 100644 scripts/check_bybit_mainnet_account.py
+ create mode 100644 tests/test_spot_trading_engine.py
+
+diff --git a/app/spot_trading_engine.py b/app/spot_trading_engine.py
+new file mode 100644
+index 0000000..8029e10
+--- /dev/null
++++ b/app/spot_trading_engine.py
+@@ -0,0 +1,300 @@
++from dataclasses import dataclass
++from pathlib import Path
++
++from app.bybit_account import (
++    BybitAccountClient,
++    WalletBalance,
++)
++from app.engine import Strategy
++from app.market_data import MarketDataFeed
++from app.order_executor import (
++    DirectOrderExecutor,
++    OrderRequest,
++    OrderResult,
++)
++from app.order_planner import OrderPlanner
++from app.paper_session import PaperPosition
++from app.paper_state import (
++    PaperSessionState,
++    PaperStateStore,
++)
++from app.risk import RiskConfig
++from app.trading_types import PositionSide
++
++
++@dataclass(frozen=True, slots=True)
++class BybitSpotTradingConfig:
++    symbol: str
++    base_coin: str
++    quote_coin: str = "USDT"
++    state_file: Path = Path(
++        "state/bybit_spot_state.json"
++    )
++    account_type: str = "UNIFIED"
++    risk_config: RiskConfig | None = None
++    minimum_base_position: float = 0.0
++
++    def __post_init__(self) -> None:
++        normalized_symbol = self.symbol.strip().upper()
++        normalized_base_coin = (
++            self.base_coin.strip().upper()
++        )
++        normalized_quote_coin = (
++            self.quote_coin.strip().upper()
++        )
++
++        if not normalized_symbol:
++            raise ValueError("symbol must not be empty")
++
++        if not normalized_base_coin:
++            raise ValueError(
++                "base_coin must not be empty"
++            )
++
++        if not normalized_quote_coin:
++            raise ValueError(
++                "quote_coin must not be empty"
++            )
++
++        if not self.account_type.strip():
++            raise ValueError(
++                "account_type must not be empty"
++            )
++
++        if self.minimum_base_position < 0:
++            raise ValueError(
++                "minimum_base_position must not be negative"
++            )
++
++        object.__setattr__(
++            self,
++            "symbol",
++            normalized_symbol,
++        )
++        object.__setattr__(
++            self,
++            "base_coin",
++            normalized_base_coin,
++        )
++        object.__setattr__(
++            self,
++            "quote_coin",
++            normalized_quote_coin,
++        )
++
++
++@dataclass(frozen=True, slots=True)
++class BybitSpotTradingResult:
++    received_candles: int
++    processed_candles: int
++    planned_order: OrderRequest | None
++    order_result: OrderResult | None
++    signal_timestamp: int | None
++    last_candle_timestamp: int | None
++    quote_available_balance: float
++    base_wallet_balance: float
++    has_base_position: bool
++
++
++class BybitSpotTradingEngine:
++    def __init__(
++        self,
++        *,
++        feed: MarketDataFeed,
++        strategy: Strategy,
++        account_client: BybitAccountClient,
++        order_executor: DirectOrderExecutor,
++        config: BybitSpotTradingConfig,
++    ) -> None:
++        self.feed = feed
++        self.strategy = strategy
++        self.account_client = account_client
++        self.order_executor = order_executor
++        self.config = config
++
++    def run_once(self) -> BybitSpotTradingResult:
++        candles = tuple(self.feed.get_candles())
++
++        if not candles:
++            raise ValueError(
++                "market data feed returned no candles"
++            )
++
++        state_store = PaperStateStore(
++            self.config.state_file
++        )
++        state = state_store.load()
++
++        previous_timestamp = (
++            state.last_candle_timestamp
++        )
++
++        new_candles = tuple(
++            candle
++            for candle in candles
++            if (
++                previous_timestamp is None
++                or candle.timestamp > previous_timestamp
++            )
++        )
++
++        quote_balance = (
++            self.account_client.get_wallet_balance(
++                account_type=self.config.account_type,
++                coin=self.config.quote_coin,
++            )
++        )
++        base_balance = (
++            self.account_client.get_wallet_balance(
++                account_type=self.config.account_type,
++                coin=self.config.base_coin,
++            )
++        )
++
++        quote_available_balance = (
++            _available_balance(quote_balance)
++        )
++        base_wallet_balance = (
++            _wallet_coin_balance(
++                base_balance,
++                self.config.base_coin,
++            )
++        )
++
++        latest_close = candles[-1].close
++        current_position = (
++            None
++            if (
++                base_wallet_balance
++                <= self.config.minimum_base_position
++            )
++            else _spot_position_from_balance(
++                quantity=base_wallet_balance,
++                reference_price=latest_close,
++            )
++        )
++
++        if not new_candles:
++            return BybitSpotTradingResult(
++                received_candles=len(candles),
++                processed_candles=0,
++                planned_order=None,
++                order_result=None,
++                signal_timestamp=None,
++                last_candle_timestamp=previous_timestamp,
++                quote_available_balance=(
++                    quote_available_balance
++                ),
++                base_wallet_balance=base_wallet_balance,
++                has_base_position=(
++                    current_position is not None
++                ),
++            )
++
++        candle = new_candles[-1]
++        index = candles.index(candle)
++        signal = self.strategy.generate_signal(
++            candles,
++            index,
++        )
++
++        planned_order = OrderPlanner(
++            symbol=self.config.symbol,
++            risk_config=self.config.risk_config,
++        ).plan(
++            signal=signal,
++            balance=quote_available_balance,
++            reference_price=candle.close,
++            current_position=current_position,
++        )
++
++        if (
++            planned_order is not None
++            and planned_order.stop_loss is not None
++        ):
++            raise ValueError(
++                "spot orders do not support attached stop_loss"
++            )
++
++        order_result = (
++            None
++            if planned_order is None
++            else self.order_executor.submit_order(
++                planned_order
++            )
++        )
++
++        state_store.save(
++            PaperSessionState(
++                last_candle_timestamp=(
++                    candle.timestamp
++                ),
++                virtual_balance=(
++                    quote_available_balance
++                ),
++            )
++        )
++
++        return BybitSpotTradingResult(
++            received_candles=len(candles),
++            processed_candles=len(new_candles),
++            planned_order=planned_order,
++            order_result=order_result,
++            signal_timestamp=candle.timestamp,
++            last_candle_timestamp=candle.timestamp,
++            quote_available_balance=(
++                quote_available_balance
++            ),
++            base_wallet_balance=base_wallet_balance,
++            has_base_position=(
++                current_position is not None
++            ),
++        )
++
++
++def _available_balance(
++    balance: WalletBalance,
++) -> float:
++    value = (
++        balance.total_available_balance
++        if balance.total_available_balance is not None
++        else balance.total_wallet_balance
++    )
++
++    if value is None:
++        raise ValueError(
++            "Bybit wallet has no available balance"
++        )
++
++    return value
++
++
++def _wallet_coin_balance(
++    balance: WalletBalance,
++    coin: str,
++) -> float:
++    for coin_balance in balance.coins:
++        if coin_balance.coin == coin:
++            return coin_balance.wallet_balance
++
++    return 0.0
++
++
++def _spot_position_from_balance(
++    *,
++    quantity: float,
++    reference_price: float,
++) -> PaperPosition:
++    if reference_price <= 0:
++        raise ValueError(
++            "reference_price must be greater than zero"
++        )
++
++    return PaperPosition(
++        side=PositionSide.LONG,
++        entry_timestamp=0,
++        entry_price=reference_price,
++        quantity=quantity,
++        entry_fee=0,
++        entry_cost=quantity * reference_price,
++    )
+diff --git a/scripts/check_bybit_mainnet_account.py b/scripts/check_bybit_mainnet_account.py
+new file mode 100644
+index 0000000..50a5c5d
+--- /dev/null
++++ b/scripts/check_bybit_mainnet_account.py
+@@ -0,0 +1,60 @@
++import os
++
++from app.bybit_account import (
++    BybitAccountClient,
++    BybitAccountConfig,
++)
++
++
++API_KEY_ENV = "BYBIT_MAINNET_API_KEY"
++API_SECRET_ENV = "BYBIT_MAINNET_API_SECRET"
++
++
++def main() -> None:
++    api_key = os.environ.get(API_KEY_ENV, "")
++    api_secret = os.environ.get(API_SECRET_ENV, "")
++
++    if not api_key or not api_secret:
++        raise SystemExit(
++            "Set BYBIT_MAINNET_API_KEY and "
++            "BYBIT_MAINNET_API_SECRET first"
++        )
++
++    client = BybitAccountClient(
++        BybitAccountConfig(
++            api_key=api_key,
++            api_secret=api_secret,
++            testnet=False,
++        )
++    )
++
++    usdt = client.get_wallet_balance(
++        account_type="UNIFIED",
++        coin="USDT",
++    )
++    eth = client.get_wallet_balance(
++        account_type="UNIFIED",
++        coin="ETH",
++    )
++
++    print("Bybit mainnet account — read only")
++    print("USDT account type:", usdt.account_type)
++    print("USDT total equity:", usdt.total_equity)
++    print(
++        "USDT wallet balance:",
++        usdt.total_wallet_balance,
++    )
++    print(
++        "USDT available balance:",
++        usdt.total_available_balance,
++    )
++
++    if eth.coins:
++        print("ETH wallet balance:", eth.coins[0].wallet_balance)
++        print("ETH usd value:", eth.coins[0].usd_value)
++    else:
++        print("ETH wallet balance: 0")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/run_bybit_testnet_trading.py b/scripts/run_bybit_testnet_trading.py
+index 66a2134..a95d50c 100644
+--- a/scripts/run_bybit_testnet_trading.py
++++ b/scripts/run_bybit_testnet_trading.py
+@@ -13,13 +13,11 @@ from app.bybit_order_executor import (
+     BybitOrderExecutor,
+     BybitOrderExecutorConfig,
+ )
+-from app.ema_cross_stop_strategy import (
+-    EMACrossStopStrategy,
+-)
++from app.ema_cross_strategy import EMACrossStrategy
+ from app.risk import RiskConfig
+-from app.testnet_trading_engine import (
+-    BybitTestnetTradingConfig,
+-    BybitTestnetTradingEngine,
++from app.spot_trading_engine import (
++    BybitSpotTradingConfig,
++    BybitSpotTradingEngine,
+ )
+ 
+ 
+@@ -28,13 +26,14 @@ API_SECRET_ENV = "BYBIT_TESTNET_API_SECRET"
+ ENABLE_TRADING_ENV = "BYBIT_TESTNET_ENABLE_TRADING"
+ 
+ SYMBOL = "ETHUSDT"
++BASE_COIN = "ETH"
++QUOTE_COIN = "USDT"
+ INTERVAL = "60"
+-CATEGORY = "linear"
+-SETTLE_COIN = "USDT"
++CATEGORY = "spot"
+ LIMIT = 500
+ 
+ STATE_FILE = Path(
+-    "state/bybit_testnet_state.json"
++    "state/bybit_spot_testnet_state.json"
+ )
+ 
+ 
+@@ -71,10 +70,9 @@ def main() -> None:
+         )
+     )
+ 
+-    strategy = EMACrossStopStrategy(
++    strategy = EMACrossStrategy(
+         short_period=20,
+         long_period=50,
+-        stop_loss_percent=2.0,
+     )
+ 
+     risk_config = RiskConfig(
+@@ -83,7 +81,7 @@ def main() -> None:
+         leverage=1.0,
+     )
+ 
+-    engine = BybitTestnetTradingEngine(
++    engine = BybitSpotTradingEngine(
+         feed=feed,
+         strategy=strategy,
+         account_client=BybitAccountClient(
+@@ -96,18 +94,18 @@ def main() -> None:
+                 enable_trading=enable_trading,
+             )
+         ),
+-        config=BybitTestnetTradingConfig(
++        config=BybitSpotTradingConfig(
+             symbol=SYMBOL,
++            base_coin=BASE_COIN,
++            quote_coin=QUOTE_COIN,
+             state_file=STATE_FILE,
+-            category=CATEGORY,
+-            settle_coin=SETTLE_COIN,
+             risk_config=risk_config,
+         ),
+     )
+ 
+     result = engine.run_once()
+ 
+-    print("Bybit testnet trading cycle")
++    print("Bybit spot testnet trading cycle")
+     print("Trading enabled:", enable_trading)
+     print("Свечей получено:", result.received_candles)
+     print(
+@@ -121,11 +119,17 @@ def main() -> None:
+     )
+     print(
+         "Доступный баланс:",
+-        round(result.available_balance, 8),
++        round(result.quote_available_balance, 8),
++        QUOTE_COIN,
++    )
++    print(
++        "Баланс базовой монеты:",
++        round(result.base_wallet_balance, 8),
++        BASE_COIN,
+     )
+     print(
+-        "Открытая позиция:",
+-        "да" if result.has_open_position else "нет",
++        "Spot-позиция:",
++        "да" if result.has_base_position else "нет",
+     )
+ 
+     if result.planned_order is None:
+diff --git a/tests/test_spot_trading_engine.py b/tests/test_spot_trading_engine.py
+new file mode 100644
+index 0000000..884d8d3
+--- /dev/null
++++ b/tests/test_spot_trading_engine.py
+@@ -0,0 +1,258 @@
++from pathlib import Path
++
++import pytest
++
++from app.bybit_account import (
++    WalletBalance,
++    WalletCoinBalance,
++)
++from app.engine import Candle
++from app.order_executor import (
++    DryRunOrderExecutor,
++    OrderSide,
++    OrderStatus,
++)
++from app.paper_state import PaperStateStore
++from app.spot_trading_engine import (
++    BybitSpotTradingConfig,
++    BybitSpotTradingEngine,
++)
++from app.trading_types import TradeAction
++
++
++class StaticFeed:
++    def __init__(
++        self,
++        candles: tuple[Candle, ...],
++    ) -> None:
++        self.candles = candles
++
++    def get_candles(self) -> tuple[Candle, ...]:
++        return self.candles
++
++
++class StaticAccountClient:
++    def __init__(
++        self,
++        balances: dict[str, WalletBalance],
++    ) -> None:
++        self.balances = balances
++
++    def get_wallet_balance(
++        self,
++        *,
++        account_type: str = "UNIFIED",
++        coin: str | None = None,
++    ) -> WalletBalance:
++        assert coin is not None
++        return self.balances[coin]
++
++
++class BuyStrategy:
++    def generate_signal(self, candles, index):
++        return TradeAction.OPEN_LONG
++
++
++class SellStrategy:
++    def generate_signal(self, candles, index):
++        return TradeAction.CLOSE_LONG
++
++
++class HoldStrategy:
++    def generate_signal(self, candles, index):
++        return TradeAction.HOLD
++
++
++class StopBuyStrategy:
++    def generate_signal(self, candles, index):
++        from app.trade_signal import TradeSignal
++
++        return TradeSignal(
++            action=TradeAction.OPEN_LONG,
++            stop_loss=95,
++        )
++
++
++def make_candles() -> tuple[Candle, ...]:
++    return (
++        Candle(1, 100, 101, 99, 100, 1),
++        Candle(2, 110, 111, 109, 110, 1),
++        Candle(3, 120, 121, 119, 120, 1),
++    )
++
++
++def make_wallet(
++    coin: str,
++    amount: float,
++    *,
++    available: float | None = None,
++) -> WalletBalance:
++    return WalletBalance(
++        account_type="UNIFIED",
++        total_equity=available,
++        total_wallet_balance=(
++            amount if available is None else available
++        ),
++        total_available_balance=available,
++        coins=(
++            WalletCoinBalance(
++                coin=coin,
++                wallet_balance=amount,
++            ),
++        ),
++    )
++
++
++def make_engine(
++    tmp_path: Path,
++    *,
++    strategy=None,
++    usdt_amount: float = 1000,
++    eth_amount: float = 0,
++    executor: DryRunOrderExecutor | None = None,
++) -> BybitSpotTradingEngine:
++    return BybitSpotTradingEngine(
++        feed=StaticFeed(make_candles()),
++        strategy=strategy or BuyStrategy(),
++        account_client=StaticAccountClient(
++            {
++                "USDT": make_wallet(
++                    "USDT",
++                    usdt_amount,
++                    available=usdt_amount,
++                ),
++                "ETH": make_wallet(
++                    "ETH",
++                    eth_amount,
++                ),
++            }
++        ),
++        order_executor=executor or DryRunOrderExecutor(),
++        config=BybitSpotTradingConfig(
++            symbol="ETHUSDT",
++            base_coin="ETH",
++            quote_coin="USDT",
++            state_file=tmp_path / "spot_state.json",
++        ),
++    )
++
++
++def test_spot_engine_plans_buy_from_quote_balance(
++    tmp_path: Path,
++) -> None:
++    executor = DryRunOrderExecutor()
++    engine = make_engine(
++        tmp_path,
++        executor=executor,
++    )
++
++    result = engine.run_once()
++
++    assert result.received_candles == 3
++    assert result.processed_candles == 3
++    assert result.quote_available_balance == pytest.approx(
++        1000
++    )
++    assert result.base_wallet_balance == pytest.approx(0)
++    assert result.has_base_position is False
++    assert result.planned_order is not None
++    assert result.planned_order.side == OrderSide.BUY
++    assert result.planned_order.quantity == pytest.approx(
++        1000 / 120
++    )
++    assert result.order_result is not None
++    assert result.order_result.status == OrderStatus.ACCEPTED
++    assert executor.orders == (result.planned_order,)
++
++
++def test_spot_engine_uses_base_balance_as_position_for_sell(
++    tmp_path: Path,
++) -> None:
++    engine = make_engine(
++        tmp_path,
++        strategy=SellStrategy(),
++        eth_amount=0.25,
++    )
++
++    result = engine.run_once()
++
++    assert result.has_base_position is True
++    assert result.planned_order is not None
++    assert result.planned_order.side == OrderSide.SELL
++    assert result.planned_order.quantity == pytest.approx(
++        0.25
++    )
++
++
++def test_spot_engine_skips_duplicate_buy_when_eth_exists(
++    tmp_path: Path,
++) -> None:
++    engine = make_engine(
++        tmp_path,
++        strategy=BuyStrategy(),
++        eth_amount=0.25,
++    )
++
++    result = engine.run_once()
++
++    assert result.has_base_position is True
++    assert result.planned_order is None
++
++
++def test_spot_engine_returns_no_order_for_hold(
++    tmp_path: Path,
++) -> None:
++    executor = DryRunOrderExecutor()
++    engine = make_engine(
++        tmp_path,
++        strategy=HoldStrategy(),
++        executor=executor,
++    )
++
++    result = engine.run_once()
++
++    assert result.planned_order is None
++    assert result.order_result is None
++    assert executor.orders == ()
++
++
++def test_spot_engine_skips_duplicate_cycle(
++    tmp_path: Path,
++) -> None:
++    engine = make_engine(tmp_path)
++
++    first = engine.run_once()
++    second = engine.run_once()
++
++    assert first.planned_order is not None
++    assert second.processed_candles == 0
++    assert second.planned_order is None
++
++
++def test_spot_engine_saves_timestamp(
++    tmp_path: Path,
++) -> None:
++    engine = make_engine(tmp_path)
++
++    engine.run_once()
++
++    saved = PaperStateStore(
++        tmp_path / "spot_state.json"
++    ).load()
++
++    assert saved.last_candle_timestamp == 3
++
++
++def test_spot_engine_rejects_attached_stop_loss(
++    tmp_path: Path,
++) -> None:
++    engine = make_engine(
++        tmp_path,
++        strategy=StopBuyStrategy(),
++    )
++
++    with pytest.raises(
++        ValueError,
++        match="spot orders",
++    ):
++        engine.run_once()
+-- 
+2.34.1
+
