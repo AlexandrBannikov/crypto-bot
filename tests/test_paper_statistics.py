@@ -56,3 +56,40 @@ def test_calculates_basic_statistics() -> None:
     assert stats.winning_trades == 2
     assert stats.losing_trades == 1
     assert stats.win_rate_percent == pytest.approx(50.0)
+
+
+def test_calculates_profit_factor_and_averages() -> None:
+    trades = [
+        make_trade(100.0),
+        make_trade(50.0),
+        make_trade(-30.0),
+        make_trade(-20.0),
+        make_trade(0.0),
+    ]
+
+    stats = calculate_statistics(
+        start_balance=1000.0,
+        trades=trades,
+    )
+
+    assert stats.gross_profit == pytest.approx(150.0)
+    assert stats.gross_loss == pytest.approx(-50.0)
+    assert stats.profit_factor == pytest.approx(3.0)
+    assert stats.average_win == pytest.approx(75.0)
+    assert stats.average_loss == pytest.approx(-25.0)
+
+
+def test_profit_factor_is_zero_without_losses() -> None:
+    stats = calculate_statistics(
+        start_balance=1000.0,
+        trades=[
+            make_trade(100.0),
+            make_trade(50.0),
+        ],
+    )
+
+    assert stats.gross_profit == pytest.approx(150.0)
+    assert stats.gross_loss == pytest.approx(0.0)
+    assert stats.profit_factor == pytest.approx(0.0)
+    assert stats.average_win == pytest.approx(75.0)
+    assert stats.average_loss == pytest.approx(0.0)
