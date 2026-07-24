@@ -13,3 +13,6 @@ data/*.db
 
 state/
 logs/
+
+# Local backups
+backups/
