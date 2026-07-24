@@ -157,20 +157,29 @@ class BybitAccountClient:
             if coin_payload.get("coin") != coin.upper():
                 continue
 
+            def parse_decimal(value: object) -> Decimal:
+                if value is None:
+                    return Decimal("0")
+
+                text = str(value).strip()
+
+                if not text:
+                    return Decimal("0")
+
+                return Decimal(text)
+
             return WalletBalance(
                 coin=coin,
-                wallet_balance=Decimal(
-                    str(coin_payload.get("walletBalance", "0"))
+                wallet_balance=parse_decimal(
+                    coin_payload.get("walletBalance")
                 ),
-                available_balance=Decimal(
-                    str(
+                available_balance=parse_decimal(
+                    coin_payload.get(
+                        "availableToWithdraw",
                         coin_payload.get(
-                            "availableToWithdraw",
-                            coin_payload.get(
-                                "availableBalance",
-                                coin_payload.get("walletBalance", "0"),
-                            ),
-                        )
+                            "availableBalance",
+                            coin_payload.get("walletBalance"),
+                        ),
                     )
                 ),
             )

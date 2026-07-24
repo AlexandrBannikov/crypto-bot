@@ -300,3 +300,39 @@ def test_bybit_account_client_raises_safe_api_error() -> None:
 
     assert exc.value.ret_code == 10004
     assert "hidden-secret" not in str(exc.value)
+
+
+def test_wallet_balance_parses_empty_available_balance_as_zero() -> None:
+    def fake_get_json(url, headers, timeout_seconds):
+        return {
+            "retCode": 0,
+            "retMsg": "OK",
+            "result": {
+                "list": [
+                    {
+                        "coin": [
+                            {
+                                "coin": "USDT",
+                                "walletBalance": "0",
+                                "availableToWithdraw": "",
+                            }
+                        ]
+                    }
+                ]
+            },
+        }
+
+    client = BybitAccountClient(
+        BybitAccountConfig(
+            api_key="test-key",
+            api_secret="test-secret",
+            testnet=False,
+        ),
+        http_get_json=fake_get_json,
+        clock_ms=lambda: 1000,
+    )
+
+    balance = client.get_wallet_balance()
+
+    assert balance.wallet_balance == Decimal("0")
+    assert balance.available_balance == Decimal("0")
