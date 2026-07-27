@@ -3,13 +3,13 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 14:16 UTC**
+Обновлено: **2026-07-27 16:02 UTC**
 
 ## Сводка
 
 - Python-файлов: **157**
-- Определений: **1285**
-- Строк Python-кода: **29927**
+- Определений: **1302**
+- Строк Python-кода: **30256**
 - Тестовых модулей: **69**
 
 ## Быстрый каталог
@@ -51,7 +51,7 @@
 - [`app/performance_analyzer.py`](../app/performance_analyzer.py) — 217 строк, 6 определений
 - [`app/process_lock.py`](../app/process_lock.py) — 136 строк, 8 определений
 - [`app/regime_filter_research.py`](../app/regime_filter_research.py) — 572 строк, 25 определений
-- [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py) — 147 строк, 10 определений
+- [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py) — 167 строк, 12 определений
 - [`app/risk.py`](../app/risk.py) — 152 строк, 7 определений
 - [`app/runtime.py`](../app/runtime.py) — 35 строк, 2 определений
 - [`app/runtime_health.py`](../app/runtime_health.py) — 208 строк, 10 определений
@@ -79,7 +79,7 @@
 - [`scripts/build_project_index.py`](../scripts/build_project_index.py) — 578 строк, 12 определений
 - [`scripts/check_runtime.py`](../scripts/check_runtime.py) — 74 строк, 3 определений
 - [`scripts/check_runtime_alerts.py`](../scripts/check_runtime_alerts.py) — 64 строк, 2 определений
-- [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py) — 483 строк, 15 определений
+- [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py) — 559 строк, 23 определений
 - [`scripts/compare_strategies.py`](../scripts/compare_strategies.py) — 192 строк, 5 определений
 - [`scripts/download_eth_5m.py`](../scripts/download_eth_5m.py) — 195 строк, 4 определений
 - [`scripts/download_full_history.py`](../scripts/download_full_history.py) — 138 строк, 1 определений
@@ -113,7 +113,7 @@
 - [`tests/test_candle_mapper.py`](../tests/test_candle_mapper.py) — 75 строк, 5 определений
 - [`tests/test_check_runtime.py`](../tests/test_check_runtime.py) — 45 строк, 4 определений
 - [`tests/test_check_runtime_alerts.py`](../tests/test_check_runtime_alerts.py) — 9 строк, 1 определений
-- [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py) — 260 строк, 8 определений
+- [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py) — 451 строк, 14 определений
 - [`tests/test_config.py`](../tests/test_config.py) — 123 строк, 12 определений
 - [`tests/test_data_loader.py`](../tests/test_data_loader.py) — 107 строк, 9 определений
 - [`tests/test_ema_cross_stop_strategy.py`](../tests/test_ema_cross_stop_strategy.py) — 86 строк, 4 определений
@@ -140,7 +140,7 @@
 - [`tests/test_performance_analyzer.py`](../tests/test_performance_analyzer.py) — 136 строк, 6 определений
 - [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py) — 154 строк, 7 определений
 - [`tests/test_process_lock.py`](../tests/test_process_lock.py) — 178 строк, 13 определений
-- [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py) — 237 строк, 19 определений
+- [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py) — 279 строк, 20 определений
 - [`tests/test_report_paper_daily.py`](../tests/test_report_paper_daily.py) — 33 строк, 4 определений
 - [`tests/test_report_paper_weekly.py`](../tests/test_report_paper_weekly.py) — 12 строк, 1 определений
 - [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 82 строк, 4 определений
@@ -758,7 +758,7 @@ _Публичных классов и функций не найдено._
 | function | `config_dict(config: ResearchConfig) -> dict[str, object]` | 571 |  |
 ### [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py)
 
-Строк: **147**
+Строк: **167**
 
 Связанные тесты: [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py)
 
@@ -766,14 +766,16 @@ _Публичных классов и функций не найдено._
 |---|---|---:|---|
 | protocol | `Strategy` | 26 |  |
 | method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 27 |  |
-| enum | `EntryBlockReason` | 35 |  |
-| dataclass | `EntryFilterStatistics` | 44 |  |
-| function | `classify_entry_block_reason(regime: MarketRegime) -> EntryBlockReason` | 50 |  |
-| class | `RegimeFilteredStrategy` | 64 | Apply a market-regime filter only to new position entries. |
-| method | `__init__(self, base_strategy: Strategy, regime_detector: MarketRegimeDetector, trading_filter: TradingFilter, *, apply_filter: bool = True) -> None` | 67 |  |
-| method | `statistics(self) -> EntryFilterStatistics` | 85 |  |
-| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 97 |  |
-| method | `_register_exit(self, action: TradeAction) -> None` | 139 |  |
+| protocol | `IndexedRegimeDetector` | 35 |  |
+| method | `detect_at(self, candles: Sequence[Candle], index: int) -> MarketRegime` | 36 |  |
+| enum | `EntryBlockReason` | 44 |  |
+| dataclass | `EntryFilterStatistics` | 53 |  |
+| function | `classify_entry_block_reason(regime: MarketRegime) -> EntryBlockReason` | 59 |  |
+| class | `RegimeFilteredStrategy` | 76 | Apply a market-regime filter only to new position entries. |
+| method | `__init__(self, base_strategy: Strategy, regime_detector: MarketRegimeDetector, trading_filter: TradingFilter, *, apply_filter: bool = True) -> None` | 79 |  |
+| method | `statistics(self) -> EntryFilterStatistics` | 97 |  |
+| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 109 |  |
+| method | `_register_exit(self, action: TradeAction) -> None` | 159 |  |
 ### [`app/risk.py`](../app/risk.py)
 
 Строк: **152**
@@ -1129,27 +1131,35 @@ _Публичных классов и функций не найдено._
 | function | `main(argv: list[str] \| None = None) -> int` | 25 |  |
 ### [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py)
 
-Строк: **483**
+Строк: **559**
 
 Связанные тесты: [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| dataclass | `ComparisonResult` | 49 |  |
-| function | `positive_int(value: str) -> int` | 68 |  |
-| function | `non_negative_float(value: str) -> float` | 77 |  |
-| function | `confidence(value: str) -> float` | 86 |  |
-| function | `build_parser() -> argparse.ArgumentParser` | 95 |  |
-| function | `validate_arguments(args: argparse.Namespace) -> None` | 164 |  |
-| function | `make_detector(args: argparse.Namespace) -> MarketRegimeDetector` | 189 |  |
-| function | `run_variant(data: pd.DataFrame, *, period: str, variant: str, args: argparse.Namespace, regime_detector: CachingRegimeDetector \| None = None) -> ComparisonResult` | 205 |  |
-| function | `_execute_variant(data: pd.DataFrame, *, period: str, variant: str, args: argparse.Namespace, regime_detector: CachingRegimeDetector \| None = None) -> tuple[ComparisonResult, BacktestResult]` | 223 |  |
-| function | `build_result(*, period: str, variant: str, result: BacktestResult, allowed_entries: int, blocked_entries: int, reasons: dict[str, int]) -> ComparisonResult` | 289 |  |
-| function | `run_comparison(data: pd.DataFrame, args: argparse.Namespace) -> list[ComparisonResult]` | 330 |  |
-| function | `sorted_results(results: list[ComparisonResult]) -> list[ComparisonResult]` | 371 |  |
-| function | `print_results(results: list[ComparisonResult]) -> None` | 384 |  |
-| function | `save_report(path: Path, results: list[ComparisonResult], args: argparse.Namespace) -> None` | 423 |  |
-| function | `main(argv: list[str] \| None = None) -> int` | 465 |  |
+| class | `CachingRegimeDetector` | 50 | Cache causal results by index for one immutable candle sequence. |
+| method | `__init__(self, detector: MarketRegimeDetector) -> None` | 59 |  |
+| method | `detect_at(self, candles: Sequence[Candle], index: int) -> MarketRegime` | 64 |  |
+| method | `detect(self, candles: Sequence[Candle]) -> MarketRegime` | 78 |  |
+| class | `WarmupStrategy` | 84 | Warm indicator state while suppressing all pre-period trading. |
+| method | `__init__(self, strategy, trade_start_index: int) -> None` | 87 |  |
+| method | `generate_signal(self, candles, index)` | 91 |  |
+| dataclass | `ComparisonResult` | 99 |  |
+| function | `positive_int(value: str) -> int` | 118 |  |
+| function | `non_negative_float(value: str) -> float` | 127 |  |
+| function | `confidence(value: str) -> float` | 136 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 145 |  |
+| function | `validate_arguments(args: argparse.Namespace) -> None` | 214 |  |
+| function | `make_detector(args: argparse.Namespace) -> MarketRegimeDetector` | 239 |  |
+| function | `run_variant(data: pd.DataFrame, *, period: str, variant: str, args: argparse.Namespace, regime_detector: CachingRegimeDetector \| None = None) -> ComparisonResult` | 255 |  |
+| function | `_execute_variant(data: pd.DataFrame, *, period: str, variant: str, args: argparse.Namespace, regime_detector: CachingRegimeDetector \| None = None, trade_start_index: int = 0, candles: list[Candle] \| None = None) -> tuple[ComparisonResult, BacktestResult]` | 273 |  |
+| function | `build_result(*, period: str, variant: str, result: BacktestResult, allowed_entries: int, blocked_entries: int, reasons: dict[str, int]) -> ComparisonResult` | 345 |  |
+| function | `run_comparison(data: pd.DataFrame, args: argparse.Namespace) -> list[ComparisonResult]` | 386 |  |
+| function | `split_train_test(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]` | 433 |  |
+| function | `sorted_results(results: list[ComparisonResult]) -> list[ComparisonResult]` | 447 |  |
+| function | `print_results(results: list[ComparisonResult]) -> None` | 460 |  |
+| function | `save_report(path: Path, results: list[ComparisonResult], args: argparse.Namespace) -> None` | 499 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 541 |  |
 ### [`scripts/compare_strategies.py`](../scripts/compare_strategies.py)
 
 Строк: **192**
@@ -1556,18 +1566,24 @@ _Публичных классов и функций не найдено._
 | function | `test_runtime_alerts_exit_code_is_defined()` | 6 |  |
 ### [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py)
 
-Строк: **260**
+Строк: **451**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `write_market_data(path: Path, *, periods: int = 320) -> None` | 19 |  |
-| function | `test_run_comparison_contains_all_periods_and_variants(tmp_path) -> None` | 43 |  |
-| function | `test_detector_only_financial_results_equal_baseline(tmp_path) -> None` | 69 |  |
-| function | `test_detector_cache_does_not_mix_equal_timestamp_ohlc() -> None` | 101 |  |
-| function | `test_results_sort_by_return_drawdown_and_profit_factor() -> None` | 126 |  |
-| function | `test_json_report_is_saved_atomically(tmp_path) -> None` | 184 |  |
-| function | `test_cli_works_from_any_cwd_without_project_writes(tmp_path) -> None` | 206 |  |
-| function | `test_invalid_periods_and_thresholds_are_clear(arguments, message, capsys) -> None` | 251 |  |
+| function | `write_market_data(path: Path, *, periods: int = 320) -> None` | 20 |  |
+| function | `test_run_comparison_contains_all_periods_and_variants(tmp_path) -> None` | 44 |  |
+| function | `test_detector_only_financial_results_equal_baseline(tmp_path) -> None` | 70 |  |
+| function | `test_detector_cache_does_not_mix_equal_timestamp_ohlc() -> None` | 102 |  |
+| function | `test_train_test_boundary_is_complete_and_disjoint() -> None` | 127 |  |
+| function | `test_period_runs_use_independent_instances(tmp_path, monkeypatch) -> None` | 144 |  |
+| function | `test_cached_and_uncached_runs_are_exactly_equivalent(tmp_path) -> None` | 216 |  |
+| function | `test_test_period_warms_indicators_without_carrying_account(tmp_path) -> None` | 251 |  |
+| function | `test_default_baseline_matches_historical_ema_backtest() -> None` | 280 |  |
+| function | `test_results_sort_by_return_drawdown_and_profit_factor() -> None` | 297 |  |
+| function | `test_json_report_is_saved_atomically(tmp_path) -> None` | 355 |  |
+| function | `test_atomic_write_failure_preserves_report_and_cleans_temp(tmp_path, monkeypatch) -> None` | 377 |  |
+| function | `test_cli_works_from_any_cwd_without_project_writes(tmp_path) -> None` | 397 |  |
+| function | `test_invalid_periods_and_thresholds_are_clear(arguments, message, capsys) -> None` | 442 |  |
 ### [`tests/test_config.py`](../tests/test_config.py)
 
 Строк: **123**
@@ -2059,7 +2075,7 @@ _Публичных классов и функций не найдено._
 | function | `test_same_object_cannot_be_entered_twice(tmp_path) -> None` | 173 |  |
 ### [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py)
 
-Строк: **237**
+Строк: **279**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
@@ -2082,6 +2098,7 @@ _Публичных классов и функций не найдено._
 | method | `generate_signal(self, candles, index)` | 197 |  |
 | function | `test_base_strategy_is_not_reconfigured_or_replaced() -> None` | 201 |  |
 | function | `test_allowed_and_blocked_counters_accumulate() -> None` | 215 |  |
+| function | `test_block_reason_priority_is_exclusive(detected_regime, reason) -> None` | 261 |  |
 ### [`tests/test_report_paper_daily.py`](../tests/test_report_paper_daily.py)
 
 Строк: **33**

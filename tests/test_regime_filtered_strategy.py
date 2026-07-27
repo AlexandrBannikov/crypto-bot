@@ -235,3 +235,45 @@ def test_allowed_and_blocked_counters_accumulate() -> None:
     assert statistics.allowed_entries == 1
     assert statistics.blocked_entries == 1
     assert statistics.blocked_by_reason["range"] == 1
+
+
+@pytest.mark.parametrize(
+    ("detected_regime", "reason"),
+    [
+        (
+            regime(MarketTrend.RANGE, MarketVolatility.HIGH),
+            "range",
+        ),
+        (
+            regime(MarketTrend.TREND_DOWN, MarketVolatility.HIGH),
+            "downtrend",
+        ),
+        (
+            regime(
+                MarketTrend.UNKNOWN,
+                MarketVolatility.HIGH,
+                confidence=0.0,
+            ),
+            "unknown_regime",
+        ),
+    ],
+)
+def test_block_reason_priority_is_exclusive(
+    detected_regime,
+    reason,
+) -> None:
+    strategy = wrap(
+        Signal.BUY,
+        detected_regime,
+        confidence=0.5,
+    )
+
+    strategy.generate_signal(make_candles(1), 0)
+
+    statistics = strategy.statistics
+    assert statistics.blocked_entries == 1
+    assert statistics.blocked_by_reason[reason] == 1
+    assert (
+        sum(statistics.blocked_by_reason.values())
+        == statistics.blocked_entries
+    )

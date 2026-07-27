@@ -5,6 +5,7 @@ import csv
 import io
 import json
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -16,18 +17,19 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.candle_mapper import dataframe_to_candles
+from app.candle import Candle
 from app.data_loader import load_market_data
 from app.ema_cross_strategy import EMACrossStrategy
 from app.engine import BacktestEngine, BacktestResult
-from app.market_regime import MarketRegimeDetector
+from app.market_regime import MarketRegime, MarketRegimeDetector
 from app.regime_filter_research import (
-    CausalRegimeCache as CachingRegimeDetector,
     atomic_write,
 )
 from app.regime_filtered_strategy import (
     EntryBlockReason,
     RegimeFilteredStrategy,
 )
+from app.strategies import Signal
 from app.trading_filter import TradingFilter
 
 
@@ -43,6 +45,54 @@ DEFAULT_LOW_VOLATILITY_THRESHOLD = 0.005
 DEFAULT_HIGH_VOLATILITY_THRESHOLD = 0.02
 DEFAULT_MINIMUM_CONFIDENCE = 0.0
 TEST_START = pd.Timestamp("2025-01-01", tz="UTC")
+
+
+class CachingRegimeDetector:
+    """Cache causal results by index for one immutable candle sequence.
+
+    ``detect_at`` binds the cache to the exact sequence object supplied by
+    the engine.  A different sequence gets a fresh cache, so equal timestamps
+    cannot alias different OHLC data.  Candles are frozen values and the
+    research runner never mutates the bound list.
+    """
+
+    def __init__(self, detector: MarketRegimeDetector) -> None:
+        self.detector = detector
+        self._source: Sequence[Candle] | None = None
+        self._cache: dict[int, MarketRegime] = {}
+
+    def detect_at(
+        self,
+        candles: Sequence[Candle],
+        index: int,
+    ) -> MarketRegime:
+        if candles is not self._source:
+            self._source = candles
+            self._cache = {}
+        if index not in self._cache:
+            self._cache[index] = self.detector.detect(
+                candles[: index + 1]
+            )
+        return self._cache[index]
+
+    def detect(self, candles: Sequence[Candle]) -> MarketRegime:
+        # The generic interface cannot prove prefix provenance cheaply.
+        # Do not cache it; the optimized research path uses detect_at.
+        return self.detector.detect(candles)
+
+
+class WarmupStrategy:
+    """Warm indicator state while suppressing all pre-period trading."""
+
+    def __init__(self, strategy, trade_start_index: int) -> None:
+        self.strategy = strategy
+        self.trade_start_index = trade_start_index
+
+    def generate_signal(self, candles, index):
+        signal = self.strategy.generate_signal(candles, index)
+        if index < self.trade_start_index:
+            return Signal.HOLD
+        return signal
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,14 +277,20 @@ def _execute_variant(
     variant: str,
     args: argparse.Namespace,
     regime_detector: CachingRegimeDetector | None = None,
+    trade_start_index: int = 0,
+    candles: list[Candle] | None = None,
 ) -> tuple[ComparisonResult, BacktestResult]:
     if variant not in {"baseline", "detector_only", "filtered"}:
         raise ValueError(f"unknown comparison variant: {variant}")
 
-    candles = dataframe_to_candles(data)
-    base_strategy = EMACrossStrategy(
-        short_period=args.fast_ema,
-        long_period=args.slow_ema,
+    if candles is None:
+        candles = dataframe_to_candles(data)
+    base_strategy = WarmupStrategy(
+        EMACrossStrategy(
+            short_period=args.fast_ema,
+            long_period=args.slow_ema,
+        ),
+        trade_start_index,
     )
     wrapped: RegimeFilteredStrategy | None = None
 
@@ -331,20 +387,24 @@ def run_comparison(
     data: pd.DataFrame,
     args: argparse.Namespace,
 ) -> list[ComparisonResult]:
-    train = data[data["datetime"] < TEST_START].copy()
-    test = data[data["datetime"] >= TEST_START].copy()
+    train, test = split_train_test(data)
     if train.empty:
         raise ValueError("train period has no candles")
     if test.empty:
         raise ValueError("test period has no candles")
 
     periods = [
-        ("full", data),
-        ("train", train),
-        ("test", test),
+        ("full", data, 0),
+        ("train", train, 0),
+        # Test indicators see causal history, but accounting and trading
+        # remain fresh and begin exactly at TEST_START.
+        ("test", data, len(train)),
     ]
     results: list[ComparisonResult] = []
-    for period, period_data in periods:
+    for period, period_data, trade_start_index in periods:
+        candles = dataframe_to_candles(period_data)
+        # Shared only inside one immutable period.  No cache state crosses
+        # full/train/test; wrappers, strategies and engines remain fresh.
         regime_detector = CachingRegimeDetector(make_detector(args))
         period_runs = [
             _execute_variant(
@@ -353,6 +413,8 @@ def run_comparison(
                 variant=variant,
                 args=args,
                 regime_detector=regime_detector,
+                trade_start_index=trade_start_index,
+                candles=candles,
             )
             for variant in ("baseline", "detector_only", "filtered")
         ]
@@ -366,6 +428,20 @@ def run_comparison(
         results.extend(comparison for comparison, _ in period_runs)
 
     return results
+
+
+def split_train_test(
+    data: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    datetimes = pd.DatetimeIndex(data["datetime"])
+    boundary = TEST_START
+    if datetimes.tz is None:
+        boundary = boundary.tz_localize(None)
+    else:
+        boundary = boundary.tz_convert(datetimes.tz)
+    train = data[data["datetime"] < boundary].copy()
+    test = data[data["datetime"] >= boundary].copy()
+    return train, test
 
 
 def sorted_results(

@@ -32,6 +32,15 @@ class Strategy(Protocol):
         ...
 
 
+class IndexedRegimeDetector(Protocol):
+    def detect_at(
+        self,
+        candles: Sequence[Candle],
+        index: int,
+    ) -> MarketRegime:
+        ...
+
+
 class EntryBlockReason(str, Enum):
     RANGE = "range"
     DOWNTREND = "downtrend"
@@ -50,6 +59,9 @@ class EntryFilterStatistics:
 def classify_entry_block_reason(
     regime: MarketRegime,
 ) -> EntryBlockReason:
+    # One entry has exactly one primary reason.  Structural trend states
+    # take precedence over volatility, then confidence:
+    # UNKNOWN > RANGE > TREND_DOWN > HIGH_VOLATILITY > LOW_CONFIDENCE.
     if regime.trend is MarketTrend.UNKNOWN:
         return EntryBlockReason.UNKNOWN_REGIME
     if regime.trend is MarketTrend.RANGE:
@@ -118,7 +130,15 @@ class RegimeFilteredStrategy:
         if self._position_side is not None:
             return raw_signal
 
-        regime = self.regime_detector.detect(candles[: index + 1])
+        detect_at = getattr(
+            type(self.regime_detector),
+            "detect_at",
+            None,
+        )
+        if detect_at is None:
+            regime = self.regime_detector.detect(candles[: index + 1])
+        else:
+            regime = detect_at(self.regime_detector, candles, index)
         if (
             self.apply_filter
             and not self.trading_filter.allow_entry(regime)
