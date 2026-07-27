@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from decimal import Decimal
 from pathlib import Path
 import sys
 
@@ -11,6 +10,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.trade_journal import JsonlTradeJournal, TradeJournalEntry
+from app.trade_statistics import (
+    TradeStatistics,
+    calculate_trade_statistics,
+)
 
 
 DEFAULT_JOURNAL_PATH = Path(
@@ -40,32 +43,55 @@ def format_trade(entry: TradeJournalEntry | None) -> str:
     )
 
 
+def format_optional(value: object | None) -> str:
+    return str(value) if value is not None else "не определён"
+
+
+def format_statistics(statistics: TradeStatistics) -> list[str]:
+    return [
+        f"Количество записей: {statistics.total_trades}",
+        f"Прибыльных: {statistics.winning_trades}",
+        f"Убыточных: {statistics.losing_trades}",
+        f"Безубыточных: {statistics.breakeven_trades}",
+        f"Win rate: {statistics.win_rate}%",
+        f"Суммарный gross PnL: {statistics.gross_pnl}",
+        f"Суммарные комиссии: {statistics.total_fees}",
+        f"Суммарный net PnL: {statistics.net_pnl}",
+        f"Средний net PnL: {statistics.average_net_pnl}",
+        f"Gross profit: {statistics.gross_profit}",
+        f"Gross loss: {statistics.gross_loss}",
+        f"Средняя прибыль: {statistics.average_win}",
+        f"Средний убыток: {statistics.average_loss}",
+        f"Максимальная прибыль: {statistics.largest_win}",
+        f"Максимальный убыток: {statistics.largest_loss}",
+        "Profit factor: "
+        + format_optional(statistics.profit_factor),
+        f"Expectancy: {statistics.expectancy}",
+        "Максимальная просадка: "
+        f"{statistics.max_drawdown_absolute}",
+        "Максимальная просадка, %: "
+        f"{statistics.max_drawdown_percent}%",
+        "Recovery factor: "
+        + format_optional(statistics.recovery_factor),
+        "Максимальная серия побед: "
+        f"{statistics.longest_win_streak}",
+        "Максимальная серия поражений: "
+        f"{statistics.longest_loss_streak}",
+        "Среднее время удержания, сек.: "
+        f"{statistics.average_holding_seconds}",
+        "Минимальное время удержания, сек.: "
+        f"{statistics.min_holding_seconds}",
+        "Максимальное время удержания, сек.: "
+        f"{statistics.max_holding_seconds}",
+        f"Начальный виртуальный баланс: {statistics.starting_balance}",
+        f"Конечный виртуальный баланс: {statistics.ending_balance}",
+    ]
+
+
 def render_report(
     entries: list[TradeJournalEntry],
 ) -> str:
-    count = len(entries)
-    profitable = sum(entry.net_pnl > 0 for entry in entries)
-    losing = sum(entry.net_pnl < 0 for entry in entries)
-    gross_pnl = sum(
-        (entry.gross_pnl for entry in entries),
-        Decimal("0"),
-    )
-    total_fees = sum(
-        (entry.total_fee for entry in entries),
-        Decimal("0"),
-    )
-    net_pnl = sum(
-        (entry.net_pnl for entry in entries),
-        Decimal("0"),
-    )
-    average_net = (
-        net_pnl / count if count else Decimal("0")
-    )
-    win_rate = (
-        Decimal(profitable) / count * Decimal("100")
-        if count
-        else Decimal("0")
-    )
+    statistics = calculate_trade_statistics(entries)
     best = max(
         entries,
         key=lambda entry: entry.net_pnl,
@@ -76,28 +102,16 @@ def render_report(
         key=lambda entry: entry.net_pnl,
         default=None,
     )
-    final_balance = (
-        entries[-1].virtual_balance_after
-        if entries
-        else None
-    )
 
     return "\n".join(
-        [
-            f"Количество записей: {count}",
-            f"Прибыльных: {profitable}",
-            f"Убыточных: {losing}",
-            f"Win rate: {win_rate}%",
-            f"Суммарный gross PnL: {gross_pnl}",
-            f"Суммарные комиссии: {total_fees}",
-            f"Суммарный net PnL: {net_pnl}",
-            f"Средний net PnL: {average_net}",
+        format_statistics(statistics)
+        + [
             f"Лучшая сделка: {format_trade(best)}",
             f"Худшая сделка: {format_trade(worst)}",
             "Итоговый виртуальный баланс: "
             + (
-                str(final_balance)
-                if final_balance is not None
+                str(statistics.ending_balance)
+                if entries
                 else "нет"
             ),
         ]

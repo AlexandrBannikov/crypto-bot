@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 08:04 UTC**
+Обновлено: **2026-07-27 08:15 UTC**
 
 ## Сводка
 
-- Python-файлов: **123**
-- Определений: **968**
-- Строк Python-кода: **23005**
-- Тестовых модулей: **53**
+- Python-файлов: **125**
+- Определений: **988**
+- Строк Python-кода: **23501**
+- Тестовых модулей: **54**
 
 ## Быстрый каталог
 
@@ -58,6 +58,7 @@
 - [`app/trade_analyzer.py`](../app/trade_analyzer.py) — 198 строк, 6 определений
 - [`app/trade_journal.py`](../app/trade_journal.py) — 147 строк, 9 определений
 - [`app/trade_signal.py`](../app/trade_signal.py) — 44 строк, 2 определений
+- [`app/trade_statistics.py`](../app/trade_statistics.py) — 242 строк, 4 определений
 - [`app/trading_controller.py`](../app/trading_controller.py) — 465 строк, 13 определений
 - [`app/trading_controller_store.py`](../app/trading_controller_store.py) — 205 строк, 6 определений
 - [`app/trading_filter.py`](../app/trading_filter.py) — 27 строк, 3 определений
@@ -75,7 +76,7 @@
 - [`scripts/download_history.py`](../scripts/download_history.py) — 81 строк, 2 определений
 - [`scripts/optimize_ema.py`](../scripts/optimize_ema.py) — 168 строк, 2 определений
 - [`scripts/optimize_ma.py`](../scripts/optimize_ma.py) — 212 строк, 4 определений
-- [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 115 строк, 4 определений
+- [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 129 строк, 6 определений
 - [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 400 строк, 6 определений
 - [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py) — 208 строк, 3 определений
 - [`scripts/run_engine_ema.py`](../scripts/run_engine_ema.py) — 128 строк, 2 определений
@@ -117,7 +118,7 @@
 - [`tests/test_paper_statistics.py`](../tests/test_paper_statistics.py) — 95 строк, 5 определений
 - [`tests/test_paper_trader.py`](../tests/test_paper_trader.py) — 339 строк, 18 определений
 - [`tests/test_performance_analyzer.py`](../tests/test_performance_analyzer.py) — 136 строк, 6 определений
-- [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 43 строк, 2 определений
+- [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 61 строк, 3 определений
 - [`tests/test_risk.py`](../tests/test_risk.py) — 272 строк, 13 определений
 - [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 114 строк, 7 определений
 - [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py) — 122 строк, 7 определений
@@ -130,6 +131,7 @@
 - [`tests/test_trade_accounting.py`](../tests/test_trade_accounting.py) — 74 строк, 4 определений
 - [`tests/test_trade_analyzer.py`](../tests/test_trade_analyzer.py) — 282 строк, 8 определений
 - [`tests/test_trade_journal.py`](../tests/test_trade_journal.py) — 88 строк, 5 определений
+- [`tests/test_trade_statistics.py`](../tests/test_trade_statistics.py) — 222 строк, 13 определений
 - [`tests/test_trading_controller.py`](../tests/test_trading_controller.py) — 702 строк, 38 определений
 - [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py) — 254 строк, 11 определений
 - [`tests/test_trading_filter.py`](../tests/test_trading_filter.py) — 98 строк, 9 определений
@@ -770,6 +772,18 @@ _Публичных классов и функций не найдено._
 |---|---|---:|---|
 | dataclass | `TradeSignal` | 8 |  |
 | method | `__post_init__(self) -> None` | 14 |  |
+### [`app/trade_statistics.py`](../app/trade_statistics.py)
+
+Строк: **242**
+
+Связанные тесты: [`tests/test_trade_statistics.py`](../tests/test_trade_statistics.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| dataclass | `TradeStatistics` | 16 | Aggregated statistics for closed trade-journal records. |
+| function | `_holding_seconds(entry: TradeJournalEntry) -> Decimal` | 62 |  |
+| function | `_calculate_drawdown(*, starting_balance: Decimal, equity_curve: Sequence[Decimal]) -> tuple[Decimal, Decimal]` | 92 |  |
+| function | `calculate_trade_statistics(entries: Sequence[TradeJournalEntry]) -> TradeStatistics` | 114 | Calculate statistics, treating every journal record as one trade. |
 ### [`app/trading_controller.py`](../app/trading_controller.py)
 
 Строк: **465**
@@ -971,16 +985,18 @@ _Публичных классов и функций не найдено._
 | function | `main() -> None` | 151 |  |
 ### [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py)
 
-Строк: **115**
+Строк: **129**
 
 Связанные тесты: [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `build_parser() -> argparse.ArgumentParser` | 21 |  |
-| function | `format_trade(entry: TradeJournalEntry \| None) -> str` | 34 |  |
-| function | `render_report(entries: list[TradeJournalEntry]) -> str` | 43 |  |
-| function | `main(argv: list[str] \| None = None) -> int` | 107 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 24 |  |
+| function | `format_trade(entry: TradeJournalEntry \| None) -> str` | 37 |  |
+| function | `format_optional(value: object \| None) -> str` | 46 |  |
+| function | `format_statistics(statistics: TradeStatistics) -> list[str]` | 50 |  |
+| function | `render_report(entries: list[TradeJournalEntry]) -> str` | 91 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 121 |  |
 ### [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py)
 
 Строк: **400**
@@ -1657,12 +1673,13 @@ _Публичных классов и функций не найдено._
 | function | `test_break_even_trade_breaks_streak() -> None` | 127 |  |
 ### [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
 
-Строк: **43**
+Строк: **61**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `test_successful_report_uses_custom_journal_path(tmp_path, capsys) -> None` | 8 |  |
-| function | `test_empty_journal_report(tmp_path, capsys) -> None` | 33 |  |
+| function | `test_successful_report_uses_custom_journal_path(tmp_path, capsys) -> None` | 10 |  |
+| function | `test_empty_journal_report(tmp_path, capsys) -> None` | 40 |  |
+| function | `test_corrupt_custom_journal_is_reported(tmp_path) -> None` | 53 |  |
 ### [`tests/test_risk.py`](../tests/test_risk.py)
 
 Строк: **272**
@@ -1824,6 +1841,25 @@ _Публичных классов и функций не найдено._
 | function | `test_append_creates_parent_and_preserves_decimal_strings(tmp_path) -> None` | 47 |  |
 | function | `test_two_entries_are_appended_without_overwrite(tmp_path) -> None` | 62 |  |
 | function | `test_corrupt_jsonl_line_has_clear_line_number(tmp_path) -> None` | 80 |  |
+### [`tests/test_trade_statistics.py`](../tests/test_trade_statistics.py)
+
+Строк: **222**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `entry(net_pnl: str, balance: str, *, record_id: str = 'trade', gross_pnl: str \| None = None, fee: str = '0', opened_at: str = '2026-07-27T10:00:00+00:00', closed_at: str = '2026-07-27T11:00:00+00:00')` | 13 |  |
+| function | `test_empty_statistics_have_consistent_zero_values() -> None` | 34 |  |
+| function | `test_classifies_single_trade(net_pnl: str, winning: int, losing: int, breakeven: int) -> None` | 69 |  |
+| function | `test_calculates_mixed_pnl_fees_averages_and_factors() -> None` | 82 |  |
+| function | `test_profit_factor_without_losses_is_undefined() -> None` | 108 |  |
+| function | `test_no_winning_trades_has_zero_profit_factor() -> None` | 117 |  |
+| function | `test_equity_drawdown_and_recovery_use_journal_order() -> None` | 127 |  |
+| function | `test_no_drawdown_has_undefined_recovery_factor() -> None` | 145 |  |
+| function | `test_zero_peak_skips_percentage_until_positive_peak() -> None` | 155 |  |
+| function | `test_streaks_and_breakeven_reset() -> None` | 165 |  |
+| function | `test_holding_time_statistics() -> None` | 183 |  |
+| function | `test_invalid_timestamp_has_clear_field_name(field_name: str) -> None` | 205 |  |
+| function | `test_partial_closes_are_separate_records() -> None` | 212 |  |
 ### [`tests/test_trading_controller.py`](../tests/test_trading_controller.py)
 
 Строк: **702**

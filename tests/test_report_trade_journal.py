@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from app.trade_journal import JsonlTradeJournal
 from scripts.report_trade_journal import main
 from tests.test_trade_journal import make_entry
@@ -27,6 +29,11 @@ def test_successful_report_uses_custom_journal_path(
     assert "Убыточных: 1" in output
     assert "Win rate: 50.0%" in output
     assert "Суммарный net PnL: 4.79" in output
+    assert "Gross profit: 9.79" in output
+    assert "Profit factor: 1.958" in output
+    assert "Максимальная серия побед: 1" in output
+    assert "Среднее время удержания, сек.: 3600.0" in output
+    assert "Начальный виртуальный баланс: 1000.000" in output
     assert "Итоговый виртуальный баланс: 1009.790" in output
 
 
@@ -41,3 +48,14 @@ def test_empty_journal_report(tmp_path, capsys) -> None:
     assert "Win rate: 0%" in output
     assert "Лучшая сделка: нет" in output
     assert "Итоговый виртуальный баланс: нет" in output
+
+
+def test_corrupt_custom_journal_is_reported(tmp_path) -> None:
+    path = tmp_path / "broken.jsonl"
+    path.write_text("{broken\n", encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=r"corrupt trade journal line 1",
+    ):
+        main(["--journal", str(path)])
