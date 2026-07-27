@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 09:51 UTC**
+Обновлено: **2026-07-27 10:47 UTC**
 
 ## Сводка
 
-- Python-файлов: **131**
-- Определений: **1073**
-- Строк Python-кода: **25505**
-- Тестовых модулей: **57**
+- Python-файлов: **135**
+- Определений: **1130**
+- Строк Python-кода: **26683**
+- Тестовых модулей: **59**
 
 ## Быстрый каталог
 
@@ -48,6 +48,7 @@
 - [`app/paper_trader.py`](../app/paper_trader.py) — 200 строк, 11 определений
 - [`app/performance_analyzer.py`](../app/performance_analyzer.py) — 217 строк, 6 определений
 - [`app/process_lock.py`](../app/process_lock.py) — 136 строк, 8 определений
+- [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py) — 147 строк, 10 определений
 - [`app/risk.py`](../app/risk.py) — 152 строк, 7 определений
 - [`app/runtime.py`](../app/runtime.py) — 35 строк, 2 определений
 - [`app/settings.py`](../app/settings.py) — 66 строк, 4 определений
@@ -72,6 +73,7 @@
 - [`scripts/backtest.py`](../scripts/backtest.py) — 116 строк, 1 определений
 - [`scripts/build_project_index.py`](../scripts/build_project_index.py) — 578 строк, 12 определений
 - [`scripts/check_runtime.py`](../scripts/check_runtime.py) — 74 строк, 3 определений
+- [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py) — 534 строк, 20 определений
 - [`scripts/compare_strategies.py`](../scripts/compare_strategies.py) — 192 строк, 5 определений
 - [`scripts/download_eth_5m.py`](../scripts/download_eth_5m.py) — 195 строк, 4 определений
 - [`scripts/download_full_history.py`](../scripts/download_full_history.py) — 138 строк, 1 определений
@@ -98,6 +100,7 @@
 - [`tests/test_bybit_orders.py`](../tests/test_bybit_orders.py) — 476 строк, 13 определений
 - [`tests/test_candle_mapper.py`](../tests/test_candle_mapper.py) — 75 строк, 5 определений
 - [`tests/test_check_runtime.py`](../tests/test_check_runtime.py) — 45 строк, 4 определений
+- [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py) — 260 строк, 8 определений
 - [`tests/test_config.py`](../tests/test_config.py) — 56 строк, 6 определений
 - [`tests/test_data_loader.py`](../tests/test_data_loader.py) — 107 строк, 9 определений
 - [`tests/test_ema_cross_stop_strategy.py`](../tests/test_ema_cross_stop_strategy.py) — 86 строк, 4 определений
@@ -123,6 +126,7 @@
 - [`tests/test_performance_analyzer.py`](../tests/test_performance_analyzer.py) — 136 строк, 6 определений
 - [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py) — 154 строк, 7 определений
 - [`tests/test_process_lock.py`](../tests/test_process_lock.py) — 178 строк, 13 определений
+- [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py) — 237 строк, 19 определений
 - [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 82 строк, 4 определений
 - [`tests/test_risk.py`](../tests/test_risk.py) — 272 строк, 13 определений
 - [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 798 строк, 28 определений
@@ -664,6 +668,24 @@ _Публичных классов и функций не найдено._
 | method | `__exit__(self, exc_type, exc_value, traceback) -> None` | 108 |  |
 | method | `_read_details(lock_file: IO[str]) -> str` | 124 |  |
 | method | `_release_file(lock_file: IO[str]) -> None` | 132 |  |
+### [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py)
+
+Строк: **147**
+
+Связанные тесты: [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| protocol | `Strategy` | 26 |  |
+| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 27 |  |
+| enum | `EntryBlockReason` | 35 |  |
+| dataclass | `EntryFilterStatistics` | 44 |  |
+| class | `RegimeFilteredStrategy` | 50 | Apply a market-regime filter only to new position entries. |
+| method | `__init__(self, base_strategy: Strategy, regime_detector: MarketRegimeDetector, trading_filter: TradingFilter, *, apply_filter: bool = True) -> None` | 53 |  |
+| method | `statistics(self) -> EntryFilterStatistics` | 71 |  |
+| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 83 |  |
+| method | `_register_exit(self, action: TradeAction) -> None` | 125 |  |
+| method | `_block_reason(self, regime: MarketRegime) -> EntryBlockReason` | 135 |  |
 ### [`app/risk.py`](../app/risk.py)
 
 Строк: **152**
@@ -972,6 +994,34 @@ _Публичных классов и функций не найдено._
 | dataclass | `RuntimeSummary` | 10 |  |
 | function | `summarize_runtime(runtime: Runtime) -> RuntimeSummary` | 19 |  |
 | function | `main() -> None` | 36 |  |
+### [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py)
+
+Строк: **534**
+
+Связанные тесты: [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| class | `CachingRegimeDetector` | 50 |  |
+| method | `__init__(self, detector: MarketRegimeDetector) -> None` | 51 |  |
+| method | `detect(self, candles: Sequence[Candle]) -> MarketRegime` | 55 |  |
+| method | `_fingerprint(candles: Sequence[Candle]) -> bytes` | 65 |  |
+| dataclass | `ComparisonResult` | 83 |  |
+| function | `positive_int(value: str) -> int` | 102 |  |
+| function | `non_negative_float(value: str) -> float` | 111 |  |
+| function | `confidence(value: str) -> float` | 120 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 129 |  |
+| function | `validate_arguments(args: argparse.Namespace) -> None` | 198 |  |
+| function | `make_detector(args: argparse.Namespace) -> MarketRegimeDetector` | 223 |  |
+| function | `run_variant(data: pd.DataFrame, *, period: str, variant: str, args: argparse.Namespace, regime_detector: CachingRegimeDetector \| None = None) -> ComparisonResult` | 239 |  |
+| function | `_execute_variant(data: pd.DataFrame, *, period: str, variant: str, args: argparse.Namespace, regime_detector: CachingRegimeDetector \| None = None) -> tuple[ComparisonResult, BacktestResult]` | 257 |  |
+| function | `build_result(*, period: str, variant: str, result: BacktestResult, allowed_entries: int, blocked_entries: int, reasons: dict[str, int]) -> ComparisonResult` | 323 |  |
+| function | `run_comparison(data: pd.DataFrame, args: argparse.Namespace) -> list[ComparisonResult]` | 364 |  |
+| function | `sorted_results(results: list[ComparisonResult]) -> list[ComparisonResult]` | 405 |  |
+| function | `print_results(results: list[ComparisonResult]) -> None` | 418 |  |
+| function | `atomic_write(path: Path, content: str) -> None` | 457 |  |
+| function | `save_report(path: Path, results: list[ComparisonResult], args: argparse.Namespace) -> None` | 474 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 516 |  |
 ### [`scripts/compare_strategies.py`](../scripts/compare_strategies.py)
 
 Строк: **192**
@@ -1295,6 +1345,20 @@ _Публичных классов и функций не найдено._
 | function | `test_summarizes_paper_runtime() -> None` | 18 |  |
 | function | `test_summary_does_not_contain_credentials() -> None` | 31 |  |
 | function | `test_summary_mode_matches_executor() -> None` | 40 |  |
+### [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py)
+
+Строк: **260**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `write_market_data(path: Path, *, periods: int = 320) -> None` | 19 |  |
+| function | `test_run_comparison_contains_all_periods_and_variants(tmp_path) -> None` | 43 |  |
+| function | `test_detector_only_financial_results_equal_baseline(tmp_path) -> None` | 69 |  |
+| function | `test_detector_cache_does_not_mix_equal_timestamp_ohlc() -> None` | 101 |  |
+| function | `test_results_sort_by_return_drawdown_and_profit_factor() -> None` | 126 |  |
+| function | `test_json_report_is_saved_atomically(tmp_path) -> None` | 184 |  |
+| function | `test_cli_works_from_any_cwd_without_project_writes(tmp_path) -> None` | 206 |  |
+| function | `test_invalid_periods_and_thresholds_are_clear(arguments, message, capsys) -> None` | 251 |  |
 ### [`tests/test_config.py`](../tests/test_config.py)
 
 Строк: **56**
@@ -1760,6 +1824,31 @@ _Публичных классов и функций не найдено._
 | function | `test_open_error_is_wrapped_and_contains_path(tmp_path) -> None` | 148 |  |
 | function | `test_control_flow_exceptions_are_not_wrapped(tmp_path, exception_type) -> None` | 159 |  |
 | function | `test_same_object_cannot_be_entered_twice(tmp_path) -> None` | 173 |  |
+### [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py)
+
+Строк: **237**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `make_candles(count: int = 3) -> list[Candle]` | 18 |  |
+| function | `regime(trend: MarketTrend, volatility: MarketVolatility = MarketVolatility.NORMAL, confidence: float = 1.0) -> MarketRegime` | 32 |  |
+| class | `SequenceStrategy` | 40 |  |
+| method | `__init__(self, *signals) -> None` | 41 |  |
+| method | `generate_signal(self, candles, index)` | 44 |  |
+| class | `SequenceDetector` | 48 |  |
+| method | `__init__(self, *regimes: MarketRegime) -> None` | 49 |  |
+| method | `detect(self, candles)` | 53 |  |
+| function | `wrap(signal, detected_regime, *, confidence = 0.0)` | 58 |  |
+| function | `test_allows_entry_in_uptrend(volatility) -> None` | 70 |  |
+| function | `test_blocks_entry_and_counts_reason(detected_regime, reason) -> None` | 102 |  |
+| function | `test_exit_is_never_blocked_and_preserves_parameters() -> None` | 122 |  |
+| function | `test_hold_remains_hold_without_regime_detection() -> None` | 149 |  |
+| function | `test_allowed_entry_preserves_stop_loss() -> None` | 161 |  |
+| function | `test_detector_never_receives_future_candles() -> None` | 177 |  |
+| dataclass | `ImmutableStrategy` | 194 |  |
+| method | `generate_signal(self, candles, index)` | 197 |  |
+| function | `test_base_strategy_is_not_reconfigured_or_replaced() -> None` | 201 |  |
+| function | `test_allowed_and_blocked_counters_accumulate() -> None` | 215 |  |
 ### [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
 
 Строк: **82**
