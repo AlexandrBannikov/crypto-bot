@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from decimal import Decimal
@@ -22,6 +23,10 @@ from app.paper_executor import PaperExecutor
 from app.strategies import Signal
 from app.trade_signal import TradeSignal
 from app.trade_journal import JsonlTradeJournal
+from app.trade_reporting import (
+    TradeReportError,
+    generate_trade_reports,
+)
 from app.trading_controller import (
     TradingController,
     TradingControllerState,
@@ -55,6 +60,51 @@ JOURNAL_PATH = Path(
         "state/controller_trade_journal.jsonl",
     )
 )
+DEFAULT_STATISTICS_REPORT_PATH = (
+    PROJECT_ROOT / "reports/trade_statistics.txt"
+)
+DEFAULT_STATISTICS_PLOT_PATH = (
+    PROJECT_ROOT / "reports/trade_statistics.png"
+)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run the Bybit paper trading controller",
+    )
+    parser.add_argument(
+        "--statistics-report",
+        type=Path,
+        default=DEFAULT_STATISTICS_REPORT_PATH,
+        help="path to the generated text trade report",
+    )
+    parser.add_argument(
+        "--statistics-plot",
+        type=Path,
+        default=DEFAULT_STATISTICS_PLOT_PATH,
+        help="path to the generated PNG trade report",
+    )
+    return parser
+
+
+def generate_reports(
+    *,
+    text_report: Path,
+    png_report: Path,
+) -> int:
+    try:
+        reports = generate_trade_reports(
+            JOURNAL_PATH,
+            text_report,
+            png_report,
+        )
+    except TradeReportError as exc:
+        print(f"Ошибка генерации отчётов: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Текстовый отчёт: {reports.text_report}")
+    print(f"PNG-отчёт: {reports.png_report}")
+    return 0
 
 
 def load_last_candle_timestamp() -> int | None:
@@ -211,7 +261,9 @@ def build_execution_signal(
     return strategy_signal, False
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+
     feed = BybitMarketDataFeed(
         BybitMarketDataConfig(
             symbol=SYMBOL,
@@ -244,7 +296,19 @@ def main() -> None:
             f"{latest_candle.timestamp}"
         )
         print("Новых закрытых свечей нет.")
-        return
+        if (
+            not args.statistics_report.exists()
+            or not args.statistics_plot.exists()
+        ):
+            print(
+                "Один или несколько отчётов отсутствуют. "
+                "Восстанавливаем их из журнала."
+            )
+            return generate_reports(
+                text_report=args.statistics_report,
+                png_report=args.statistics_plot,
+            )
+        return 0
 
     signal, fast_value, slow_value = (
         calculate_latest_signal(candles)
@@ -395,6 +459,14 @@ def main() -> None:
         f"{LAST_CANDLE_PATH}"
     )
 
+    if result.journal_entry is None:
+        return 0
+
+    return generate_reports(
+        text_report=args.statistics_report,
+        png_report=args.statistics_plot,
+    )
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

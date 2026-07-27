@@ -2,8 +2,9 @@ from decimal import Decimal
 
 import pytest
 
+from app import trade_reporting
 from app.trade_journal import JsonlTradeJournal
-from scripts.report_trade_journal import main
+from scripts import report_trade_journal
 from tests.test_trade_journal import make_entry
 
 
@@ -21,7 +22,7 @@ def test_successful_report_uses_custom_journal_path(
         )
     )
 
-    assert main(["--journal", str(path)]) == 0
+    assert report_trade_journal.main(["--journal", str(path)]) == 0
 
     output = capsys.readouterr().out
     assert "Количество записей: 2" in output
@@ -39,7 +40,9 @@ def test_successful_report_uses_custom_journal_path(
 
 def test_empty_journal_report(tmp_path, capsys) -> None:
     assert (
-        main(["--journal", str(tmp_path / "missing.jsonl")])
+        report_trade_journal.main(
+            ["--journal", str(tmp_path / "missing.jsonl")]
+        )
         == 0
     )
 
@@ -58,4 +61,22 @@ def test_corrupt_custom_journal_is_reported(tmp_path) -> None:
         ValueError,
         match=r"corrupt trade journal line 1",
     ):
-        main(["--journal", str(path)])
+        report_trade_journal.main(["--journal", str(path)])
+
+
+def test_cli_uses_library_formatting(
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    expected = "formatted by app.trade_reporting"
+    monkeypatch.setattr(
+        trade_reporting,
+        "format_trade_report",
+        lambda entries, statistics: expected,
+    )
+
+    assert report_trade_journal.main(
+        ["--journal", str(tmp_path / "missing.jsonl")]
+    ) == 0
+    assert capsys.readouterr().out == expected + "\n"

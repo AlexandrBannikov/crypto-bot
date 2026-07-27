@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 08:27 UTC**
+Обновлено: **2026-07-27 09:16 UTC**
 
 ## Сводка
 
-- Python-файлов: **127**
-- Определений: **1004**
-- Строк Python-кода: **23909**
-- Тестовых модулей: **55**
+- Python-файлов: **129**
+- Определений: **1039**
+- Строк Python-кода: **24880**
+- Тестовых модулей: **56**
 
 ## Быстрый каталог
 
@@ -57,6 +57,7 @@
 - [`app/trade_accounting.py`](../app/trade_accounting.py) — 61 строк, 2 определений
 - [`app/trade_analyzer.py`](../app/trade_analyzer.py) — 198 строк, 6 определений
 - [`app/trade_journal.py`](../app/trade_journal.py) — 147 строк, 9 определений
+- [`app/trade_reporting.py`](../app/trade_reporting.py) — 336 строк, 12 определений
 - [`app/trade_signal.py`](../app/trade_signal.py) — 44 строк, 2 определений
 - [`app/trade_statistics.py`](../app/trade_statistics.py) — 265 строк, 5 определений
 - [`app/trading_controller.py`](../app/trading_controller.py) — 465 строк, 13 определений
@@ -76,9 +77,9 @@
 - [`scripts/download_history.py`](../scripts/download_history.py) — 81 строк, 2 определений
 - [`scripts/optimize_ema.py`](../scripts/optimize_ema.py) — 168 строк, 2 определений
 - [`scripts/optimize_ma.py`](../scripts/optimize_ma.py) — 212 строк, 4 определений
-- [`scripts/plot_trade_statistics.py`](../scripts/plot_trade_statistics.py) — 221 строк, 8 определений
-- [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 129 строк, 6 определений
-- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 400 строк, 6 определений
+- [`scripts/plot_trade_statistics.py`](../scripts/plot_trade_statistics.py) — 84 строк, 4 определений
+- [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 57 строк, 4 определений
+- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 472 строк, 8 определений
 - [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py) — 208 строк, 3 определений
 - [`scripts/run_engine_ema.py`](../scripts/run_engine_ema.py) — 128 строк, 2 определений
 - [`scripts/run_strategy_comparison.py`](../scripts/run_strategy_comparison.py) — 102 строк, 3 определений
@@ -119,10 +120,10 @@
 - [`tests/test_paper_statistics.py`](../tests/test_paper_statistics.py) — 95 строк, 5 определений
 - [`tests/test_paper_trader.py`](../tests/test_paper_trader.py) — 339 строк, 18 определений
 - [`tests/test_performance_analyzer.py`](../tests/test_performance_analyzer.py) — 136 строк, 6 определений
-- [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py) — 128 строк, 6 определений
-- [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 61 строк, 3 определений
+- [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py) — 154 строк, 7 определений
+- [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 82 строк, 4 определений
 - [`tests/test_risk.py`](../tests/test_risk.py) — 272 строк, 13 определений
-- [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 114 строк, 7 определений
+- [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 525 строк, 17 определений
 - [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py) — 122 строк, 7 определений
 - [`tests/test_runtime.py`](../tests/test_runtime.py) — 41 строк, 4 определений
 - [`tests/test_settings.py`](../tests/test_settings.py) — 66 строк, 4 определений
@@ -133,6 +134,7 @@
 - [`tests/test_trade_accounting.py`](../tests/test_trade_accounting.py) — 74 строк, 4 определений
 - [`tests/test_trade_analyzer.py`](../tests/test_trade_analyzer.py) — 282 строк, 8 определений
 - [`tests/test_trade_journal.py`](../tests/test_trade_journal.py) — 88 строк, 5 определений
+- [`tests/test_trade_reporting.py`](../tests/test_trade_reporting.py) — 314 строк, 15 определений
 - [`tests/test_trade_statistics.py`](../tests/test_trade_statistics.py) — 258 строк, 14 определений
 - [`tests/test_trading_controller.py`](../tests/test_trading_controller.py) — 702 строк, 38 определений
 - [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py) — 254 строк, 11 определений
@@ -766,6 +768,26 @@ _Публичных классов и функций не найдено._
 | method | `__init__(self, path: str \| Path) -> None` | 100 |  |
 | method | `append(self, entry: TradeJournalEntry) -> None` | 103 |  |
 | method | `read_all(self) -> list[TradeJournalEntry]` | 119 |  |
+### [`app/trade_reporting.py`](../app/trade_reporting.py)
+
+Строк: **336**
+
+Связанные тесты: [`tests/test_trade_reporting.py`](../tests/test_trade_reporting.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| dataclass | `TradeReportResult` | 24 |  |
+| class | `TradeReportError` | 29 | Raised when a trade report cannot be created. |
+| function | `_format_optional(value: object \| None, *, missing: str) -> str` | 33 |  |
+| function | `format_trade_statistics(statistics: TradeStatistics) -> list[str]` | 37 |  |
+| function | `_format_trade(entry: TradeJournalEntry \| None) -> str` | 78 |  |
+| function | `format_trade_report(entries: Sequence[TradeJournalEntry], statistics: TradeStatistics) -> str` | 84 |  |
+| function | `_plot_statistics_text(statistics: TradeStatistics) -> str` | 114 |  |
+| function | `render_trade_statistics_figure(statistics: TradeStatistics, *, title: str, width: float, height: float)` | 128 |  |
+| function | `_temporary_path(output: Path, *, suffix: str) -> Path` | 225 |  |
+| function | `save_text_report(report: str, output: str \| Path) -> None` | 235 |  |
+| function | `save_trade_statistics_plot(statistics: TradeStatistics, output: str \| Path, *, title: str = 'Trade Statistics', dpi: int = 150, width: float = 12.0, height: float = 9.0) -> None` | 252 |  |
+| function | `generate_trade_reports(journal_path: str \| Path, text_report_path: str \| Path, png_report_path: str \| Path, *, title: str = 'Trade Statistics', dpi: int = 150, width: float = 12.0, height: float = 9.0) -> TradeReportResult` | 286 |  |
 ### [`app/trade_signal.py`](../app/trade_signal.py)
 
 Строк: **44**
@@ -988,48 +1010,44 @@ _Публичных классов и функций не найдено._
 | function | `main() -> None` | 151 |  |
 ### [`scripts/plot_trade_statistics.py`](../scripts/plot_trade_statistics.py)
 
-Строк: **221**
+Строк: **84**
 
 Связанные тесты: [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `positive_int(value: str) -> int` | 30 |  |
-| function | `positive_float(value: str) -> float` | 37 |  |
-| function | `build_parser() -> argparse.ArgumentParser` | 44 |  |
-| function | `format_optional(value: object \| None) -> str` | 71 |  |
-| function | `statistics_text(statistics: TradeStatistics) -> str` | 75 |  |
-| function | `render_figure(statistics: TradeStatistics, *, title: str, width: float, height: float)` | 88 |  |
-| function | `save_report(statistics: TradeStatistics, output: Path, *, title: str, dpi: int, width: float, height: float) -> None` | 176 |  |
-| function | `main(argv: list[str] \| None = None) -> int` | 201 |  |
+| function | `positive_int(value: str) -> int` | 23 |  |
+| function | `positive_float(value: str) -> float` | 30 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 37 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 64 |  |
 ### [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py)
 
-Строк: **129**
+Строк: **57**
 
 Связанные тесты: [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `build_parser() -> argparse.ArgumentParser` | 24 |  |
-| function | `format_trade(entry: TradeJournalEntry \| None) -> str` | 37 |  |
-| function | `format_optional(value: object \| None) -> str` | 46 |  |
-| function | `format_statistics(statistics: TradeStatistics) -> list[str]` | 50 |  |
-| function | `render_report(entries: list[TradeJournalEntry]) -> str` | 91 |  |
-| function | `main(argv: list[str] \| None = None) -> int` | 121 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 25 |  |
+| function | `format_statistics(statistics: TradeStatistics) -> list[str]` | 38 |  |
+| function | `render_report(entries: list[TradeJournalEntry]) -> str` | 42 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 49 |  |
 ### [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py)
 
-Строк: **400**
+Строк: **472**
 
 Связанные тесты: [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `load_last_candle_timestamp() -> int \| None` | 60 |  |
-| function | `save_last_candle_timestamp(timestamp: int) -> None` | 87 |  |
-| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 107 |  |
-| function | `signal_name(signal: Signal) -> str` | 159 |  |
-| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 167 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
-| function | `main() -> None` | 214 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 71 |  |
+| function | `generate_reports(*, text_report: Path, png_report: Path) -> int` | 90 |  |
+| function | `load_last_candle_timestamp() -> int \| None` | 110 |  |
+| function | `save_last_candle_timestamp(timestamp: int) -> None` | 137 |  |
+| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 157 |  |
+| function | `signal_name(signal: Signal) -> str` | 209 |  |
+| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 217 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
+| function | `main(argv: list[str] \| None = None) -> int` | 264 |  |
 ### [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py)
 
 Строк: **208**
@@ -1692,25 +1710,27 @@ _Публичных классов и функций не найдено._
 | function | `test_break_even_trade_breaks_streak() -> None` | 127 |  |
 ### [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py)
 
-Строк: **128**
+Строк: **154**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `assert_png(path: Path) -> None` | 20 |  |
-| function | `test_uses_headless_backend() -> None` | 26 |  |
-| function | `test_custom_journal_output_and_parent_creation(tmp_path) -> None` | 30 |  |
-| function | `test_empty_journal_creates_png(tmp_path) -> None` | 64 |  |
-| function | `test_corrupt_journal_returns_nonzero_without_png(tmp_path, capsys) -> None` | 79 |  |
-| function | `test_cli_runs_from_project_root_and_creates_png(tmp_path) -> None` | 102 |  |
+| function | `assert_png(path: Path) -> None` | 21 |  |
+| function | `test_uses_headless_backend() -> None` | 27 |  |
+| function | `test_custom_journal_output_and_parent_creation(tmp_path) -> None` | 31 |  |
+| function | `test_empty_journal_creates_png(tmp_path) -> None` | 65 |  |
+| function | `test_corrupt_journal_returns_nonzero_without_png(tmp_path, capsys) -> None` | 80 |  |
+| function | `test_cli_runs_from_project_root_and_creates_png(tmp_path) -> None` | 103 |  |
+| function | `test_cli_uses_shared_library_plot_writer(tmp_path, monkeypatch) -> None` | 132 |  |
 ### [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
 
-Строк: **61**
+Строк: **82**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `test_successful_report_uses_custom_journal_path(tmp_path, capsys) -> None` | 10 |  |
-| function | `test_empty_journal_report(tmp_path, capsys) -> None` | 40 |  |
-| function | `test_corrupt_custom_journal_is_reported(tmp_path) -> None` | 53 |  |
+| function | `test_successful_report_uses_custom_journal_path(tmp_path, capsys) -> None` | 11 |  |
+| function | `test_empty_journal_report(tmp_path, capsys) -> None` | 41 |  |
+| function | `test_corrupt_custom_journal_is_reported(tmp_path) -> None` | 56 |  |
+| function | `test_cli_uses_library_formatting(tmp_path, capsys, monkeypatch) -> None` | 67 |  |
 ### [`tests/test_risk.py`](../tests/test_risk.py)
 
 Строк: **272**
@@ -1732,17 +1752,27 @@ _Публичных классов и функций не найдено._
 | function | `test_accepts_full_risk_and_full_position_fraction() -> None` | 262 |  |
 ### [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
-Строк: **114**
+Строк: **525**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `test_stop_loss_percent_is_two_percent() -> None` | 13 |  |
-| function | `test_buy_signal_receives_stop_loss() -> None` | 17 |  |
-| function | `test_stop_loss_closes_open_position() -> None` | 30 |  |
-| function | `test_stop_loss_triggers_at_exact_price() -> None` | 48 |  |
-| function | `test_hold_above_stop_does_not_close() -> None` | 66 |  |
-| function | `test_strategy_sell_is_preserved() -> None` | 83 |  |
-| function | `test_buy_does_not_replace_existing_stop() -> None` | 100 |  |
+| function | `test_stop_loss_percent_is_two_percent() -> None` | 21 |  |
+| function | `test_buy_signal_receives_stop_loss() -> None` | 25 |  |
+| function | `test_stop_loss_closes_open_position() -> None` | 38 |  |
+| function | `test_stop_loss_triggers_at_exact_price() -> None` | 56 |  |
+| function | `test_hold_above_stop_does_not_close() -> None` | 74 |  |
+| function | `test_strategy_sell_is_preserved() -> None` | 91 |  |
+| function | `test_buy_does_not_replace_existing_stop() -> None` | 108 |  |
+| function | `install_successful_run(monkeypatch, *, journal_entry) -> None` | 125 |  |
+| function | `test_reports_are_created_after_successful_journal_change(tmp_path, monkeypatch) -> None` | 180 |  |
+| function | `test_reports_are_not_created_before_successful_processing(tmp_path, monkeypatch) -> None` | 212 |  |
+| function | `test_no_new_candle_does_not_overwrite_reports(tmp_path, monkeypatch) -> None` | 246 |  |
+| function | `test_second_run_recovers_reports_without_duplicate_trade(tmp_path, monkeypatch) -> None` | 280 |  |
+| function | `test_reporting_error_returns_nonzero(tmp_path, monkeypatch, capsys) -> None` | 409 |  |
+| function | `test_custom_report_paths_are_forwarded(tmp_path, monkeypatch) -> None` | 436 |  |
+| function | `test_unchanged_journal_skips_report_generation(monkeypatch) -> None` | 472 |  |
+| function | `test_default_report_paths_are_project_relative() -> None` | 487 |  |
+| function | `test_default_report_paths_do_not_depend_on_cwd(tmp_path, monkeypatch) -> None` | 498 |  |
 ### [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py)
 
 Строк: **122**
@@ -1872,6 +1902,27 @@ _Публичных классов и функций не найдено._
 | function | `test_append_creates_parent_and_preserves_decimal_strings(tmp_path) -> None` | 47 |  |
 | function | `test_two_entries_are_appended_without_overwrite(tmp_path) -> None` | 62 |  |
 | function | `test_corrupt_jsonl_line_has_clear_line_number(tmp_path) -> None` | 80 |  |
+### [`tests/test_trade_reporting.py`](../tests/test_trade_reporting.py)
+
+Строк: **314**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `assert_png(path: Path) -> None` | 18 |  |
+| function | `test_generates_text_and_png_from_nonempty_journal(tmp_path) -> None` | 24 |  |
+| function | `test_empty_missing_journal_creates_reports_and_directories(tmp_path) -> None` | 41 |  |
+| function | `test_existing_empty_journal_creates_nonempty_reports(tmp_path) -> None` | 62 |  |
+| function | `test_custom_paths_are_returned_and_safely_overwritten(tmp_path) -> None` | 79 |  |
+| function | `test_corrupt_journal_has_clear_error(tmp_path) -> None` | 107 |  |
+| function | `test_text_write_error_identifies_text_report(tmp_path) -> None` | 122 |  |
+| function | `test_png_write_error_identifies_png_report(tmp_path) -> None` | 138 |  |
+| function | `test_uses_headless_backend() -> None` | 154 |  |
+| function | `test_figure_is_closed_when_rendering_fails(tmp_path, monkeypatch) -> None` | 158 |  |
+| function | `test_runtime_error_during_png_save_is_wrapped_and_cleans_temporary(tmp_path, monkeypatch) -> None` | 185 |  |
+| function | `test_text_write_failure_after_temporary_creation_cleans_file(tmp_path, monkeypatch) -> None` | 207 |  |
+| function | `test_replace_failure_preserves_target_and_cleans_temporary(tmp_path, monkeypatch) -> None` | 232 |  |
+| function | `test_statistics_error_is_wrapped_with_journal_path(tmp_path, monkeypatch) -> None` | 257 |  |
+| function | `test_statistics_are_calculated_once_and_remain_decimal(tmp_path, monkeypatch) -> None` | 282 |  |
 ### [`tests/test_trade_statistics.py`](../tests/test_trade_statistics.py)
 
 Строк: **258**

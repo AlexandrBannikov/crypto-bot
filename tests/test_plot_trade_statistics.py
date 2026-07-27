@@ -8,6 +8,7 @@ import sys
 
 import matplotlib
 
+from app import trade_reporting
 from app.trade_journal import JsonlTradeJournal
 from scripts import plot_trade_statistics
 from tests.test_trade_journal import make_entry
@@ -125,4 +126,29 @@ def test_cli_runs_from_project_root_and_creates_png(tmp_path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
+    assert_png(output)
+
+
+def test_cli_uses_shared_library_plot_writer(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    output = tmp_path / "shared.png"
+    calls = []
+
+    def save(statistics, path, **options):
+        calls.append((statistics, path, options))
+        path.write_bytes(PNG_SIGNATURE + b"shared")
+
+    monkeypatch.setattr(trade_reporting, "save_trade_statistics_plot", save)
+
+    assert plot_trade_statistics.main(
+        [
+            "--journal",
+            str(tmp_path / "missing.jsonl"),
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    assert len(calls) == 1
     assert_png(output)
