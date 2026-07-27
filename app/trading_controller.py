@@ -21,11 +21,50 @@ from app.trading_types import TradeAction
 @dataclass(frozen=True, slots=True)
 class TradingControllerState:
     position_quantity: Decimal = Decimal("0")
+    entry_price: Decimal | None = None
+    stop_loss: Decimal | None = None
 
     def __post_init__(self) -> None:
         if self.position_quantity < 0:
             raise ValueError(
                 "position_quantity must not be negative"
+            )
+
+        if (
+            self.entry_price is not None
+            and self.entry_price <= 0
+        ):
+            raise ValueError(
+                "entry_price must be greater than zero"
+            )
+
+        if (
+            self.stop_loss is not None
+            and self.stop_loss <= 0
+        ):
+            raise ValueError(
+                "stop_loss must be greater than zero"
+            )
+
+        if (
+            self.entry_price is not None
+            and self.stop_loss is not None
+            and self.stop_loss >= self.entry_price
+        ):
+            raise ValueError(
+                "LONG stop_loss must be below entry_price"
+            )
+
+        if (
+            self.position_quantity == 0
+            and (
+                self.entry_price is not None
+                or self.stop_loss is not None
+            )
+        ):
+            raise ValueError(
+                "flat position must not have "
+                "entry_price or stop_loss"
             )
 
     @property
@@ -56,9 +95,10 @@ class TradingController:
     """
     Управляет состоянием одной LONG-позиции.
 
-    При наличии state_store:
-    - состояние загружается при создании;
-    - состояние сохраняется после исполненной сделки.
+    Контроллер хранит:
+    - количество открытой позиции;
+    - фактическую цену входа;
+    - активный стоп-лосс.
     """
 
     def __init__(
@@ -115,6 +155,21 @@ class TradingController:
                 "normalized signal action must be TradeAction"
             )
 
+        stop_loss = (
+            Decimal(str(normalized.stop_loss))
+            if normalized.stop_loss is not None
+            else None
+        )
+
+        if (
+            action == TradeAction.OPEN_LONG
+            and stop_loss is not None
+            and stop_loss >= price
+        ):
+            raise ValueError(
+                "LONG stop_loss must be below entry price"
+            )
+
         if action == TradeAction.HOLD:
             return TradingControllerResult(
                 action=action,
@@ -163,6 +218,7 @@ class TradingController:
         state_changed = self._apply_execution(
             action=action,
             execution=execution,
+            stop_loss=stop_loss,
         )
 
         if state_changed and self.state_store is not None:
@@ -179,6 +235,7 @@ class TradingController:
         *,
         action: TradeAction,
         execution: ExecutionResult | None,
+        stop_loss: Decimal | None,
     ) -> bool:
         if execution is None:
             return False
@@ -191,9 +248,14 @@ class TradingController:
         if executed_quantity <= 0:
             return False
 
+        if execution.average_price is None:
+            return False
+
         if action == TradeAction.OPEN_LONG:
             self._state = TradingControllerState(
                 position_quantity=executed_quantity,
+                entry_price=execution.average_price,
+                stop_loss=stop_loss,
             )
             return True
 
@@ -203,12 +265,15 @@ class TradingController:
                 - executed_quantity
             )
 
-            if remaining_quantity < 0:
-                remaining_quantity = Decimal("0")
+            if remaining_quantity <= 0:
+                self._state = TradingControllerState()
+            else:
+                self._state = TradingControllerState(
+                    position_quantity=remaining_quantity,
+                    entry_price=self._state.entry_price,
+                    stop_loss=self._state.stop_loss,
+                )
 
-            self._state = TradingControllerState(
-                position_quantity=remaining_quantity,
-            )
             return True
 
         return False

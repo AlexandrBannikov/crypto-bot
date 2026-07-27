@@ -61,6 +61,8 @@ def test_decimal_is_saved_as_string(
 
     assert payload == {
         "position_quantity": "0.0500",
+        "entry_price": None,
+        "stop_loss": None,
     }
 
 
@@ -193,3 +195,40 @@ def test_overwrites_previous_state(
 
     assert loaded.position_quantity == Decimal("0")
     assert loaded.has_open_position is False
+
+
+def test_saves_and_loads_entry_price_and_stop_loss(
+    tmp_path,
+) -> None:
+    path = tmp_path / "controller.json"
+    store = TradingControllerStateStore(path)
+
+    store.save(
+        TradingControllerState(
+            position_quantity=Decimal("0.01"),
+            entry_price=Decimal("1950.25"),
+            stop_loss=Decimal("1911.24"),
+        )
+    )
+
+    loaded = store.load()
+
+    assert loaded.position_quantity == Decimal("0.01")
+    assert loaded.entry_price == Decimal("1950.25")
+    assert loaded.stop_loss == Decimal("1911.24")
+
+
+def test_loads_legacy_state_without_entry_data(
+    tmp_path,
+) -> None:
+    path = tmp_path / "controller.json"
+    path.write_text(
+        '{"position_quantity": "0"}',
+        encoding="utf-8",
+    )
+
+    loaded = TradingControllerStateStore(path).load()
+
+    assert loaded.position_quantity == Decimal("0")
+    assert loaded.entry_price is None
+    assert loaded.stop_loss is None

@@ -311,3 +311,78 @@ def test_rejects_state_and_store_together() -> None:
             state=TradingControllerState(),
             state_store=store,
         )
+
+
+def test_open_position_saves_entry_price() -> None:
+    controller = build_controller()
+
+    result = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.BUY,
+        entry_quantity=Decimal("0.01"),
+        price=Decimal("1950"),
+    )
+
+    assert result.state.entry_price == Decimal("1950")
+    assert result.state.stop_loss is None
+
+
+def test_open_position_saves_stop_loss() -> None:
+    from app.trade_signal import TradeSignal
+
+    controller = build_controller()
+
+    result = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=TradeSignal(
+            action=Signal.BUY,
+            stop_loss=1911.0,
+        ),
+        entry_quantity=Decimal("0.01"),
+        price=Decimal("1950"),
+    )
+
+    assert result.state.position_quantity == Decimal("0.01")
+    assert result.state.entry_price == Decimal("1950")
+    assert result.state.stop_loss == Decimal("1911.0")
+
+
+def test_close_position_clears_entry_data() -> None:
+    controller = build_controller(
+        TradingControllerState(
+            position_quantity=Decimal("0.01"),
+            entry_price=Decimal("1950"),
+            stop_loss=Decimal("1911"),
+        )
+    )
+
+    result = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("0.01"),
+        price=Decimal("2000"),
+    )
+
+    assert result.state.position_quantity == Decimal("0")
+    assert result.state.entry_price is None
+    assert result.state.stop_loss is None
+
+
+def test_rejects_long_stop_above_entry_price() -> None:
+    from app.trade_signal import TradeSignal
+
+    controller = build_controller()
+
+    with pytest.raises(
+        ValueError,
+        match="LONG stop_loss must be below entry price",
+    ):
+        controller.process_signal(
+            symbol="ETHUSDT",
+            signal=TradeSignal(
+                action=Signal.BUY,
+                stop_loss=2000.0,
+            ),
+            entry_quantity=Decimal("0.01"),
+            price=Decimal("1950"),
+        )

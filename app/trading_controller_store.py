@@ -9,10 +9,11 @@ from app.trading_controller import TradingControllerState
 
 class TradingControllerStateStore:
     """
-    Хранит состояние торгового контроллера в JSON-файле.
+    Хранит состояние торгового контроллера в JSON.
 
     Decimal сохраняется строкой, чтобы не терять точность.
-    Запись выполняется через временный файл.
+    Старые файлы, где есть только position_quantity,
+    продолжают поддерживаться.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -36,23 +37,30 @@ class TradingControllerStateStore:
                 "controller state must be a JSON object"
             )
 
-        raw_quantity = payload.get(
-            "position_quantity",
-            "0",
+        position_quantity = self._parse_decimal(
+            payload.get("position_quantity", "0"),
+            field_name="position_quantity",
+            allow_none=False,
         )
 
-        try:
-            position_quantity = Decimal(
-                str(raw_quantity)
-            )
-        except Exception as exc:
-            raise ValueError(
-                "invalid position_quantity "
-                "in controller state"
-            ) from exc
+        entry_price = self._parse_decimal(
+            payload.get("entry_price"),
+            field_name="entry_price",
+            allow_none=True,
+        )
+
+        stop_loss = self._parse_decimal(
+            payload.get("stop_loss"),
+            field_name="stop_loss",
+            allow_none=True,
+        )
+
+        assert position_quantity is not None
 
         return TradingControllerState(
             position_quantity=position_quantity,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
         )
 
     def save(
@@ -67,6 +75,16 @@ class TradingControllerStateStore:
         payload = {
             "position_quantity": str(
                 state.position_quantity
+            ),
+            "entry_price": (
+                str(state.entry_price)
+                if state.entry_price is not None
+                else None
+            ),
+            "stop_loss": (
+                str(state.stop_loss)
+                if state.stop_loss is not None
+                else None
             ),
         }
 
@@ -97,4 +115,22 @@ class TradingControllerStateStore:
 
             raise ValueError(
                 f"failed to save controller state: {exc}"
+            ) from exc
+
+    @staticmethod
+    def _parse_decimal(
+        value,
+        *,
+        field_name: str,
+        allow_none: bool,
+    ) -> Decimal | None:
+        if value is None and allow_none:
+            return None
+
+        try:
+            return Decimal(str(value))
+        except Exception as exc:
+            raise ValueError(
+                f"invalid {field_name} "
+                "in controller state"
             ) from exc
