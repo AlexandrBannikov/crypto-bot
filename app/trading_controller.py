@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Protocol
+from typing import Callable, Protocol
+from uuid import uuid4
 
 from app.execution import (
     ExecutionResult,
@@ -15,6 +17,10 @@ from app.trade_accounting import (
     calculate_long_trade_accounting,
 )
 from app.trade_signal import TradeSignal
+from app.trade_journal import (
+    TradeJournalEntry,
+    TradeJournalProtocol,
+)
 from app.trading_runtime import (
     RuntimeRequest,
     TradingRuntime,
@@ -32,6 +38,7 @@ class TradingControllerState:
     realized_pnl: Decimal = Decimal("0")
     closed_trades: int = 0
     entry_fee: Decimal = Decimal("0")
+    opened_at: str | None = None
 
     def __post_init__(self) -> None:
         if self.position_quantity < 0:
@@ -90,6 +97,7 @@ class TradingControllerState:
                 self.entry_price is not None
                 or self.stop_loss is not None
                 or self.entry_fee != 0
+                or self.opened_at is not None
             )
         ):
             raise ValueError(
@@ -120,6 +128,7 @@ class TradingControllerResult:
     state: TradingControllerState
     skipped_reason: str | None = None
     accounting: ClosedTradeAccounting | None = None
+    journal_entry: TradeJournalEntry | None = None
 
 
 class TradingController:
@@ -141,6 +150,8 @@ class TradingController:
             TradingControllerStateStoreProtocol | None
         ) = None,
         fee_rate: Decimal = Decimal("0.001"),
+        trade_journal: TradeJournalProtocol | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         if state is not None and state_store is not None:
             raise ValueError(
@@ -156,6 +167,10 @@ class TradingController:
         self.runtime = runtime
         self.state_store = state_store
         self.fee_rate = fee_rate
+        self.trade_journal = trade_journal
+        self.clock = clock or (
+            lambda: datetime.now(timezone.utc)
+        )
 
         if state_store is not None:
             self._state = state_store.load()
@@ -174,6 +189,7 @@ class TradingController:
         entry_quantity: Decimal,
         price: Decimal,
         client_order_id: str | None = None,
+        exit_reason: str = "signal",
     ) -> TradingControllerResult:
         if entry_quantity <= 0:
             raise ValueError(
@@ -265,20 +281,29 @@ class TradingController:
             )
         )
 
-        state_changed, accounting = self._apply_execution(
-            action=action,
-            execution=execution,
-            stop_loss=stop_loss,
+        state_changed, accounting, journal_entry = (
+            self._apply_execution(
+                action=action,
+                execution=execution,
+                stop_loss=stop_loss,
+                symbol=symbol,
+                exit_reason=exit_reason,
+            )
         )
 
         if state_changed and self.state_store is not None:
             self.state_store.save(self._state)
+
+        if journal_entry is not None:
+            assert self.trade_journal is not None
+            self.trade_journal.append(journal_entry)
 
         return TradingControllerResult(
             action=action,
             execution=execution,
             state=self._state,
             accounting=accounting,
+            journal_entry=journal_entry,
         )
 
     def _apply_execution(
@@ -287,23 +312,29 @@ class TradingController:
         action: TradeAction,
         execution: ExecutionResult | None,
         stop_loss: Decimal | None,
-    ) -> tuple[bool, ClosedTradeAccounting | None]:
+        symbol: str,
+        exit_reason: str,
+    ) -> tuple[
+        bool,
+        ClosedTradeAccounting | None,
+        TradeJournalEntry | None,
+    ]:
         if execution is None:
-            return False, None
+            return False, None, None
 
         if execution.status not in {
             ExecutionStatus.FILLED,
             ExecutionStatus.PARTIALLY_FILLED,
         }:
-            return False, None
+            return False, None, None
 
         executed_quantity = execution.executed_quantity
 
         if executed_quantity <= 0:
-            return False, None
+            return False, None, None
 
         if execution.average_price is None:
-            return False, None
+            return False, None, None
 
         if action == TradeAction.OPEN_LONG:
             entry_notional = (
@@ -323,11 +354,13 @@ class TradingController:
                 realized_pnl=self._state.realized_pnl,
                 closed_trades=self._state.closed_trades,
                 entry_fee=entry_fee,
+                opened_at=self._iso_timestamp(),
             )
-            return True, None
+            return True, None, None
 
         if action == TradeAction.CLOSE_LONG:
             accounting = None
+            opened_at = self._state.opened_at
 
             if self._state.entry_price is not None:
                 accounting = calculate_long_trade_accounting(
@@ -378,8 +411,55 @@ class TradingController:
                     realized_pnl=realized_pnl,
                     closed_trades=closed_trades,
                     entry_fee=remaining_entry_fee,
+                    opened_at=self._state.opened_at,
                 )
 
-            return True, accounting
+            journal_entry = None
+            if accounting is not None and self.trade_journal is not None:
+                closed_at = self._iso_timestamp()
+                journal_entry = TradeJournalEntry(
+                    record_id=str(uuid4()),
+                    symbol=symbol.strip().upper(),
+                    opened_at=(
+                        opened_at
+                        or closed_at
+                    ),
+                    closed_at=closed_at,
+                    entry_price=accounting.entry_price,
+                    exit_price=accounting.exit_price,
+                    quantity=accounting.quantity,
+                    entry_notional=accounting.entry_notional,
+                    exit_notional=accounting.exit_notional,
+                    gross_pnl=accounting.gross_pnl,
+                    entry_fee=accounting.entry_fee,
+                    exit_fee=accounting.exit_fee,
+                    total_fee=(
+                        accounting.entry_fee
+                        + accounting.exit_fee
+                    ),
+                    net_pnl=accounting.net_pnl,
+                    pnl_percent=(
+                        accounting.net_pnl
+                        / accounting.entry_notional
+                        * Decimal("100")
+                    ),
+                    exit_reason=exit_reason,
+                    remaining_position_quantity=(
+                        self._state.position_quantity
+                    ),
+                    virtual_balance_after=(
+                        self._state.virtual_balance
+                    ),
+                    realized_pnl_after=self._state.realized_pnl,
+                    closed_trades_after=self._state.closed_trades,
+                )
 
-        return False, None
+            return True, accounting, journal_entry
+
+        return False, None, None
+
+    def _iso_timestamp(self) -> str:
+        value = self.clock()
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()

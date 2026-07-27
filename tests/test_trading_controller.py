@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime, timezone
 
 import pytest
 
@@ -16,6 +17,7 @@ from app.trading_controller import (
 )
 from app.trading_runtime import TradingRuntime
 from app.trading_types import PositionSide, TradeAction
+from app.trade_journal import TradeJournalEntry
 
 
 def build_controller(
@@ -458,6 +460,14 @@ class FixedRuntime:
         return self.result
 
 
+class MemoryJournal:
+    def __init__(self) -> None:
+        self.entries: list[TradeJournalEntry] = []
+
+    def append(self, entry: TradeJournalEntry) -> None:
+        self.entries.append(entry)
+
+
 def test_partial_close_keeps_position_and_entry_fee() -> None:
     state = TradingControllerState(
         position_quantity=Decimal("2"),
@@ -493,6 +503,156 @@ def test_partial_close_keeps_position_and_entry_fee() -> None:
     assert result.state.entry_fee == Decimal("0.1500")
     assert result.state.virtual_balance == Decimal("859.7400")
     assert result.state.closed_trades == 1
+
+
+def test_profitable_close_is_written_to_journal() -> None:
+    journal = MemoryJournal()
+    timestamps = iter(
+        [
+            datetime(2026, 7, 27, 10, tzinfo=timezone.utc),
+            datetime(2026, 7, 27, 11, tzinfo=timezone.utc),
+        ]
+    )
+    controller = TradingController(
+        TradingRuntime(ExecutionRunner(PaperExecutor())),
+        trade_journal=journal,
+        clock=lambda: next(timestamps),
+    )
+    controller.process_signal(
+        symbol="ethusdt",
+        signal=Signal.BUY,
+        entry_quantity=Decimal("2"),
+        price=Decimal("100"),
+    )
+
+    result = controller.process_signal(
+        symbol="ethusdt",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("2"),
+        price=Decimal("120"),
+        exit_reason="take_profit",
+    )
+
+    assert len(journal.entries) == 1
+    entry = journal.entries[0]
+    assert result.journal_entry is entry
+    assert entry.symbol == "ETHUSDT"
+    assert entry.opened_at == "2026-07-27T10:00:00+00:00"
+    assert entry.closed_at == "2026-07-27T11:00:00+00:00"
+    assert entry.net_pnl == Decimal("39.560")
+    assert entry.exit_reason == "take_profit"
+    assert entry.remaining_position_quantity == 0
+    assert entry.closed_trades_after == 1
+
+
+def test_losing_close_is_written_to_journal() -> None:
+    journal = MemoryJournal()
+    controller = TradingController(
+        TradingRuntime(ExecutionRunner(PaperExecutor())),
+        trade_journal=journal,
+    )
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.BUY,
+        entry_quantity=Decimal("2"),
+        price=Decimal("100"),
+    )
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("2"),
+        price=Decimal("90"),
+    )
+
+    assert journal.entries[0].net_pnl == Decimal("-20.380")
+
+
+def test_partial_close_writes_remaining_quantity() -> None:
+    journal = MemoryJournal()
+    state = TradingControllerState(
+        position_quantity=Decimal("2"),
+        entry_price=Decimal("100"),
+        virtual_balance=Decimal("799.800"),
+        entry_fee=Decimal("0.200"),
+        opened_at="2026-07-27T10:00:00+00:00",
+    )
+    execution = ExecutionResult(
+        mode=ExecutionMode.PAPER,
+        status=ExecutionStatus.PARTIALLY_FILLED,
+        symbol="ETHUSDT",
+        side=PositionSide.LONG,
+        requested_quantity=Decimal("2"),
+        requested_price=Decimal("120"),
+        executed_quantity=Decimal("0.5"),
+        average_price=Decimal("120"),
+    )
+    controller = TradingController(
+        FixedRuntime(execution),
+        state=state,
+        trade_journal=journal,
+    )
+
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("2"),
+        price=Decimal("120"),
+    )
+
+    assert len(journal.entries) == 1
+    assert (
+        journal.entries[0].remaining_position_quantity
+        == Decimal("1.5")
+    )
+    assert journal.entries[0].closed_trades_after == 1
+
+
+def test_hold_does_not_write_journal() -> None:
+    journal = MemoryJournal()
+    controller = TradingController(
+        TradingRuntime(ExecutionRunner(PaperExecutor())),
+        trade_journal=journal,
+    )
+
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.HOLD,
+        entry_quantity=Decimal("1"),
+        price=Decimal("100"),
+    )
+
+    assert journal.entries == []
+
+
+def test_rejected_close_does_not_write_journal() -> None:
+    journal = MemoryJournal()
+    state = TradingControllerState(
+        position_quantity=Decimal("1"),
+        entry_price=Decimal("100"),
+        entry_fee=Decimal("0.1"),
+    )
+    execution = ExecutionResult(
+        mode=ExecutionMode.PAPER,
+        status=ExecutionStatus.REJECTED,
+        symbol="ETHUSDT",
+        side=PositionSide.LONG,
+        requested_quantity=Decimal("1"),
+        requested_price=Decimal("90"),
+    )
+    controller = TradingController(
+        FixedRuntime(execution),
+        state=state,
+        trade_journal=journal,
+    )
+
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("1"),
+        price=Decimal("90"),
+    )
+
+    assert journal.entries == []
 
 
 def test_rejected_execution_does_not_change_state() -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -20,6 +21,7 @@ from app.indicators import ema
 from app.paper_executor import PaperExecutor
 from app.strategies import Signal
 from app.trade_signal import TradeSignal
+from app.trade_journal import JsonlTradeJournal
 from app.trading_controller import (
     TradingController,
     TradingControllerState,
@@ -46,6 +48,12 @@ STOP_LOSS_PERCENT = Decimal("0.02")
 STATE_PATH = Path("state/trading_controller.json")
 LAST_CANDLE_PATH = Path(
     "state/trading_controller_last_candle.txt"
+)
+JOURNAL_PATH = Path(
+    os.environ.get(
+        "CONTROLLER_TRADE_JOURNAL_PATH",
+        "state/controller_trade_journal.jsonl",
+    )
 )
 
 
@@ -256,6 +264,7 @@ def main() -> None:
     controller = TradingController(
         runtime,
         state_store=state_store,
+        trade_journal=JsonlTradeJournal(JOURNAL_PATH),
     )
 
     # Создаём состояние даже при первом HOLD
@@ -281,6 +290,9 @@ def main() -> None:
         price=current_price,
         client_order_id=(
             f"controller-{latest_candle.timestamp}"
+        ),
+        exit_reason=(
+            "stop_loss" if stop_triggered else "signal"
         ),
     )
 
@@ -370,6 +382,12 @@ def main() -> None:
         print(f"  Комиссия входа: {accounting.entry_fee}")
         print(f"  Комиссия выхода: {accounting.exit_fee}")
         print(f"  Net PnL: {accounting.net_pnl}")
+
+    if result.journal_entry is not None:
+        print(
+            "Запись о закрытии сохранена в журнал: "
+            f"{JOURNAL_PATH}"
+        )
 
     print(f"Файл состояния: {STATE_PATH}")
     print(

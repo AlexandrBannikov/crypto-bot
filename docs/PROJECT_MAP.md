@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 07:14 UTC**
+Обновлено: **2026-07-27 08:04 UTC**
 
 ## Сводка
 
-- Python-файлов: **119**
-- Определений: **939**
-- Строк Python-кода: **22351**
-- Тестовых модулей: **51**
+- Python-файлов: **123**
+- Определений: **968**
+- Строк Python-кода: **23005**
+- Тестовых модулей: **53**
 
 ## Быстрый каталог
 
@@ -56,9 +56,10 @@
 - [`app/strategies.py`](../app/strategies.py) — 89 строк, 3 определений
 - [`app/trade_accounting.py`](../app/trade_accounting.py) — 61 строк, 2 определений
 - [`app/trade_analyzer.py`](../app/trade_analyzer.py) — 198 строк, 6 определений
+- [`app/trade_journal.py`](../app/trade_journal.py) — 147 строк, 9 определений
 - [`app/trade_signal.py`](../app/trade_signal.py) — 44 строк, 2 определений
-- [`app/trading_controller.py`](../app/trading_controller.py) — 385 строк, 12 определений
-- [`app/trading_controller_store.py`](../app/trading_controller_store.py) — 202 строк, 6 определений
+- [`app/trading_controller.py`](../app/trading_controller.py) — 465 строк, 13 определений
+- [`app/trading_controller_store.py`](../app/trading_controller_store.py) — 205 строк, 6 определений
 - [`app/trading_filter.py`](../app/trading_filter.py) — 27 строк, 3 определений
 - [`app/trading_runtime.py`](../app/trading_runtime.py) — 65 строк, 4 определений
 - [`app/trading_types.py`](../app/trading_types.py) — 23 строк, 3 определений
@@ -74,7 +75,8 @@
 - [`scripts/download_history.py`](../scripts/download_history.py) — 81 строк, 2 определений
 - [`scripts/optimize_ema.py`](../scripts/optimize_ema.py) — 168 строк, 2 определений
 - [`scripts/optimize_ma.py`](../scripts/optimize_ma.py) — 212 строк, 4 определений
-- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 382 строк, 6 определений
+- [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 115 строк, 4 определений
+- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 400 строк, 6 определений
 - [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py) — 208 строк, 3 определений
 - [`scripts/run_engine_ema.py`](../scripts/run_engine_ema.py) — 128 строк, 2 определений
 - [`scripts/run_strategy_comparison.py`](../scripts/run_strategy_comparison.py) — 102 строк, 3 определений
@@ -115,6 +117,7 @@
 - [`tests/test_paper_statistics.py`](../tests/test_paper_statistics.py) — 95 строк, 5 определений
 - [`tests/test_paper_trader.py`](../tests/test_paper_trader.py) — 339 строк, 18 определений
 - [`tests/test_performance_analyzer.py`](../tests/test_performance_analyzer.py) — 136 строк, 6 определений
+- [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 43 строк, 2 определений
 - [`tests/test_risk.py`](../tests/test_risk.py) — 272 строк, 13 определений
 - [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 114 строк, 7 определений
 - [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py) — 122 строк, 7 определений
@@ -126,7 +129,8 @@
 - [`tests/test_strategies.py`](../tests/test_strategies.py) — 90 строк, 6 определений
 - [`tests/test_trade_accounting.py`](../tests/test_trade_accounting.py) — 74 строк, 4 определений
 - [`tests/test_trade_analyzer.py`](../tests/test_trade_analyzer.py) — 282 строк, 8 определений
-- [`tests/test_trading_controller.py`](../tests/test_trading_controller.py) — 542 строк, 30 определений
+- [`tests/test_trade_journal.py`](../tests/test_trade_journal.py) — 88 строк, 5 определений
+- [`tests/test_trading_controller.py`](../tests/test_trading_controller.py) — 702 строк, 38 определений
 - [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py) — 254 строк, 11 определений
 - [`tests/test_trading_filter.py`](../tests/test_trading_filter.py) — 98 строк, 9 определений
 - [`tests/test_trading_runtime.py`](../tests/test_trading_runtime.py) — 96 строк, 6 определений
@@ -741,6 +745,23 @@ _Публичных классов и функций не найдено._
 | method | `analyze(self, candles: Sequence[Candle], trades: Sequence[Trade]) -> TradeAnalysisResult` | 29 |  |
 | method | `_analyze_trade(self, *, candles: Sequence[Candle], trade: Trade, timestamp_to_index: dict[int, int]) -> TradeExcursion` | 91 |  |
 | method | `_build_timestamp_index(candles: Sequence[Candle]) -> dict[int, int]` | 185 |  |
+### [`app/trade_journal.py`](../app/trade_journal.py)
+
+Строк: **147**
+
+Связанные тесты: [`tests/test_trade_journal.py`](../tests/test_trade_journal.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| dataclass | `TradeJournalEntry` | 29 |  |
+| method | `to_dict(self) -> dict[str, str \| int]` | 51 |  |
+| method | `from_dict(cls, payload: object) -> TradeJournalEntry` | 58 |  |
+| protocol | `TradeJournalProtocol` | 94 |  |
+| method | `append(self, entry: TradeJournalEntry) -> None` | 95 |  |
+| class | `JsonlTradeJournal` | 99 |  |
+| method | `__init__(self, path: str \| Path) -> None` | 100 |  |
+| method | `append(self, entry: TradeJournalEntry) -> None` | 103 |  |
+| method | `read_all(self) -> list[TradeJournalEntry]` | 119 |  |
 ### [`app/trade_signal.py`](../app/trade_signal.py)
 
 Строк: **44**
@@ -751,27 +772,28 @@ _Публичных классов и функций не найдено._
 | method | `__post_init__(self) -> None` | 14 |  |
 ### [`app/trading_controller.py`](../app/trading_controller.py)
 
-Строк: **385**
+Строк: **465**
 
 Связанные тесты: [`tests/test_trading_controller.py`](../tests/test_trading_controller.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| dataclass | `TradingControllerState` | 26 |  |
-| method | `__post_init__(self) -> None` | 36 |  |
-| method | `has_open_position(self) -> bool` | 101 |  |
-| protocol | `TradingControllerStateStoreProtocol` | 105 |  |
-| method | `load(self) -> TradingControllerState` | 106 |  |
-| method | `save(self, state: TradingControllerState) -> None` | 109 |  |
-| dataclass | `TradingControllerResult` | 117 |  |
-| class | `TradingController` | 125 | Управляет состоянием одной LONG-позиции. |
-| method | `__init__(self, runtime: TradingRuntime, *, state: TradingControllerState \| None = None, state_store: TradingControllerStateStoreProtocol \| None = None, fee_rate: Decimal = Decimal('0.001')) -> None` | 135 |  |
-| method | `state(self) -> TradingControllerState` | 166 |  |
-| method | `process_signal(self, *, symbol: str, signal: Signal \| TradeSignal \| TradeAction, entry_quantity: Decimal, price: Decimal, client_order_id: str \| None = None) -> TradingControllerResult` | 169 |  |
-| method | `_apply_execution(self, *, action: TradeAction, execution: ExecutionResult \| None, stop_loss: Decimal \| None) -> tuple[bool, ClosedTradeAccounting \| None]` | 284 |  |
+| dataclass | `TradingControllerState` | 32 |  |
+| method | `__post_init__(self) -> None` | 43 |  |
+| method | `has_open_position(self) -> bool` | 109 |  |
+| protocol | `TradingControllerStateStoreProtocol` | 113 |  |
+| method | `load(self) -> TradingControllerState` | 114 |  |
+| method | `save(self, state: TradingControllerState) -> None` | 117 |  |
+| dataclass | `TradingControllerResult` | 125 |  |
+| class | `TradingController` | 134 | Управляет состоянием одной LONG-позиции. |
+| method | `__init__(self, runtime: TradingRuntime, *, state: TradingControllerState \| None = None, state_store: TradingControllerStateStoreProtocol \| None = None, fee_rate: Decimal = Decimal('0.001'), trade_journal: TradeJournalProtocol \| None = None, clock: Callable[[], datetime] \| None = None) -> None` | 144 |  |
+| method | `state(self) -> TradingControllerState` | 181 |  |
+| method | `process_signal(self, *, symbol: str, signal: Signal \| TradeSignal \| TradeAction, entry_quantity: Decimal, price: Decimal, client_order_id: str \| None = None, exit_reason: str = 'signal') -> TradingControllerResult` | 184 |  |
+| method | `_apply_execution(self, *, action: TradeAction, execution: ExecutionResult \| None, stop_loss: Decimal \| None, symbol: str, exit_reason: str) -> tuple[bool, ClosedTradeAccounting \| None, TradeJournalEntry \| None]` | 309 |  |
+| method | `_iso_timestamp(self) -> str` | 461 |  |
 ### [`app/trading_controller_store.py`](../app/trading_controller_store.py)
 
-Строк: **202**
+Строк: **205**
 
 Связанные тесты: [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py)
 
@@ -780,9 +802,9 @@ _Публичных классов и функций не найдено._
 | class | `TradingControllerStateStore` | 10 | Хранит состояние торгового контроллера в JSON. |
 | method | `__init__(self, path: str \| Path) -> None` | 19 |  |
 | method | `load(self) -> TradingControllerState` | 22 |  |
-| method | `save(self, state: TradingControllerState) -> None` | 99 |  |
-| method | `_parse_decimal(value, *, field_name: str, allow_none: bool) -> Decimal \| None` | 159 |  |
-| method | `_parse_int(value, *, field_name: str) -> int` | 177 |  |
+| method | `save(self, state: TradingControllerState) -> None` | 100 |  |
+| method | `_parse_decimal(value, *, field_name: str, allow_none: bool) -> Decimal \| None` | 162 |  |
+| method | `_parse_int(value, *, field_name: str) -> int` | 180 |  |
 ### [`app/trading_filter.py`](../app/trading_filter.py)
 
 Строк: **27**
@@ -947,20 +969,32 @@ _Публичных классов и функций не найдено._
 | function | `run_backtest(source_df: pd.DataFrame, fast_period: int, slow_period: int) -> dict` | 22 |  |
 | function | `calculate_buy_and_hold(df: pd.DataFrame) -> float` | 137 |  |
 | function | `main() -> None` | 151 |  |
+### [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py)
+
+Строк: **115**
+
+Связанные тесты: [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `build_parser() -> argparse.ArgumentParser` | 21 |  |
+| function | `format_trade(entry: TradeJournalEntry \| None) -> str` | 34 |  |
+| function | `render_report(entries: list[TradeJournalEntry]) -> str` | 43 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 107 |  |
 ### [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py)
 
-Строк: **382**
+Строк: **400**
 
 Связанные тесты: [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `load_last_candle_timestamp() -> int \| None` | 52 |  |
-| function | `save_last_candle_timestamp(timestamp: int) -> None` | 79 |  |
-| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 99 |  |
-| function | `signal_name(signal: Signal) -> str` | 151 |  |
-| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 159 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
-| function | `main() -> None` | 206 |  |
+| function | `load_last_candle_timestamp() -> int \| None` | 60 |  |
+| function | `save_last_candle_timestamp(timestamp: int) -> None` | 87 |  |
+| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 107 |  |
+| function | `signal_name(signal: Signal) -> str` | 159 |  |
+| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 167 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
+| function | `main() -> None` | 214 |  |
 ### [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py)
 
 Строк: **208**
@@ -1621,6 +1655,14 @@ _Публичных классов и функций не найдено._
 | function | `test_calculates_winning_and_losing_streaks() -> None` | 77 |  |
 | function | `test_calculates_long_and_short_statistics() -> None` | 93 |  |
 | function | `test_break_even_trade_breaks_streak() -> None` | 127 |  |
+### [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
+
+Строк: **43**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `test_successful_report_uses_custom_journal_path(tmp_path, capsys) -> None` | 8 |  |
+| function | `test_empty_journal_report(tmp_path, capsys) -> None` | 33 |  |
 ### [`tests/test_risk.py`](../tests/test_risk.py)
 
 Строк: **272**
@@ -1771,42 +1813,61 @@ _Публичных классов и функций не найдено._
 | function | `test_returns_empty_result_without_trades() -> None` | 205 |  |
 | function | `test_rejects_missing_entry_timestamp() -> None` | 220 |  |
 | function | `test_rejects_duplicate_candle_timestamps() -> None` | 249 |  |
-### [`tests/test_trading_controller.py`](../tests/test_trading_controller.py)
+### [`tests/test_trade_journal.py`](../tests/test_trade_journal.py)
 
-Строк: **542**
+Строк: **88**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `build_controller(state: TradingControllerState \| None = None) -> TradingController` | 21 |  |
-| function | `test_opens_long_position() -> None` | 36 |  |
-| function | `test_does_not_open_second_long_position() -> None` | 52 |  |
-| function | `test_closes_entire_long_position() -> None` | 73 |  |
-| function | `test_does_not_close_missing_position() -> None` | 96 |  |
-| function | `test_hold_does_not_execute_order() -> None` | 112 |  |
-| function | `test_rejects_invalid_request(entry_quantity: Decimal, price: Decimal, message: str) -> None` | 148 |  |
-| function | `test_rejects_negative_state_quantity() -> None` | 164 |  |
-| function | `test_rejects_negative_fee_rate() -> None` | 174 |  |
-| class | `FakeStateStore` | 185 |  |
-| method | `__init__(self, state: TradingControllerState) -> None` | 186 |  |
-| method | `load(self) -> TradingControllerState` | 195 |  |
-| method | `save(self, state: TradingControllerState) -> None` | 198 |  |
-| function | `test_loads_state_from_store() -> None` | 205 |  |
-| function | `test_saves_state_after_opening_position() -> None` | 227 |  |
-| function | `test_saves_state_after_closing_position() -> None` | 255 |  |
-| function | `test_does_not_save_state_for_hold() -> None` | 285 |  |
-| function | `test_rejects_state_and_store_together() -> None` | 309 |  |
-| function | `test_open_position_saves_entry_price() -> None` | 332 |  |
-| function | `test_open_position_saves_stop_loss() -> None` | 346 |  |
-| function | `test_close_position_clears_entry_data() -> None` | 366 |  |
-| function | `test_profitable_close_updates_accounting() -> None` | 387 |  |
-| function | `test_losing_close_updates_accounting() -> None` | 414 |  |
-| function | `test_does_not_open_with_insufficient_balance() -> None` | 436 |  |
-| class | `FixedRuntime` | 453 |  |
-| method | `__init__(self, result: ExecutionResult) -> None` | 454 |  |
-| method | `process_signal(self, request)` | 457 |  |
-| function | `test_partial_close_keeps_position_and_entry_fee() -> None` | 461 |  |
-| function | `test_rejected_execution_does_not_change_state() -> None` | 498 |  |
-| function | `test_rejects_long_stop_above_entry_price() -> None` | 525 |  |
+| function | `make_entry(*, record_id: str = 'record-1', net_pnl: Decimal = Decimal('9.79')) -> TradeJournalEntry` | 12 |  |
+| function | `test_missing_journal_returns_empty_list(tmp_path) -> None` | 41 |  |
+| function | `test_append_creates_parent_and_preserves_decimal_strings(tmp_path) -> None` | 47 |  |
+| function | `test_two_entries_are_appended_without_overwrite(tmp_path) -> None` | 62 |  |
+| function | `test_corrupt_jsonl_line_has_clear_line_number(tmp_path) -> None` | 80 |  |
+### [`tests/test_trading_controller.py`](../tests/test_trading_controller.py)
+
+Строк: **702**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `build_controller(state: TradingControllerState \| None = None) -> TradingController` | 23 |  |
+| function | `test_opens_long_position() -> None` | 38 |  |
+| function | `test_does_not_open_second_long_position() -> None` | 54 |  |
+| function | `test_closes_entire_long_position() -> None` | 75 |  |
+| function | `test_does_not_close_missing_position() -> None` | 98 |  |
+| function | `test_hold_does_not_execute_order() -> None` | 114 |  |
+| function | `test_rejects_invalid_request(entry_quantity: Decimal, price: Decimal, message: str) -> None` | 150 |  |
+| function | `test_rejects_negative_state_quantity() -> None` | 166 |  |
+| function | `test_rejects_negative_fee_rate() -> None` | 176 |  |
+| class | `FakeStateStore` | 187 |  |
+| method | `__init__(self, state: TradingControllerState) -> None` | 188 |  |
+| method | `load(self) -> TradingControllerState` | 197 |  |
+| method | `save(self, state: TradingControllerState) -> None` | 200 |  |
+| function | `test_loads_state_from_store() -> None` | 207 |  |
+| function | `test_saves_state_after_opening_position() -> None` | 229 |  |
+| function | `test_saves_state_after_closing_position() -> None` | 257 |  |
+| function | `test_does_not_save_state_for_hold() -> None` | 287 |  |
+| function | `test_rejects_state_and_store_together() -> None` | 311 |  |
+| function | `test_open_position_saves_entry_price() -> None` | 334 |  |
+| function | `test_open_position_saves_stop_loss() -> None` | 348 |  |
+| function | `test_close_position_clears_entry_data() -> None` | 368 |  |
+| function | `test_profitable_close_updates_accounting() -> None` | 389 |  |
+| function | `test_losing_close_updates_accounting() -> None` | 416 |  |
+| function | `test_does_not_open_with_insufficient_balance() -> None` | 438 |  |
+| class | `FixedRuntime` | 455 |  |
+| method | `__init__(self, result: ExecutionResult) -> None` | 456 |  |
+| method | `process_signal(self, request)` | 459 |  |
+| class | `MemoryJournal` | 463 |  |
+| method | `__init__(self) -> None` | 464 |  |
+| method | `append(self, entry: TradeJournalEntry) -> None` | 467 |  |
+| function | `test_partial_close_keeps_position_and_entry_fee() -> None` | 471 |  |
+| function | `test_profitable_close_is_written_to_journal() -> None` | 508 |  |
+| function | `test_losing_close_is_written_to_journal() -> None` | 548 |  |
+| function | `test_partial_close_writes_remaining_quantity() -> None` | 570 |  |
+| function | `test_hold_does_not_write_journal() -> None` | 610 |  |
+| function | `test_rejected_close_does_not_write_journal() -> None` | 627 |  |
+| function | `test_rejected_execution_does_not_change_state() -> None` | 658 |  |
+| function | `test_rejects_long_stop_above_entry_price() -> None` | 685 |  |
 ### [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py)
 
 Строк: **254**

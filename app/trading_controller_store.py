@@ -94,6 +94,7 @@ class TradingControllerStateStore:
                 field_name="closed_trades",
             ),
             entry_fee=entry_fee,
+            opened_at=payload.get("opened_at"),
         )
 
     def save(
@@ -125,6 +126,8 @@ class TradingControllerStateStore:
             "closed_trades": state.closed_trades,
             "entry_fee": str(state.entry_fee),
         }
+        if state.opened_at is not None:
+            payload["opened_at"] = state.opened_at
 
         temporary_path = self.path.with_suffix(
             self.path.suffix + ".tmp"
