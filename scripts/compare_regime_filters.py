@@ -2,14 +2,9 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import io
 import json
-import os
-import struct
 import sys
-import tempfile
-from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -21,11 +16,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.candle_mapper import dataframe_to_candles
-from app.candle import Candle
 from app.data_loader import load_market_data
 from app.ema_cross_strategy import EMACrossStrategy
 from app.engine import BacktestEngine, BacktestResult
-from app.market_regime import MarketRegime, MarketRegimeDetector
+from app.market_regime import MarketRegimeDetector
+from app.regime_filter_research import (
+    CausalRegimeCache as CachingRegimeDetector,
+    atomic_write,
+)
 from app.regime_filtered_strategy import (
     EntryBlockReason,
     RegimeFilteredStrategy,
@@ -45,38 +43,6 @@ DEFAULT_LOW_VOLATILITY_THRESHOLD = 0.005
 DEFAULT_HIGH_VOLATILITY_THRESHOLD = 0.02
 DEFAULT_MINIMUM_CONFIDENCE = 0.0
 TEST_START = pd.Timestamp("2025-01-01", tz="UTC")
-
-
-class CachingRegimeDetector:
-    def __init__(self, detector: MarketRegimeDetector) -> None:
-        self.detector = detector
-        self._cache: dict[bytes, MarketRegime] = {}
-
-    def detect(
-        self,
-        candles: Sequence[Candle],
-    ) -> MarketRegime:
-        key = self._fingerprint(candles)
-        if key not in self._cache:
-            self._cache[key] = self.detector.detect(candles)
-        return self._cache[key]
-
-    @staticmethod
-    def _fingerprint(candles: Sequence[Candle]) -> bytes:
-        digest = hashlib.blake2b(digest_size=20)
-        for candle in candles:
-            digest.update(
-                struct.pack(
-                    "!q5d",
-                    candle.timestamp,
-                    candle.open,
-                    candle.high,
-                    candle.low,
-                    candle.close,
-                    candle.volume,
-                )
-            )
-        return digest.digest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -452,23 +418,6 @@ def print_results(results: list[ComparisonResult]) -> None:
                     f"{item.blocked_low_confidence}, "
                     f"unknown={item.blocked_unknown_regime}"
                 )
-
-
-def atomic_write(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-    )
-    temporary = Path(name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-            file.write(content)
-            file.flush()
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def save_report(
