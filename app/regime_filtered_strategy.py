@@ -47,6 +47,20 @@ class EntryFilterStatistics:
     blocked_by_reason: dict[str, int]
 
 
+def classify_entry_block_reason(
+    regime: MarketRegime,
+) -> EntryBlockReason:
+    if regime.trend is MarketTrend.UNKNOWN:
+        return EntryBlockReason.UNKNOWN_REGIME
+    if regime.trend is MarketTrend.RANGE:
+        return EntryBlockReason.RANGE
+    if regime.trend is MarketTrend.TREND_DOWN:
+        return EntryBlockReason.DOWNTREND
+    if regime.volatility is MarketVolatility.HIGH:
+        return EntryBlockReason.HIGH_VOLATILITY
+    return EntryBlockReason.LOW_CONFIDENCE
+
+
 class RegimeFilteredStrategy:
     """Apply a market-regime filter only to new position entries."""
 
@@ -110,7 +124,7 @@ class RegimeFilteredStrategy:
             and not self.trading_filter.allow_entry(regime)
         ):
             self._blocked_entries += 1
-            reason = self._block_reason(regime)
+            reason = classify_entry_block_reason(regime)
             self._blocked_by_reason[reason.value] += 1
             return TradeAction.HOLD
 
@@ -131,17 +145,3 @@ class RegimeFilteredStrategy:
             and self._position_side is PositionSide.SHORT
         ):
             self._position_side = None
-
-    def _block_reason(
-        self,
-        regime: MarketRegime,
-    ) -> EntryBlockReason:
-        if regime.trend is MarketTrend.UNKNOWN:
-            return EntryBlockReason.UNKNOWN_REGIME
-        if regime.trend is MarketTrend.RANGE:
-            return EntryBlockReason.RANGE
-        if regime.trend is MarketTrend.TREND_DOWN:
-            return EntryBlockReason.DOWNTREND
-        if regime.volatility is MarketVolatility.HIGH:
-            return EntryBlockReason.HIGH_VOLATILITY
-        return EntryBlockReason.LOW_CONFIDENCE

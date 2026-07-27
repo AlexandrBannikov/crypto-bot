@@ -1,6 +1,11 @@
 import pytest
 
-from app.config import BacktestConfig, DEFAULT_CONFIG
+from app.config import (
+    BacktestConfig,
+    DEFAULT_CONFIG,
+    PaperStrategyConfig,
+    PaperStrategyMode,
+)
 
 
 def test_default_config() -> None:
@@ -54,3 +59,65 @@ def test_empty_timeframe() -> None:
     with pytest.raises(ValueError):
         BacktestConfig(timeframe="")
 
+
+def test_default_paper_strategy_mode_is_baseline(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("PAPER_STRATEGY_MODE", raising=False)
+
+    config = PaperStrategyConfig.from_env()
+
+    assert config.mode is PaperStrategyMode.BASELINE
+
+
+def test_cli_mode_override_has_priority(monkeypatch) -> None:
+    monkeypatch.setenv("PAPER_STRATEGY_MODE", "filtered")
+
+    config = PaperStrategyConfig.from_env(
+        mode_override="shadow"
+    )
+
+    assert config.mode is PaperStrategyMode.SHADOW
+
+
+def test_invalid_paper_strategy_mode_is_rejected(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PAPER_STRATEGY_MODE", "live")
+
+    with pytest.raises(ValueError, match="invalid PAPER_STRATEGY_MODE"):
+        PaperStrategyConfig.from_env()
+
+
+def test_invalid_direct_paper_strategy_mode_is_rejected() -> None:
+    with pytest.raises(ValueError, match="mode must be"):
+        PaperStrategyConfig(mode="live")
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("REGIME_ADX_PERIOD", "0"),
+        ("REGIME_ATR_PERIOD", "-1"),
+        ("REGIME_ADX_THRESHOLD", "nan"),
+        ("REGIME_LOW_VOLATILITY_THRESHOLD", "0.03"),
+        ("REGIME_MINIMUM_CONFIDENCE", "1.1"),
+    ],
+)
+def test_invalid_regime_environment_is_rejected(
+    monkeypatch,
+    name,
+    value,
+) -> None:
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError):
+        PaperStrategyConfig.from_env()
+
+
+def test_shadow_path_required_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("SHADOW_DIAGNOSTICS_ENABLED", "true")
+    monkeypatch.setenv("SHADOW_DIAGNOSTICS_PATH", " ")
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        PaperStrategyConfig.from_env()

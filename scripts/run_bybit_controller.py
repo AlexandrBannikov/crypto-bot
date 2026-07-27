@@ -5,6 +5,7 @@ import os
 import sys
 from decimal import Decimal
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 
@@ -17,15 +18,27 @@ from app.bybit_market_data import (
     BybitMarketDataConfig,
     BybitMarketDataFeed,
 )
+from app.config import (
+    PaperStrategyConfig,
+    PaperStrategyMode,
+)
 from app.execution_runner import ExecutionRunner
 from app.indicators import ema
 from app.paper_executor import PaperExecutor
+from app.paper_strategy_router import (
+    PaperStrategyDecision,
+    PaperStrategyRouter,
+)
 from app.process_lock import (
     ProcessAlreadyRunningError,
     ProcessLock,
     ProcessLockError,
 )
 from app.strategies import Signal
+from app.shadow_decision_journal import (
+    ShadowDecisionJournal,
+    ShadowDecisionRecord,
+)
 from app.trade_signal import TradeSignal
 from app.trade_journal import JsonlTradeJournal
 from app.trading_controller import (
@@ -93,6 +106,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_LOCK_PATH,
         help="path to the single-instance process lock",
+    )
+    parser.add_argument(
+        "--strategy-mode",
+        choices=[item.value for item in PaperStrategyMode],
+        help=(
+            "paper strategy mode: baseline keeps legacy behavior; "
+            "filtered filters new paper entries; shadow executes "
+            "baseline and records filter decisions"
+        ),
     )
     return parser
 
@@ -280,6 +302,26 @@ def build_execution_signal(
 
 
 def run_controller(args: argparse.Namespace) -> int:
+    strategy_config = PaperStrategyConfig.from_env(
+        mode_override=getattr(args, "strategy_mode", None)
+    )
+    diagnostics_path = strategy_config.shadow_diagnostics_path
+    if not diagnostics_path.is_absolute():
+        diagnostics_path = PROJECT_ROOT / diagnostics_path
+    router = PaperStrategyRouter(
+        strategy_config,
+        fast_ema_period=FAST_EMA,
+        slow_ema_period=SLOW_EMA,
+    )
+    print(
+        "Paper strategy: "
+        f"mode={strategy_config.mode.value}, "
+        f"filter={router.detector_parameters}, "
+        f"shadow_diagnostics={strategy_config.shadow_diagnostics_enabled}, "
+        f"path={diagnostics_path}, "
+        "entry_error_policy=fail-closed"
+    )
+
     feed = BybitMarketDataFeed(
         BybitMarketDataConfig(
             symbol=SYMBOL,
@@ -362,10 +404,41 @@ def run_controller(args: argparse.Namespace) -> int:
             state=controller.state,
         )
     )
+    decision = router.route(execution_signal, candles)
+
+    if (
+        strategy_config.shadow_diagnostics_enabled
+        and strategy_config.mode
+        in {PaperStrategyMode.SHADOW, PaperStrategyMode.FILTERED}
+    ):
+        record = build_shadow_record(
+            decision=decision,
+            latest_candle=latest_candle,
+            state=controller.state,
+            controller_run_identifier=str(uuid4()),
+        )
+        try:
+            ShadowDecisionJournal(diagnostics_path).append(record)
+        except ValueError as exc:
+            print(
+                f"Shadow diagnostics error: {exc}",
+                file=sys.stderr,
+            )
+
+    if decision.blocked:
+        print(
+            "Paper filter blocked entry: "
+            f"mode={strategy_config.mode.value}, "
+            f"timestamp={latest_candle.timestamp}, "
+            f"signal={decision.baseline_signal.action.value}, "
+            f"regime={decision.regime}, "
+            f"confidence={decision.confidence}, "
+            f"reason={decision.blocked_reason}"
+        )
 
     result = controller.process_signal(
         symbol=SYMBOL,
-        signal=execution_signal,
+        signal=decision.execution_signal,
         entry_quantity=ENTRY_QUANTITY,
         price=current_price,
         client_order_id=(
@@ -484,6 +557,44 @@ def run_controller(args: argparse.Namespace) -> int:
     )
 
 
+def build_shadow_record(
+    *,
+    decision: PaperStrategyDecision,
+    latest_candle,
+    state: TradingControllerState,
+    controller_run_identifier: str,
+) -> ShadowDecisionRecord:
+    position = "long" if state.has_open_position else "flat"
+    unique_identifier = (
+        f"{SYMBOL}:{INTERVAL}:{latest_candle.timestamp}"
+    )
+    return ShadowDecisionRecord(
+        candle_timestamp=latest_candle.timestamp,
+        symbol=SYMBOL,
+        timeframe=INTERVAL,
+        strategy_mode=decision.mode.value,
+        baseline_signal=decision.baseline_signal.action.value,
+        filtered_signal=decision.filtered_signal.action.value,
+        execution_signal=decision.execution_signal.action.value,
+        regime=decision.regime,
+        confidence=decision.confidence,
+        allowed=decision.entry_allowed,
+        blocked=decision.blocked,
+        blocked_reason=decision.blocked_reason,
+        current_position=position,
+        virtual_balance=str(state.virtual_balance),
+        detector_parameters=(
+            decision.detector_diagnostics.parameters
+        ),
+        filter_parameters_fingerprint=(
+            decision.detector_diagnostics.parameters_fingerprint
+        ),
+        unique_candle_identifier=unique_identifier,
+        controller_run_identifier=controller_run_identifier,
+        detector_error=decision.detector_diagnostics.error_type,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -503,6 +614,9 @@ def main(argv: list[str] | None = None) -> int:
             f"{args.lock_file}: {exc}",
             file=sys.stderr,
         )
+        return 1
+    except ValueError as exc:
+        print(f"Controller configuration error: {exc}", file=sys.stderr)
         return 1
 
 

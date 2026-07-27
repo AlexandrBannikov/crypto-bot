@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 11:13 UTC**
+Обновлено: **2026-07-27 11:30 UTC**
 
 ## Сводка
 
-- Python-файлов: **138**
-- Определений: **1178**
-- Строк Python-кода: **27881**
-- Тестовых модулей: **60**
+- Python-файлов: **144**
+- Определений: **1236**
+- Строк Python-кода: **29071**
+- Тестовых модулей: **63**
 
 ## Быстрый каталог
 
@@ -24,7 +24,7 @@
 - [`app/bybit_orders.py`](../app/bybit_orders.py) — 563 строк, 24 определений
 - [`app/candle.py`](../app/candle.py) — 11 строк, 1 определений
 - [`app/candle_mapper.py`](../app/candle_mapper.py) — 47 строк, 1 определений
-- [`app/config.py`](../app/config.py) — 28 строк, 2 определений
+- [`app/config.py`](../app/config.py) — 168 строк, 9 определений
 - [`app/data_loader.py`](../app/data_loader.py) — 111 строк, 2 определений
 - [`app/ema_cross_stop_strategy.py`](../app/ema_cross_stop_strategy.py) — 60 строк, 3 определений
 - [`app/ema_cross_strategy.py`](../app/ema_cross_strategy.py) — 131 строк, 6 определений
@@ -45,6 +45,7 @@
 - [`app/paper_session.py`](../app/paper_session.py) — 882 строк, 19 определений
 - [`app/paper_state.py`](../app/paper_state.py) — 314 строк, 9 определений
 - [`app/paper_statistics.py`](../app/paper_statistics.py) — 91 строк, 1 определений
+- [`app/paper_strategy_router.py`](../app/paper_strategy_router.py) — 175 строк, 7 определений
 - [`app/paper_trader.py`](../app/paper_trader.py) — 200 строк, 11 определений
 - [`app/performance_analyzer.py`](../app/performance_analyzer.py) — 217 строк, 6 определений
 - [`app/process_lock.py`](../app/process_lock.py) — 136 строк, 8 определений
@@ -53,6 +54,7 @@
 - [`app/risk.py`](../app/risk.py) — 152 строк, 7 определений
 - [`app/runtime.py`](../app/runtime.py) — 35 строк, 2 определений
 - [`app/settings.py`](../app/settings.py) — 66 строк, 4 определений
+- [`app/shadow_decision_journal.py`](../app/shadow_decision_journal.py) — 169 строк, 9 определений
 - [`app/signal_generator.py`](../app/signal_generator.py) — 35 строк, 5 определений
 - [`app/signal_normalizer.py`](../app/signal_normalizer.py) — 49 строк, 1 определений
 - [`app/stop_manager.py`](../app/stop_manager.py) — 87 строк, 3 определений
@@ -82,8 +84,9 @@
 - [`scripts/optimize_ema.py`](../scripts/optimize_ema.py) — 168 строк, 2 определений
 - [`scripts/optimize_ma.py`](../scripts/optimize_ma.py) — 212 строк, 4 определений
 - [`scripts/plot_trade_statistics.py`](../scripts/plot_trade_statistics.py) — 84 строк, 4 определений
+- [`scripts/report_shadow_decisions.py`](../scripts/report_shadow_decisions.py) — 133 строк, 5 определений
 - [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 57 строк, 4 определений
-- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 510 строк, 10 определений
+- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 624 строк, 11 определений
 - [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py) — 208 строк, 3 определений
 - [`scripts/run_engine_ema.py`](../scripts/run_engine_ema.py) — 128 строк, 2 определений
 - [`scripts/run_strategy_comparison.py`](../scripts/run_strategy_comparison.py) — 102 строк, 3 определений
@@ -103,7 +106,7 @@
 - [`tests/test_candle_mapper.py`](../tests/test_candle_mapper.py) — 75 строк, 5 определений
 - [`tests/test_check_runtime.py`](../tests/test_check_runtime.py) — 45 строк, 4 определений
 - [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py) — 260 строк, 8 определений
-- [`tests/test_config.py`](../tests/test_config.py) — 56 строк, 6 определений
+- [`tests/test_config.py`](../tests/test_config.py) — 123 строк, 12 определений
 - [`tests/test_data_loader.py`](../tests/test_data_loader.py) — 107 строк, 9 определений
 - [`tests/test_ema_cross_stop_strategy.py`](../tests/test_ema_cross_stop_strategy.py) — 86 строк, 4 определений
 - [`tests/test_ema_cross_strategy.py`](../tests/test_ema_cross_strategy.py) — 160 строк, 9 определений
@@ -124,6 +127,7 @@
 - [`tests/test_paper_session.py`](../tests/test_paper_session.py) — 936 строк, 44 определений
 - [`tests/test_paper_state.py`](../tests/test_paper_state.py) — 213 строк, 8 определений
 - [`tests/test_paper_statistics.py`](../tests/test_paper_statistics.py) — 95 строк, 5 определений
+- [`tests/test_paper_strategy_router.py`](../tests/test_paper_strategy_router.py) — 214 строк, 12 определений
 - [`tests/test_paper_trader.py`](../tests/test_paper_trader.py) — 339 строк, 18 определений
 - [`tests/test_performance_analyzer.py`](../tests/test_performance_analyzer.py) — 136 строк, 6 определений
 - [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py) — 154 строк, 7 определений
@@ -135,6 +139,8 @@
 - [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py) — 122 строк, 7 определений
 - [`tests/test_runtime.py`](../tests/test_runtime.py) — 41 строк, 4 определений
 - [`tests/test_settings.py`](../tests/test_settings.py) — 66 строк, 4 определений
+- [`tests/test_shadow_decision_journal.py`](../tests/test_shadow_decision_journal.py) — 112 строк, 8 определений
+- [`tests/test_shadow_report.py`](../tests/test_shadow_report.py) — 66 строк, 3 определений
 - [`tests/test_signal_generator.py`](../tests/test_signal_generator.py) — 138 строк, 12 определений
 - [`tests/test_signal_normalizer.py`](../tests/test_signal_normalizer.py) — 74 строк, 5 определений
 - [`tests/test_stop_manager.py`](../tests/test_stop_manager.py) — 155 строк, 14 определений
@@ -312,14 +318,21 @@ _Публичных классов и функций не найдено._
 | function | `dataframe_to_candles(data: pd.DataFrame) -> list[Candle]` | 16 |  |
 ### [`app/config.py`](../app/config.py)
 
-Строк: **28**
+Строк: **168**
 
 Связанные тесты: [`tests/test_config.py`](../tests/test_config.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| dataclass | `BacktestConfig` | 5 |  |
-| method | `__post_init__(self) -> None` | 11 |  |
+| dataclass | `BacktestConfig` | 9 |  |
+| method | `__post_init__(self) -> None` | 15 |  |
+| enum | `PaperStrategyMode` | 34 |  |
+| dataclass | `PaperStrategyConfig` | 41 |  |
+| method | `__post_init__(self) -> None` | 54 |  |
+| method | `from_env(cls, *, mode_override: str \| None = None) -> 'PaperStrategyConfig'` | 102 |  |
+| function | `_env_int(name: str, default: int) -> int` | 145 |  |
+| function | `_env_float(name: str, default: float) -> float` | 152 |  |
+| function | `_env_bool(name: str, default: bool) -> bool` | 159 |  |
 ### [`app/data_loader.py`](../app/data_loader.py)
 
 Строк: **111**
@@ -622,6 +635,21 @@ _Публичных классов и функций не найдено._
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
 | function | `calculate_statistics(*, start_balance: float, trades: Sequence[Trade]) -> PaperStatistics` | 7 |  |
+### [`app/paper_strategy_router.py`](../app/paper_strategy_router.py)
+
+Строк: **175**
+
+Связанные тесты: [`tests/test_paper_strategy_router.py`](../tests/test_paper_strategy_router.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| protocol | `RegimeDetector` | 20 |  |
+| method | `detect(self, candles: Sequence[Candle]) -> MarketRegime` | 21 |  |
+| dataclass | `DetectorDiagnostics` | 26 |  |
+| dataclass | `PaperStrategyDecision` | 33 |  |
+| class | `PaperStrategyRouter` | 46 | Route one paper signal without owning trading state. |
+| method | `__init__(self, config: PaperStrategyConfig, *, fast_ema_period: int = 20, slow_ema_period: int = 50, detector: RegimeDetector \| None = None, trading_filter: TradingFilter \| None = None) -> None` | 49 |  |
+| method | `route(self, signal: Signal \| TradeSignal \| TradeAction, candles: Sequence[Candle]) -> PaperStrategyDecision` | 96 |  |
 ### [`app/paper_trader.py`](../app/paper_trader.py)
 
 Строк: **200**
@@ -714,12 +742,12 @@ _Публичных классов и функций не найдено._
 | method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 27 |  |
 | enum | `EntryBlockReason` | 35 |  |
 | dataclass | `EntryFilterStatistics` | 44 |  |
-| class | `RegimeFilteredStrategy` | 50 | Apply a market-regime filter only to new position entries. |
-| method | `__init__(self, base_strategy: Strategy, regime_detector: MarketRegimeDetector, trading_filter: TradingFilter, *, apply_filter: bool = True) -> None` | 53 |  |
-| method | `statistics(self) -> EntryFilterStatistics` | 71 |  |
-| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 83 |  |
-| method | `_register_exit(self, action: TradeAction) -> None` | 125 |  |
-| method | `_block_reason(self, regime: MarketRegime) -> EntryBlockReason` | 135 |  |
+| function | `classify_entry_block_reason(regime: MarketRegime) -> EntryBlockReason` | 50 |  |
+| class | `RegimeFilteredStrategy` | 64 | Apply a market-regime filter only to new position entries. |
+| method | `__init__(self, base_strategy: Strategy, regime_detector: MarketRegimeDetector, trading_filter: TradingFilter, *, apply_filter: bool = True) -> None` | 67 |  |
+| method | `statistics(self) -> EntryFilterStatistics` | 85 |  |
+| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 97 |  |
+| method | `_register_exit(self, action: TradeAction) -> None` | 139 |  |
 ### [`app/risk.py`](../app/risk.py)
 
 Строк: **152**
@@ -757,6 +785,23 @@ _Публичных классов и функций не найдено._
 | function | `_parse_bool(value: str \| None) -> bool` | 19 |  |
 | function | `_optional_text(value: str \| None) -> str \| None` | 31 |  |
 | function | `load_settings() -> Settings` | 43 |  |
+### [`app/shadow_decision_journal.py`](../app/shadow_decision_journal.py)
+
+Строк: **169**
+
+Связанные тесты: [`tests/test_shadow_decision_journal.py`](../tests/test_shadow_decision_journal.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| dataclass | `ShadowDecisionRecord` | 11 |  |
+| method | `deduplication_key(self) -> str` | 33 |  |
+| class | `ShadowDecisionJournal` | 45 | Append-only JSONL with restart-safe last-key deduplication. |
+| method | `__init__(self, path: str \| Path, *, state_path: str \| Path \| None = None) -> None` | 48 |  |
+| method | `append(self, record: ShadowDecisionRecord) -> bool` | 62 |  |
+| method | `read_all(self) -> list[ShadowDecisionRecord]` | 86 |  |
+| method | `_load_last_key(self) -> str \| None` | 116 |  |
+| method | `_save_state(self, key: str) -> None` | 135 |  |
+| method | `_truncate(self, size: int) -> None` | 160 |  |
 ### [`app/signal_generator.py`](../app/signal_generator.py)
 
 Строк: **35**
@@ -1117,6 +1162,17 @@ _Публичных классов и функций не найдено._
 | function | `positive_float(value: str) -> float` | 30 |  |
 | function | `build_parser() -> argparse.ArgumentParser` | 37 |  |
 | function | `main(argv: list[str] \| None = None) -> int` | 64 |  |
+### [`scripts/report_shadow_decisions.py`](../scripts/report_shadow_decisions.py)
+
+Строк: **133**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `build_parser() -> argparse.ArgumentParser` | 27 |  |
+| function | `parse_time(value: str) -> int` | 40 |  |
+| function | `build_summary(records) -> dict[str, object]` | 49 |  |
+| function | `atomic_write(path: Path, content: str) -> None` | 91 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 109 |  |
 ### [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py)
 
 Строк: **57**
@@ -1131,22 +1187,23 @@ _Публичных классов и функций не найдено._
 | function | `main(argv: list[str] \| None = None) -> int` | 49 |  |
 ### [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py)
 
-Строк: **510**
+Строк: **624**
 
 Связанные тесты: [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `build_parser() -> argparse.ArgumentParser` | 75 |  |
-| function | `generate_trade_reports(*args, **kwargs)` | 100 |  |
-| function | `generate_reports(*, text_report: Path, png_report: Path) -> int` | 106 |  |
-| function | `load_last_candle_timestamp() -> int \| None` | 128 |  |
-| function | `save_last_candle_timestamp(timestamp: int) -> None` | 155 |  |
-| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 175 |  |
-| function | `signal_name(signal: Signal) -> str` | 227 |  |
-| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 235 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
-| function | `run_controller(args: argparse.Namespace) -> int` | 282 |  |
-| function | `main(argv: list[str] \| None = None) -> int` | 487 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 88 |  |
+| function | `generate_trade_reports(*args, **kwargs)` | 122 |  |
+| function | `generate_reports(*, text_report: Path, png_report: Path) -> int` | 128 |  |
+| function | `load_last_candle_timestamp() -> int \| None` | 150 |  |
+| function | `save_last_candle_timestamp(timestamp: int) -> None` | 177 |  |
+| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 197 |  |
+| function | `signal_name(signal: Signal) -> str` | 249 |  |
+| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 257 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
+| function | `run_controller(args: argparse.Namespace) -> int` | 304 |  |
+| function | `build_shadow_record(*, decision: PaperStrategyDecision, latest_candle, state: TradingControllerState, controller_run_identifier: str) -> ShadowDecisionRecord` | 560 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 598 |  |
 ### [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py)
 
 Строк: **208**
@@ -1409,16 +1466,22 @@ _Публичных классов и функций не найдено._
 | function | `test_invalid_periods_and_thresholds_are_clear(arguments, message, capsys) -> None` | 251 |  |
 ### [`tests/test_config.py`](../tests/test_config.py)
 
-Строк: **56**
+Строк: **123**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `test_default_config() -> None` | 6 |  |
-| function | `test_custom_config() -> None` | 13 |  |
-| function | `test_invalid_start_balance(start_balance: float) -> None` | 30 |  |
-| function | `test_invalid_fee_rate(fee_rate: float) -> None` | 41 |  |
-| function | `test_empty_symbol() -> None` | 48 |  |
-| function | `test_empty_timeframe() -> None` | 53 |  |
+| function | `test_default_config() -> None` | 11 |  |
+| function | `test_custom_config() -> None` | 18 |  |
+| function | `test_invalid_start_balance(start_balance: float) -> None` | 35 |  |
+| function | `test_invalid_fee_rate(fee_rate: float) -> None` | 46 |  |
+| function | `test_empty_symbol() -> None` | 53 |  |
+| function | `test_empty_timeframe() -> None` | 58 |  |
+| function | `test_default_paper_strategy_mode_is_baseline(monkeypatch) -> None` | 63 |  |
+| function | `test_cli_mode_override_has_priority(monkeypatch) -> None` | 73 |  |
+| function | `test_invalid_paper_strategy_mode_is_rejected(monkeypatch) -> None` | 83 |  |
+| function | `test_invalid_direct_paper_strategy_mode_is_rejected() -> None` | 92 |  |
+| function | `test_invalid_regime_environment_is_rejected(monkeypatch, name, value) -> None` | 107 |  |
+| function | `test_shadow_path_required_when_enabled(monkeypatch) -> None` | 118 |  |
 ### [`tests/test_data_loader.py`](../tests/test_data_loader.py)
 
 Строк: **107**
@@ -1804,6 +1867,24 @@ _Публичных классов и функций не найдено._
 | function | `test_calculates_basic_statistics() -> None` | 39 |  |
 | function | `test_calculates_profit_factor_and_averages() -> None` | 61 |  |
 | function | `test_profit_factor_is_zero_without_losses() -> None` | 82 |  |
+### [`tests/test_paper_strategy_router.py`](../tests/test_paper_strategy_router.py)
+
+Строк: **214**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `candles() -> list[Candle]` | 23 |  |
+| function | `regime(trend = MarketTrend.TREND_UP, volatility = MarketVolatility.NORMAL)` | 30 |  |
+| function | `router(mode, detected = None)` | 37 |  |
+| function | `test_baseline_preserves_signal_without_detector() -> None` | 49 |  |
+| function | `test_filtered_allows_valid_entry() -> None` | 60 |  |
+| function | `test_filtered_blocks_invalid_entry(detected, reason) -> None` | 84 |  |
+| function | `test_filtered_never_blocks_exit(signal) -> None` | 103 |  |
+| function | `test_shadow_executes_baseline_and_records_filtered_view() -> None` | 119 |  |
+| function | `test_detector_error_filtered_fails_closed_only_for_entry() -> None` | 133 |  |
+| function | `test_detector_error_shadow_keeps_baseline_entry() -> None` | 147 |  |
+| function | `test_shadow_and_baseline_have_identical_accounting() -> None` | 157 |  |
+| function | `test_filtered_can_differ_only_by_suppressing_entry() -> None` | 196 |  |
 ### [`tests/test_paper_trader.py`](../tests/test_paper_trader.py)
 
 Строк: **339**
@@ -1993,6 +2074,29 @@ _Публичных классов и функций не найдено._
 | function | `test_defaults()` | 36 |  |
 | function | `test_environment_loading()` | 46 |  |
 | function | `test_invalid_execution_mode()` | 62 |  |
+### [`tests/test_shadow_decision_journal.py`](../tests/test_shadow_decision_journal.py)
+
+Строк: **112**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `record(timestamp = 1, **changes)` | 12 |  |
+| function | `test_append_and_read_jsonl(tmp_path) -> None` | 38 |  |
+| function | `test_same_candle_is_not_appended_twice(tmp_path) -> None` | 46 |  |
+| function | `test_deduplication_survives_restart(tmp_path) -> None` | 54 |  |
+| function | `test_stale_or_corrupt_optional_state_recovers_from_jsonl(tmp_path) -> None` | 63 |  |
+| function | `test_partial_last_line_is_ignored(tmp_path) -> None` | 76 |  |
+| function | `test_corrupt_middle_line_is_rejected(tmp_path) -> None` | 91 |  |
+| function | `test_invalid_utf8_last_line_is_repaired(tmp_path) -> None` | 102 |  |
+### [`tests/test_shadow_report.py`](../tests/test_shadow_report.py)
+
+Строк: **66**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `test_report_counts_decisions_and_reasons(tmp_path) -> None` | 8 |  |
+| function | `test_blocked_reasons_sum_matches_blocked_entries(tmp_path) -> None` | 34 |  |
+| function | `test_report_filters_and_saves_json(tmp_path) -> None` | 48 |  |
 ### [`tests/test_signal_generator.py`](../tests/test_signal_generator.py)
 
 Строк: **138**
