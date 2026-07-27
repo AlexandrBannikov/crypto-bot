@@ -63,6 +63,11 @@ def test_decimal_is_saved_as_string(
         "position_quantity": "0.0500",
         "entry_price": None,
         "stop_loss": None,
+        "virtual_balance": "1000",
+        "total_fees": "0",
+        "realized_pnl": "0",
+        "closed_trades": 0,
+        "entry_fee": "0",
     }
 
 
@@ -208,6 +213,11 @@ def test_saves_and_loads_entry_price_and_stop_loss(
             position_quantity=Decimal("0.01"),
             entry_price=Decimal("1950.25"),
             stop_loss=Decimal("1911.24"),
+            virtual_balance=Decimal("804.77925"),
+            total_fees=Decimal("1.25"),
+            realized_pnl=Decimal("-2.75"),
+            closed_trades=3,
+            entry_fee=Decimal("0.195025"),
         )
     )
 
@@ -216,6 +226,11 @@ def test_saves_and_loads_entry_price_and_stop_loss(
     assert loaded.position_quantity == Decimal("0.01")
     assert loaded.entry_price == Decimal("1950.25")
     assert loaded.stop_loss == Decimal("1911.24")
+    assert loaded.virtual_balance == Decimal("804.77925")
+    assert loaded.total_fees == Decimal("1.25")
+    assert loaded.realized_pnl == Decimal("-2.75")
+    assert loaded.closed_trades == 3
+    assert loaded.entry_fee == Decimal("0.195025")
 
 
 def test_loads_legacy_state_without_entry_data(
@@ -232,3 +247,8 @@ def test_loads_legacy_state_without_entry_data(
     assert loaded.position_quantity == Decimal("0")
     assert loaded.entry_price is None
     assert loaded.stop_loss is None
+    assert loaded.virtual_balance == Decimal("1000")
+    assert loaded.total_fees == Decimal("0")
+    assert loaded.realized_pnl == Decimal("0")
+    assert loaded.closed_trades == 0
+    assert loaded.entry_fee == Decimal("0")

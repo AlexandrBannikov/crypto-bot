@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 06:38 UTC**
+Обновлено: **2026-07-27 07:14 UTC**
 
 ## Сводка
 
-- Python-файлов: **117**
-- Определений: **923**
-- Строк Python-кода: **21843**
-- Тестовых модулей: **50**
+- Python-файлов: **119**
+- Определений: **939**
+- Строк Python-кода: **22351**
+- Тестовых модулей: **51**
 
 ## Быстрый каталог
 
@@ -54,10 +54,11 @@
 - [`app/signal_normalizer.py`](../app/signal_normalizer.py) — 49 строк, 1 определений
 - [`app/stop_manager.py`](../app/stop_manager.py) — 87 строк, 3 определений
 - [`app/strategies.py`](../app/strategies.py) — 89 строк, 3 определений
+- [`app/trade_accounting.py`](../app/trade_accounting.py) — 61 строк, 2 определений
 - [`app/trade_analyzer.py`](../app/trade_analyzer.py) — 198 строк, 6 определений
 - [`app/trade_signal.py`](../app/trade_signal.py) — 44 строк, 2 определений
-- [`app/trading_controller.py`](../app/trading_controller.py) — 279 строк, 12 определений
-- [`app/trading_controller_store.py`](../app/trading_controller_store.py) — 136 строк, 5 определений
+- [`app/trading_controller.py`](../app/trading_controller.py) — 385 строк, 12 определений
+- [`app/trading_controller_store.py`](../app/trading_controller_store.py) — 202 строк, 6 определений
 - [`app/trading_filter.py`](../app/trading_filter.py) — 27 строк, 3 определений
 - [`app/trading_runtime.py`](../app/trading_runtime.py) — 65 строк, 4 определений
 - [`app/trading_types.py`](../app/trading_types.py) — 23 строк, 3 определений
@@ -73,7 +74,7 @@
 - [`scripts/download_history.py`](../scripts/download_history.py) — 81 строк, 2 определений
 - [`scripts/optimize_ema.py`](../scripts/optimize_ema.py) — 168 строк, 2 определений
 - [`scripts/optimize_ma.py`](../scripts/optimize_ma.py) — 212 строк, 4 определений
-- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 355 строк, 6 определений
+- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 382 строк, 6 определений
 - [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py) — 208 строк, 3 определений
 - [`scripts/run_engine_ema.py`](../scripts/run_engine_ema.py) — 128 строк, 2 определений
 - [`scripts/run_strategy_comparison.py`](../scripts/run_strategy_comparison.py) — 102 строк, 3 определений
@@ -123,9 +124,10 @@
 - [`tests/test_signal_normalizer.py`](../tests/test_signal_normalizer.py) — 74 строк, 5 определений
 - [`tests/test_stop_manager.py`](../tests/test_stop_manager.py) — 155 строк, 14 определений
 - [`tests/test_strategies.py`](../tests/test_strategies.py) — 90 строк, 6 определений
+- [`tests/test_trade_accounting.py`](../tests/test_trade_accounting.py) — 74 строк, 4 определений
 - [`tests/test_trade_analyzer.py`](../tests/test_trade_analyzer.py) — 282 строк, 8 определений
-- [`tests/test_trading_controller.py`](../tests/test_trading_controller.py) — 388 строк, 21 определений
-- [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py) — 234 строк, 11 определений
+- [`tests/test_trading_controller.py`](../tests/test_trading_controller.py) — 542 строк, 30 определений
+- [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py) — 254 строк, 11 определений
 - [`tests/test_trading_filter.py`](../tests/test_trading_filter.py) — 98 строк, 9 определений
 - [`tests/test_trading_runtime.py`](../tests/test_trading_runtime.py) — 96 строк, 6 определений
 - [`tests/test_trading_types.py`](../tests/test_trading_types.py) — 22 строк, 3 определений
@@ -715,6 +717,16 @@ _Публичных классов и функций не найдено._
 | enum | `Signal` | 8 |  |
 | function | `ma_cross_signals(data: pd.DataFrame, fast_period: int, slow_period: int) -> pd.Series` | 14 |  |
 | function | `rsi_signals(data: pd.DataFrame, period: int = 14, buy_level: float = 30.0, sell_level: float = 70.0) -> pd.Series` | 55 |  |
+### [`app/trade_accounting.py`](../app/trade_accounting.py)
+
+Строк: **61**
+
+Связанные тесты: [`tests/test_trade_accounting.py`](../tests/test_trade_accounting.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| dataclass | `ClosedTradeAccounting` | 6 |  |
+| function | `calculate_long_trade_accounting(entry_price: Decimal, exit_price: Decimal, quantity: Decimal, fee_rate: Decimal) -> ClosedTradeAccounting` | 18 |  |
 ### [`app/trade_analyzer.py`](../app/trade_analyzer.py)
 
 Строк: **198**
@@ -739,27 +751,27 @@ _Публичных классов и функций не найдено._
 | method | `__post_init__(self) -> None` | 14 |  |
 ### [`app/trading_controller.py`](../app/trading_controller.py)
 
-Строк: **279**
+Строк: **385**
 
 Связанные тесты: [`tests/test_trading_controller.py`](../tests/test_trading_controller.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| dataclass | `TradingControllerState` | 22 |  |
-| method | `__post_init__(self) -> None` | 27 |  |
-| method | `has_open_position(self) -> bool` | 71 |  |
-| protocol | `TradingControllerStateStoreProtocol` | 75 |  |
-| method | `load(self) -> TradingControllerState` | 76 |  |
-| method | `save(self, state: TradingControllerState) -> None` | 79 |  |
-| dataclass | `TradingControllerResult` | 87 |  |
-| class | `TradingController` | 94 | Управляет состоянием одной LONG-позиции. |
-| method | `__init__(self, runtime: TradingRuntime, *, state: TradingControllerState \| None = None, state_store: TradingControllerStateStoreProtocol \| None = None) -> None` | 104 |  |
-| method | `state(self) -> TradingControllerState` | 128 |  |
-| method | `process_signal(self, *, symbol: str, signal: Signal \| TradeSignal \| TradeAction, entry_quantity: Decimal, price: Decimal, client_order_id: str \| None = None) -> TradingControllerResult` | 131 |  |
-| method | `_apply_execution(self, *, action: TradeAction, execution: ExecutionResult \| None, stop_loss: Decimal \| None) -> bool` | 233 |  |
+| dataclass | `TradingControllerState` | 26 |  |
+| method | `__post_init__(self) -> None` | 36 |  |
+| method | `has_open_position(self) -> bool` | 101 |  |
+| protocol | `TradingControllerStateStoreProtocol` | 105 |  |
+| method | `load(self) -> TradingControllerState` | 106 |  |
+| method | `save(self, state: TradingControllerState) -> None` | 109 |  |
+| dataclass | `TradingControllerResult` | 117 |  |
+| class | `TradingController` | 125 | Управляет состоянием одной LONG-позиции. |
+| method | `__init__(self, runtime: TradingRuntime, *, state: TradingControllerState \| None = None, state_store: TradingControllerStateStoreProtocol \| None = None, fee_rate: Decimal = Decimal('0.001')) -> None` | 135 |  |
+| method | `state(self) -> TradingControllerState` | 166 |  |
+| method | `process_signal(self, *, symbol: str, signal: Signal \| TradeSignal \| TradeAction, entry_quantity: Decimal, price: Decimal, client_order_id: str \| None = None) -> TradingControllerResult` | 169 |  |
+| method | `_apply_execution(self, *, action: TradeAction, execution: ExecutionResult \| None, stop_loss: Decimal \| None) -> tuple[bool, ClosedTradeAccounting \| None]` | 284 |  |
 ### [`app/trading_controller_store.py`](../app/trading_controller_store.py)
 
-Строк: **136**
+Строк: **202**
 
 Связанные тесты: [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py)
 
@@ -768,8 +780,9 @@ _Публичных классов и функций не найдено._
 | class | `TradingControllerStateStore` | 10 | Хранит состояние торгового контроллера в JSON. |
 | method | `__init__(self, path: str \| Path) -> None` | 19 |  |
 | method | `load(self) -> TradingControllerState` | 22 |  |
-| method | `save(self, state: TradingControllerState) -> None` | 66 |  |
-| method | `_parse_decimal(value, *, field_name: str, allow_none: bool) -> Decimal \| None` | 121 |  |
+| method | `save(self, state: TradingControllerState) -> None` | 99 |  |
+| method | `_parse_decimal(value, *, field_name: str, allow_none: bool) -> Decimal \| None` | 159 |  |
+| method | `_parse_int(value, *, field_name: str) -> int` | 177 |  |
 ### [`app/trading_filter.py`](../app/trading_filter.py)
 
 Строк: **27**
@@ -936,7 +949,7 @@ _Публичных классов и функций не найдено._
 | function | `main() -> None` | 151 |  |
 ### [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py)
 
-Строк: **355**
+Строк: **382**
 
 Связанные тесты: [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
@@ -1734,6 +1747,16 @@ _Публичных классов и функций не найдено._
 | function | `test_rsi_returns_valid_signals() -> None` | 48 |  |
 | function | `test_rsi_invalid_levels() -> None` | 70 |  |
 | function | `test_missing_close_column() -> None` | 81 |  |
+### [`tests/test_trade_accounting.py`](../tests/test_trade_accounting.py)
+
+Строк: **74**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `test_calculates_profitable_long_trade() -> None` | 10 |  |
+| function | `test_calculates_losing_long_trade() -> None` | 26 |  |
+| function | `test_calculates_trade_without_fees() -> None` | 38 |  |
+| function | `test_rejects_invalid_values(field: str, value: Decimal, message: str) -> None` | 60 |  |
 ### [`tests/test_trade_analyzer.py`](../tests/test_trade_analyzer.py)
 
 Строк: **282**
@@ -1750,48 +1773,57 @@ _Публичных классов и функций не найдено._
 | function | `test_rejects_duplicate_candle_timestamps() -> None` | 249 |  |
 ### [`tests/test_trading_controller.py`](../tests/test_trading_controller.py)
 
-Строк: **388**
+Строк: **542**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `build_controller(state: TradingControllerState \| None = None) -> TradingController` | 17 |  |
-| function | `test_opens_long_position() -> None` | 32 |  |
-| function | `test_does_not_open_second_long_position() -> None` | 48 |  |
-| function | `test_closes_entire_long_position() -> None` | 69 |  |
-| function | `test_does_not_close_missing_position() -> None` | 92 |  |
-| function | `test_hold_does_not_execute_order() -> None` | 108 |  |
-| function | `test_rejects_invalid_request(entry_quantity: Decimal, price: Decimal, message: str) -> None` | 143 |  |
-| function | `test_rejects_negative_state_quantity() -> None` | 159 |  |
-| class | `FakeStateStore` | 169 |  |
-| method | `__init__(self, state: TradingControllerState) -> None` | 170 |  |
-| method | `load(self) -> TradingControllerState` | 179 |  |
-| method | `save(self, state: TradingControllerState) -> None` | 182 |  |
-| function | `test_loads_state_from_store() -> None` | 189 |  |
-| function | `test_saves_state_after_opening_position() -> None` | 211 |  |
-| function | `test_saves_state_after_closing_position() -> None` | 239 |  |
-| function | `test_does_not_save_state_for_hold() -> None` | 269 |  |
-| function | `test_rejects_state_and_store_together() -> None` | 293 |  |
-| function | `test_open_position_saves_entry_price() -> None` | 316 |  |
-| function | `test_open_position_saves_stop_loss() -> None` | 330 |  |
-| function | `test_close_position_clears_entry_data() -> None` | 350 |  |
-| function | `test_rejects_long_stop_above_entry_price() -> None` | 371 |  |
+| function | `build_controller(state: TradingControllerState \| None = None) -> TradingController` | 21 |  |
+| function | `test_opens_long_position() -> None` | 36 |  |
+| function | `test_does_not_open_second_long_position() -> None` | 52 |  |
+| function | `test_closes_entire_long_position() -> None` | 73 |  |
+| function | `test_does_not_close_missing_position() -> None` | 96 |  |
+| function | `test_hold_does_not_execute_order() -> None` | 112 |  |
+| function | `test_rejects_invalid_request(entry_quantity: Decimal, price: Decimal, message: str) -> None` | 148 |  |
+| function | `test_rejects_negative_state_quantity() -> None` | 164 |  |
+| function | `test_rejects_negative_fee_rate() -> None` | 174 |  |
+| class | `FakeStateStore` | 185 |  |
+| method | `__init__(self, state: TradingControllerState) -> None` | 186 |  |
+| method | `load(self) -> TradingControllerState` | 195 |  |
+| method | `save(self, state: TradingControllerState) -> None` | 198 |  |
+| function | `test_loads_state_from_store() -> None` | 205 |  |
+| function | `test_saves_state_after_opening_position() -> None` | 227 |  |
+| function | `test_saves_state_after_closing_position() -> None` | 255 |  |
+| function | `test_does_not_save_state_for_hold() -> None` | 285 |  |
+| function | `test_rejects_state_and_store_together() -> None` | 309 |  |
+| function | `test_open_position_saves_entry_price() -> None` | 332 |  |
+| function | `test_open_position_saves_stop_loss() -> None` | 346 |  |
+| function | `test_close_position_clears_entry_data() -> None` | 366 |  |
+| function | `test_profitable_close_updates_accounting() -> None` | 387 |  |
+| function | `test_losing_close_updates_accounting() -> None` | 414 |  |
+| function | `test_does_not_open_with_insufficient_balance() -> None` | 436 |  |
+| class | `FixedRuntime` | 453 |  |
+| method | `__init__(self, result: ExecutionResult) -> None` | 454 |  |
+| method | `process_signal(self, request)` | 457 |  |
+| function | `test_partial_close_keeps_position_and_entry_fee() -> None` | 461 |  |
+| function | `test_rejected_execution_does_not_change_state() -> None` | 498 |  |
+| function | `test_rejects_long_stop_above_entry_price() -> None` | 525 |  |
 ### [`tests/test_trading_controller_store.py`](../tests/test_trading_controller_store.py)
 
-Строк: **234**
+Строк: **254**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
 | function | `test_missing_file_returns_empty_state(tmp_path) -> None` | 12 |  |
 | function | `test_saves_and_loads_state(tmp_path) -> None` | 25 |  |
 | function | `test_decimal_is_saved_as_string(tmp_path) -> None` | 46 |  |
-| function | `test_creates_parent_directory(tmp_path) -> None` | 69 |  |
-| function | `test_rejects_invalid_json(tmp_path) -> None` | 85 |  |
-| function | `test_rejects_non_object_json(tmp_path) -> None` | 103 |  |
-| function | `test_rejects_invalid_position_quantity(tmp_path, value) -> None` | 132 |  |
-| function | `test_rejects_negative_position_quantity(tmp_path) -> None` | 153 |  |
-| function | `test_overwrites_previous_state(tmp_path) -> None` | 176 |  |
-| function | `test_saves_and_loads_entry_price_and_stop_loss(tmp_path) -> None` | 200 |  |
-| function | `test_loads_legacy_state_without_entry_data(tmp_path) -> None` | 221 |  |
+| function | `test_creates_parent_directory(tmp_path) -> None` | 74 |  |
+| function | `test_rejects_invalid_json(tmp_path) -> None` | 90 |  |
+| function | `test_rejects_non_object_json(tmp_path) -> None` | 108 |  |
+| function | `test_rejects_invalid_position_quantity(tmp_path, value) -> None` | 137 |  |
+| function | `test_rejects_negative_position_quantity(tmp_path) -> None` | 158 |  |
+| function | `test_overwrites_previous_state(tmp_path) -> None` | 181 |  |
+| function | `test_saves_and_loads_entry_price_and_stop_loss(tmp_path) -> None` | 205 |  |
+| function | `test_loads_legacy_state_without_entry_data(tmp_path) -> None` | 236 |  |
 ### [`tests/test_trading_filter.py`](../tests/test_trading_filter.py)
 
 Строк: **98**

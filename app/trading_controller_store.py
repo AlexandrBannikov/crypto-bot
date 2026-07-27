@@ -55,12 +55,45 @@ class TradingControllerStateStore:
             allow_none=True,
         )
 
+        virtual_balance = self._parse_decimal(
+            payload.get("virtual_balance", "1000"),
+            field_name="virtual_balance",
+            allow_none=False,
+        )
+        total_fees = self._parse_decimal(
+            payload.get("total_fees", "0"),
+            field_name="total_fees",
+            allow_none=False,
+        )
+        realized_pnl = self._parse_decimal(
+            payload.get("realized_pnl", "0"),
+            field_name="realized_pnl",
+            allow_none=False,
+        )
+        entry_fee = self._parse_decimal(
+            payload.get("entry_fee", "0"),
+            field_name="entry_fee",
+            allow_none=False,
+        )
+
         assert position_quantity is not None
+        assert virtual_balance is not None
+        assert total_fees is not None
+        assert realized_pnl is not None
+        assert entry_fee is not None
 
         return TradingControllerState(
             position_quantity=position_quantity,
             entry_price=entry_price,
             stop_loss=stop_loss,
+            virtual_balance=virtual_balance,
+            total_fees=total_fees,
+            realized_pnl=realized_pnl,
+            closed_trades=self._parse_int(
+                payload.get("closed_trades", 0),
+                field_name="closed_trades",
+            ),
+            entry_fee=entry_fee,
         )
 
     def save(
@@ -86,6 +119,11 @@ class TradingControllerStateStore:
                 if state.stop_loss is not None
                 else None
             ),
+            "virtual_balance": str(state.virtual_balance),
+            "total_fees": str(state.total_fees),
+            "realized_pnl": str(state.realized_pnl),
+            "closed_trades": state.closed_trades,
+            "entry_fee": str(state.entry_fee),
         }
 
         temporary_path = self.path.with_suffix(
@@ -134,3 +172,31 @@ class TradingControllerStateStore:
                 f"invalid {field_name} "
                 "in controller state"
             ) from exc
+
+    @staticmethod
+    def _parse_int(
+        value,
+        *,
+        field_name: str,
+    ) -> int:
+        if isinstance(value, bool):
+            raise ValueError(
+                f"invalid {field_name} "
+                "in controller state"
+            )
+
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"invalid {field_name} "
+                "in controller state"
+            ) from exc
+
+        if parsed != value and str(parsed) != str(value):
+            raise ValueError(
+                f"invalid {field_name} "
+                "in controller state"
+            )
+
+        return parsed

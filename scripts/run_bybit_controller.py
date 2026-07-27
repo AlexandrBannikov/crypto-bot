@@ -344,6 +344,33 @@ def main() -> None:
         "Активный стоп-лосс: "
         f"{result.state.stop_loss}"
     )
+    print(
+        "Виртуальный баланс: "
+        f"{result.state.virtual_balance}"
+    )
+    print(
+        "Реализованный PnL: "
+        f"{result.state.realized_pnl}"
+    )
+    print(
+        "Всего комиссий: "
+        f"{result.state.total_fees}"
+    )
+    print(
+        "Закрытых сделок: "
+        f"{result.state.closed_trades}"
+    )
+
+    if result.accounting is not None:
+        accounting = result.accounting
+        print("Финансовый результат закрытия:")
+        print(f"  Стоимость входа: {accounting.entry_notional}")
+        print(f"  Стоимость выхода: {accounting.exit_notional}")
+        print(f"  Gross PnL: {accounting.gross_pnl}")
+        print(f"  Комиссия входа: {accounting.entry_fee}")
+        print(f"  Комиссия выхода: {accounting.exit_fee}")
+        print(f"  Net PnL: {accounting.net_pnl}")
+
     print(f"Файл состояния: {STATE_PATH}")
     print(
         "Timestamp сохранён в: "

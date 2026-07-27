@@ -2,7 +2,11 @@ from decimal import Decimal
 
 import pytest
 
-from app.execution import ExecutionMode
+from app.execution import (
+    ExecutionMode,
+    ExecutionResult,
+    ExecutionStatus,
+)
 from app.execution_runner import ExecutionRunner
 from app.paper_executor import PaperExecutor
 from app.strategies import Signal
@@ -11,7 +15,7 @@ from app.trading_controller import (
     TradingControllerState,
 )
 from app.trading_runtime import TradingRuntime
-from app.trading_types import TradeAction
+from app.trading_types import PositionSide, TradeAction
 
 
 def build_controller(
@@ -118,6 +122,7 @@ def test_hold_does_not_execute_order() -> None:
     assert result.execution is None
     assert result.skipped_reason == "hold signal"
     assert result.state.position_quantity == Decimal("0")
+    assert result.accounting is None
 
 
 @pytest.mark.parametrize(
@@ -163,6 +168,17 @@ def test_rejects_negative_state_quantity() -> None:
     ):
         TradingControllerState(
             position_quantity=Decimal("-0.01"),
+        )
+
+
+def test_rejects_negative_fee_rate() -> None:
+    with pytest.raises(
+        ValueError,
+        match="fee_rate must not be negative",
+    ):
+        TradingController(
+            TradingRuntime(ExecutionRunner(PaperExecutor())),
+            fee_rate=Decimal("-0.001"),
         )
 
 
@@ -366,6 +382,144 @@ def test_close_position_clears_entry_data() -> None:
     assert result.state.position_quantity == Decimal("0")
     assert result.state.entry_price is None
     assert result.state.stop_loss is None
+
+
+def test_profitable_close_updates_accounting() -> None:
+    controller = build_controller()
+
+    opened = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.BUY,
+        entry_quantity=Decimal("2"),
+        price=Decimal("100"),
+    )
+    assert opened.state.virtual_balance == Decimal("799.800")
+
+    closed = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("2"),
+        price=Decimal("120"),
+    )
+
+    assert closed.accounting is not None
+    assert closed.accounting.net_pnl == Decimal("39.560")
+    assert closed.state.virtual_balance == Decimal("1039.560")
+    assert closed.state.realized_pnl == Decimal("39.560")
+    assert closed.state.total_fees == Decimal("0.440")
+    assert closed.state.closed_trades == 1
+    assert closed.state.entry_fee == 0
+
+
+def test_losing_close_updates_accounting() -> None:
+    controller = build_controller()
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.BUY,
+        entry_quantity=Decimal("2"),
+        price=Decimal("100"),
+    )
+
+    closed = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("2"),
+        price=Decimal("90"),
+    )
+
+    assert closed.accounting is not None
+    assert closed.accounting.net_pnl == Decimal("-20.380")
+    assert closed.state.virtual_balance == Decimal("979.620")
+    assert closed.state.realized_pnl == Decimal("-20.380")
+
+
+def test_does_not_open_with_insufficient_balance() -> None:
+    controller = build_controller()
+
+    result = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.BUY,
+        entry_quantity=Decimal("10"),
+        price=Decimal("100"),
+    )
+
+    assert result.execution is None
+    assert result.skipped_reason == (
+        "insufficient virtual balance"
+    )
+    assert result.state == TradingControllerState()
+
+
+class FixedRuntime:
+    def __init__(self, result: ExecutionResult) -> None:
+        self.result = result
+
+    def process_signal(self, request):
+        return self.result
+
+
+def test_partial_close_keeps_position_and_entry_fee() -> None:
+    state = TradingControllerState(
+        position_quantity=Decimal("2"),
+        entry_price=Decimal("100"),
+        virtual_balance=Decimal("799.800"),
+        entry_fee=Decimal("0.200"),
+    )
+    execution = ExecutionResult(
+        mode=ExecutionMode.PAPER,
+        status=ExecutionStatus.PARTIALLY_FILLED,
+        symbol="ETHUSDT",
+        side=PositionSide.LONG,
+        requested_quantity=Decimal("2"),
+        requested_price=Decimal("120"),
+        executed_quantity=Decimal("0.5"),
+        average_price=Decimal("120"),
+    )
+    controller = TradingController(
+        FixedRuntime(execution),
+        state=state,
+    )
+
+    result = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("2"),
+        price=Decimal("120"),
+    )
+
+    assert result.accounting is not None
+    assert result.accounting.net_pnl == Decimal("9.8900")
+    assert result.state.position_quantity == Decimal("1.5")
+    assert result.state.entry_fee == Decimal("0.1500")
+    assert result.state.virtual_balance == Decimal("859.7400")
+    assert result.state.closed_trades == 1
+
+
+def test_rejected_execution_does_not_change_state() -> None:
+    state = TradingControllerState()
+    execution = ExecutionResult(
+        mode=ExecutionMode.PAPER,
+        status=ExecutionStatus.REJECTED,
+        symbol="ETHUSDT",
+        side=PositionSide.LONG,
+        requested_quantity=Decimal("1"),
+        requested_price=Decimal("100"),
+    )
+    controller = TradingController(
+        FixedRuntime(execution),
+        state=state,
+    )
+
+    result = controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.BUY,
+        entry_quantity=Decimal("1"),
+        price=Decimal("100"),
+    )
+
+    assert result.execution is execution
+    assert result.accounting is None
+    assert result.state == state
 
 
 def test_rejects_long_stop_above_entry_price() -> None:
