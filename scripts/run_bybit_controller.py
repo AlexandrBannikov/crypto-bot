@@ -19,7 +19,12 @@ from app.execution_runner import ExecutionRunner
 from app.indicators import ema
 from app.paper_executor import PaperExecutor
 from app.strategies import Signal
-from app.trading_controller import TradingController
+from app.trade_signal import TradeSignal
+from app.trading_controller import (
+    TradingController,
+    TradingControllerState,
+)
+from app.trading_types import TradeAction
 from app.trading_controller_store import (
     TradingControllerStateStore,
 )
@@ -34,6 +39,9 @@ FAST_EMA = 20
 SLOW_EMA = 50
 
 ENTRY_QUANTITY = Decimal("0.01")
+
+# Защитный стоп на 2% ниже цены входа.
+STOP_LOSS_PERCENT = Decimal("0.02")
 
 STATE_PATH = Path("state/trading_controller.json")
 LAST_CANDLE_PATH = Path(
@@ -148,6 +156,53 @@ def signal_name(signal: Signal) -> str:
     }[signal]
 
 
+def build_execution_signal(
+    *,
+    strategy_signal: Signal,
+    price: Decimal,
+    state: TradingControllerState,
+) -> tuple[Signal | TradeSignal, bool]:
+    """
+    Добавляет защитный стоп к новой LONG-позиции
+    и принудительно закрывает позицию при его достижении.
+
+    Возвращает:
+    - сигнал для TradingController;
+    - флаг срабатывания стоп-лосса.
+    """
+
+    if (
+        state.has_open_position
+        and state.stop_loss is not None
+        and price <= state.stop_loss
+    ):
+        return (
+            TradeSignal(
+                action=TradeAction.CLOSE_LONG,
+            ),
+            True,
+        )
+
+    if (
+        strategy_signal == Signal.BUY
+        and not state.has_open_position
+    ):
+        stop_loss = (
+            price
+            * (Decimal("1") - STOP_LOSS_PERCENT)
+        ).quantize(Decimal("0.01"))
+
+        return (
+            TradeSignal(
+                action=Signal.BUY,
+                stop_loss=stop_loss,
+            ),
+            False,
+        )
+
+    return strategy_signal, False
+
+
 def main() -> None:
     feed = BybitMarketDataFeed(
         BybitMarketDataConfig(
@@ -203,14 +258,27 @@ def main() -> None:
         state_store=state_store,
     )
 
-    # Создаём состояние даже при первом HOLD.
+    # Создаём состояние даже при первом HOLD
+    # и обновляем старый формат JSON.
     state_store.save(controller.state)
+
+    current_price = Decimal(
+        str(latest_candle.close)
+    )
+
+    execution_signal, stop_triggered = (
+        build_execution_signal(
+            strategy_signal=signal,
+            price=current_price,
+            state=controller.state,
+        )
+    )
 
     result = controller.process_signal(
         symbol=SYMBOL,
-        signal=signal,
+        signal=execution_signal,
         entry_quantity=ENTRY_QUANTITY,
-        price=Decimal(str(latest_candle.close)),
+        price=current_price,
         client_order_id=(
             f"controller-{latest_candle.timestamp}"
         ),
@@ -235,6 +303,12 @@ def main() -> None:
     print(f"EMA {FAST_EMA}: {fast_value:.4f}")
     print(f"EMA {SLOW_EMA}: {slow_value:.4f}")
     print(f"Сигнал стратегии: {signal_name(signal)}")
+
+    if stop_triggered:
+        print("Защитный выход: сработал STOP LOSS")
+    else:
+        print("Защитный выход: не сработал")
+
     print(f"Действие контроллера: {result.action.value}")
 
     if result.execution is None:
@@ -261,6 +335,14 @@ def main() -> None:
     print(
         "Открытая позиция ETH: "
         f"{result.state.position_quantity}"
+    )
+    print(
+        "Цена входа: "
+        f"{result.state.entry_price}"
+    )
+    print(
+        "Активный стоп-лосс: "
+        f"{result.state.stop_loss}"
     )
     print(f"Файл состояния: {STATE_PATH}")
     print(
