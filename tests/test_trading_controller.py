@@ -164,3 +164,150 @@ def test_rejects_negative_state_quantity() -> None:
         TradingControllerState(
             position_quantity=Decimal("-0.01"),
         )
+
+
+class FakeStateStore:
+    def __init__(
+        self,
+        state: TradingControllerState,
+    ) -> None:
+        self.loaded_state = state
+        self.saved_states: list[
+            TradingControllerState
+        ] = []
+
+    def load(self) -> TradingControllerState:
+        return self.loaded_state
+
+    def save(
+        self,
+        state: TradingControllerState,
+    ) -> None:
+        self.saved_states.append(state)
+
+
+def test_loads_state_from_store() -> None:
+    store = FakeStateStore(
+        TradingControllerState(
+            position_quantity=Decimal("0.07"),
+        )
+    )
+
+    runtime = TradingRuntime(
+        ExecutionRunner(PaperExecutor())
+    )
+
+    controller = TradingController(
+        runtime,
+        state_store=store,
+    )
+
+    assert (
+        controller.state.position_quantity
+        == Decimal("0.07")
+    )
+
+
+def test_saves_state_after_opening_position() -> None:
+    store = FakeStateStore(
+        TradingControllerState()
+    )
+
+    runtime = TradingRuntime(
+        ExecutionRunner(PaperExecutor())
+    )
+
+    controller = TradingController(
+        runtime,
+        state_store=store,
+    )
+
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.BUY,
+        entry_quantity=Decimal("0.05"),
+        price=Decimal("2500"),
+    )
+
+    assert len(store.saved_states) == 1
+    assert (
+        store.saved_states[0].position_quantity
+        == Decimal("0.05")
+    )
+
+
+def test_saves_state_after_closing_position() -> None:
+    store = FakeStateStore(
+        TradingControllerState(
+            position_quantity=Decimal("0.05"),
+        )
+    )
+
+    runtime = TradingRuntime(
+        ExecutionRunner(PaperExecutor())
+    )
+
+    controller = TradingController(
+        runtime,
+        state_store=store,
+    )
+
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.SELL,
+        entry_quantity=Decimal("0.10"),
+        price=Decimal("2600"),
+    )
+
+    assert len(store.saved_states) == 1
+    assert (
+        store.saved_states[0].position_quantity
+        == Decimal("0")
+    )
+
+
+def test_does_not_save_state_for_hold() -> None:
+    store = FakeStateStore(
+        TradingControllerState()
+    )
+
+    runtime = TradingRuntime(
+        ExecutionRunner(PaperExecutor())
+    )
+
+    controller = TradingController(
+        runtime,
+        state_store=store,
+    )
+
+    controller.process_signal(
+        symbol="ETHUSDT",
+        signal=Signal.HOLD,
+        entry_quantity=Decimal("0.05"),
+        price=Decimal("2500"),
+    )
+
+    assert store.saved_states == []
+
+
+def test_rejects_state_and_store_together() -> None:
+    store = FakeStateStore(
+        TradingControllerState()
+    )
+
+    runtime = TradingRuntime(
+        ExecutionRunner(PaperExecutor())
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "state and state_store must not "
+            "be provided together"
+        ),
+    ):
+        TradingController(
+            runtime,
+            state=TradingControllerState(),
+            state_store=store,
+        )

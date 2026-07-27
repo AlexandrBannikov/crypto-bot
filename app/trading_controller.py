@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Protocol
 
 from app.execution import (
     ExecutionResult,
@@ -32,6 +33,17 @@ class TradingControllerState:
         return self.position_quantity > 0
 
 
+class TradingControllerStateStoreProtocol(Protocol):
+    def load(self) -> TradingControllerState:
+        ...
+
+    def save(
+        self,
+        state: TradingControllerState,
+    ) -> None:
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class TradingControllerResult:
     action: TradeAction
@@ -42,14 +54,11 @@ class TradingControllerResult:
 
 class TradingController:
     """
-    Управляет состоянием LONG-позиции и передаёт команды
-    в TradingRuntime.
+    Управляет состоянием одной LONG-позиции.
 
-    На текущем этапе:
-    - поддерживается одна LONG-позиция;
-    - OPEN_LONG использует переданный entry_quantity;
-    - CLOSE_LONG закрывает весь сохранённый объём;
-    - повторное открытие и закрытие без позиции пропускаются.
+    При наличии state_store:
+    - состояние загружается при создании;
+    - состояние сохраняется после исполненной сделки.
     """
 
     def __init__(
@@ -57,9 +66,23 @@ class TradingController:
         runtime: TradingRuntime,
         *,
         state: TradingControllerState | None = None,
+        state_store: (
+            TradingControllerStateStoreProtocol | None
+        ) = None,
     ) -> None:
+        if state is not None and state_store is not None:
+            raise ValueError(
+                "state and state_store must not "
+                "be provided together"
+            )
+
         self.runtime = runtime
-        self._state = state or TradingControllerState()
+        self.state_store = state_store
+
+        if state_store is not None:
+            self._state = state_store.load()
+        else:
+            self._state = state or TradingControllerState()
 
     @property
     def state(self) -> TradingControllerState:
@@ -137,10 +160,13 @@ class TradingController:
             )
         )
 
-        self._apply_execution(
+        state_changed = self._apply_execution(
             action=action,
             execution=execution,
         )
+
+        if state_changed and self.state_store is not None:
+            self.state_store.save(self._state)
 
         return TradingControllerResult(
             action=action,
@@ -153,23 +179,23 @@ class TradingController:
         *,
         action: TradeAction,
         execution: ExecutionResult | None,
-    ) -> None:
+    ) -> bool:
         if execution is None:
-            return
+            return False
 
         if execution.status != ExecutionStatus.FILLED:
-            return
+            return False
 
         executed_quantity = execution.executed_quantity
 
         if executed_quantity <= 0:
-            return
+            return False
 
         if action == TradeAction.OPEN_LONG:
             self._state = TradingControllerState(
                 position_quantity=executed_quantity,
             )
-            return
+            return True
 
         if action == TradeAction.CLOSE_LONG:
             remaining_quantity = (
@@ -183,3 +209,6 @@ class TradingController:
             self._state = TradingControllerState(
                 position_quantity=remaining_quantity,
             )
+            return True
+
+        return False
