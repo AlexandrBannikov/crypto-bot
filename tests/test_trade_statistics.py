@@ -3,11 +3,41 @@ from decimal import Decimal
 
 import pytest
 
-from app.trade_statistics import calculate_trade_statistics
+from app.trade_statistics import (
+    calculate_drawdown_curve,
+    calculate_trade_statistics,
+)
 from tests.test_trade_journal import make_entry
 
 
 D = Decimal
+
+
+@pytest.mark.parametrize(
+    ("starting_balance", "equity_curve", "expected"),
+    [
+        ("100", [], ("0",)),
+        ("100", ["110", "120"], ("0", "0", "0")),
+        ("100", ["110", "90"], ("0", "0", "20")),
+        ("100", ["90", "110", "105"], ("0", "10", "0", "5")),
+        (
+            "100",
+            ["120", "100", "130", "125", "90"],
+            ("0", "0", "20", "0", "5", "40"),
+        ),
+        ("0", ["-5", "10", "5"], ("0", "5", "0", "5")),
+        ("-10", ["-20", "-5", "-8"], ("0", "10", "0", "3")),
+    ],
+)
+def test_calculate_drawdown_curve(
+    starting_balance: str,
+    equity_curve: list[str],
+    expected: tuple[str, ...],
+) -> None:
+    assert calculate_drawdown_curve(
+        D(starting_balance),
+        tuple(D(value) for value in equity_curve),
+    ) == tuple(D(value) for value in expected)
 
 
 def entry(
@@ -140,6 +170,12 @@ def test_equity_drawdown_and_recovery_use_journal_order() -> None:
     assert stats.max_drawdown_absolute == D("20")
     assert stats.max_drawdown_percent == D("20") / D("110") * D("100")
     assert stats.recovery_factor == D("8") / D("20")
+    assert max(
+        calculate_drawdown_curve(
+            stats.starting_balance,
+            stats.equity_curve,
+        )
+    ) == stats.max_drawdown_absolute
 
 
 def test_no_drawdown_has_undefined_recovery_factor() -> None:

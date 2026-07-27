@@ -89,21 +89,44 @@ def _holding_seconds(entry: TradeJournalEntry) -> Decimal:
     return Decimal(str(seconds))
 
 
+def calculate_drawdown_curve(
+    starting_balance: Decimal,
+    equity_curve: Sequence[Decimal],
+) -> tuple[Decimal, ...]:
+    """Return absolute drawdown for the starting point and each equity value.
+
+    Drawdown is measured from the historical maximum equity and is always
+    non-negative.  The first result is always ``Decimal("0")`` for
+    ``starting_balance``; consequently an empty ``equity_curve`` returns a
+    one-item tuple.  Zero and negative balances use the same peak-minus-equity
+    definition without percentage calculations or special cases.
+    """
+
+    peak = starting_balance
+    drawdowns = [ZERO]
+    for equity in equity_curve:
+        peak = max(peak, equity)
+        drawdowns.append(max(ZERO, peak - equity))
+    return tuple(drawdowns)
+
+
 def _calculate_drawdown(
     *,
     starting_balance: Decimal,
     equity_curve: Sequence[Decimal],
 ) -> tuple[Decimal, Decimal]:
     peak = starting_balance
-    maximum_absolute = ZERO
+    drawdown_curve = calculate_drawdown_curve(
+        starting_balance,
+        equity_curve,
+    )
+    maximum_absolute = max(drawdown_curve)
     maximum_percent = ZERO
 
-    for equity in equity_curve:
+    for equity, absolute in zip(equity_curve, drawdown_curve[1:]):
         if equity > peak:
             peak = equity
 
-        absolute = peak - equity
-        maximum_absolute = max(maximum_absolute, absolute)
         if peak > ZERO:
             percentage = absolute / peak * HUNDRED
             maximum_percent = max(maximum_percent, percentage)
