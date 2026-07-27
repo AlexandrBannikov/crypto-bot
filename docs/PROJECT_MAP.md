@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 09:16 UTC**
+Обновлено: **2026-07-27 09:51 UTC**
 
 ## Сводка
 
-- Python-файлов: **129**
-- Определений: **1039**
-- Строк Python-кода: **24880**
-- Тестовых модулей: **56**
+- Python-файлов: **131**
+- Определений: **1073**
+- Строк Python-кода: **25505**
+- Тестовых модулей: **57**
 
 ## Быстрый каталог
 
@@ -47,6 +47,7 @@
 - [`app/paper_statistics.py`](../app/paper_statistics.py) — 91 строк, 1 определений
 - [`app/paper_trader.py`](../app/paper_trader.py) — 200 строк, 11 определений
 - [`app/performance_analyzer.py`](../app/performance_analyzer.py) — 217 строк, 6 определений
+- [`app/process_lock.py`](../app/process_lock.py) — 136 строк, 8 определений
 - [`app/risk.py`](../app/risk.py) — 152 строк, 7 определений
 - [`app/runtime.py`](../app/runtime.py) — 35 строк, 2 определений
 - [`app/settings.py`](../app/settings.py) — 66 строк, 4 определений
@@ -79,7 +80,7 @@
 - [`scripts/optimize_ma.py`](../scripts/optimize_ma.py) — 212 строк, 4 определений
 - [`scripts/plot_trade_statistics.py`](../scripts/plot_trade_statistics.py) — 84 строк, 4 определений
 - [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 57 строк, 4 определений
-- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 472 строк, 8 определений
+- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 510 строк, 10 определений
 - [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py) — 208 строк, 3 определений
 - [`scripts/run_engine_ema.py`](../scripts/run_engine_ema.py) — 128 строк, 2 определений
 - [`scripts/run_strategy_comparison.py`](../scripts/run_strategy_comparison.py) — 102 строк, 3 определений
@@ -121,9 +122,10 @@
 - [`tests/test_paper_trader.py`](../tests/test_paper_trader.py) — 339 строк, 18 определений
 - [`tests/test_performance_analyzer.py`](../tests/test_performance_analyzer.py) — 136 строк, 6 определений
 - [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py) — 154 строк, 7 определений
+- [`tests/test_process_lock.py`](../tests/test_process_lock.py) — 178 строк, 13 определений
 - [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 82 строк, 4 определений
 - [`tests/test_risk.py`](../tests/test_risk.py) — 272 строк, 13 определений
-- [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 525 строк, 17 определений
+- [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 798 строк, 28 определений
 - [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py) — 122 строк, 7 определений
 - [`tests/test_runtime.py`](../tests/test_runtime.py) — 41 строк, 4 определений
 - [`tests/test_settings.py`](../tests/test_settings.py) — 66 строк, 4 определений
@@ -646,6 +648,22 @@ _Публичных классов и функций не найдено._
 | method | `analyze(self, trades: Sequence[Trade]) -> PerformanceAnalysisResult` | 45 |  |
 | method | `_maximum_streak(*, trades: Sequence[Trade], profitable: bool) -> int` | 146 |  |
 | method | `_analyze_side(trades: Sequence[Trade]) -> SidePerformance` | 170 |  |
+### [`app/process_lock.py`](../app/process_lock.py)
+
+Строк: **136**
+
+Связанные тесты: [`tests/test_process_lock.py`](../tests/test_process_lock.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| class | `ProcessLockError` | 13 | Base error raised while managing a process lock. |
+| class | `ProcessAlreadyRunningError` | 17 | Raised when another process holds the requested lock. |
+| class | `ProcessLock` | 21 | A non-blocking, Linux advisory process lock. |
+| method | `__init__(self, path: str \| os.PathLike[str]) -> None` | 24 |  |
+| method | `__enter__(self) -> ProcessLock` | 28 |  |
+| method | `__exit__(self, exc_type, exc_value, traceback) -> None` | 108 |  |
+| method | `_read_details(lock_file: IO[str]) -> str` | 124 |  |
+| method | `_release_file(lock_file: IO[str]) -> None` | 132 |  |
 ### [`app/risk.py`](../app/risk.py)
 
 Строк: **152**
@@ -1034,20 +1052,22 @@ _Публичных классов и функций не найдено._
 | function | `main(argv: list[str] \| None = None) -> int` | 49 |  |
 ### [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py)
 
-Строк: **472**
+Строк: **510**
 
 Связанные тесты: [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `build_parser() -> argparse.ArgumentParser` | 71 |  |
-| function | `generate_reports(*, text_report: Path, png_report: Path) -> int` | 90 |  |
-| function | `load_last_candle_timestamp() -> int \| None` | 110 |  |
-| function | `save_last_candle_timestamp(timestamp: int) -> None` | 137 |  |
-| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 157 |  |
-| function | `signal_name(signal: Signal) -> str` | 209 |  |
-| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 217 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
-| function | `main(argv: list[str] \| None = None) -> int` | 264 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 75 |  |
+| function | `generate_trade_reports(*args, **kwargs)` | 100 |  |
+| function | `generate_reports(*, text_report: Path, png_report: Path) -> int` | 106 |  |
+| function | `load_last_candle_timestamp() -> int \| None` | 128 |  |
+| function | `save_last_candle_timestamp(timestamp: int) -> None` | 155 |  |
+| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 175 |  |
+| function | `signal_name(signal: Signal) -> str` | 227 |  |
+| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 235 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
+| function | `run_controller(args: argparse.Namespace) -> int` | 282 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 487 |  |
 ### [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py)
 
 Строк: **208**
@@ -1721,6 +1741,25 @@ _Публичных классов и функций не найдено._
 | function | `test_corrupt_journal_returns_nonzero_without_png(tmp_path, capsys) -> None` | 80 |  |
 | function | `test_cli_runs_from_project_root_and_creates_png(tmp_path) -> None` | 103 |  |
 | function | `test_cli_uses_shared_library_plot_writer(tmp_path, monkeypatch) -> None` | 132 |  |
+### [`tests/test_process_lock.py`](../tests/test_process_lock.py)
+
+Строк: **178**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `start_holder(path: Path) -> subprocess.Popen` | 27 |  |
+| function | `stop_holder(process: subprocess.Popen) -> None` | 42 |  |
+| function | `test_lock_is_acquired_and_released(tmp_path) -> None` | 53 |  |
+| function | `test_independent_process_cannot_acquire_held_lock(tmp_path) -> None` | 69 |  |
+| function | `test_lock_can_be_reacquired_after_process_exits(tmp_path) -> None` | 80 |  |
+| function | `test_existing_unlocked_file_does_not_block(tmp_path) -> None` | 89 |  |
+| function | `test_parent_directory_is_created(tmp_path) -> None` | 97 |  |
+| function | `test_metadata_contains_pid_and_utc_timestamp(tmp_path) -> None` | 104 |  |
+| function | `test_descriptor_is_closed_after_body_exception(tmp_path) -> None` | 114 |  |
+| function | `test_metadata_write_error_releases_lock(tmp_path, monkeypatch) -> None` | 125 |  |
+| function | `test_open_error_is_wrapped_and_contains_path(tmp_path) -> None` | 148 |  |
+| function | `test_control_flow_exceptions_are_not_wrapped(tmp_path, exception_type) -> None` | 159 |  |
+| function | `test_same_object_cannot_be_entered_twice(tmp_path) -> None` | 173 |  |
 ### [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
 
 Строк: **82**
@@ -1752,27 +1791,38 @@ _Публичных классов и функций не найдено._
 | function | `test_accepts_full_risk_and_full_position_fraction() -> None` | 262 |  |
 ### [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
-Строк: **525**
+Строк: **798**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `test_stop_loss_percent_is_two_percent() -> None` | 21 |  |
-| function | `test_buy_signal_receives_stop_loss() -> None` | 25 |  |
-| function | `test_stop_loss_closes_open_position() -> None` | 38 |  |
-| function | `test_stop_loss_triggers_at_exact_price() -> None` | 56 |  |
-| function | `test_hold_above_stop_does_not_close() -> None` | 74 |  |
-| function | `test_strategy_sell_is_preserved() -> None` | 91 |  |
-| function | `test_buy_does_not_replace_existing_stop() -> None` | 108 |  |
-| function | `install_successful_run(monkeypatch, *, journal_entry) -> None` | 125 |  |
-| function | `test_reports_are_created_after_successful_journal_change(tmp_path, monkeypatch) -> None` | 180 |  |
-| function | `test_reports_are_not_created_before_successful_processing(tmp_path, monkeypatch) -> None` | 212 |  |
-| function | `test_no_new_candle_does_not_overwrite_reports(tmp_path, monkeypatch) -> None` | 246 |  |
-| function | `test_second_run_recovers_reports_without_duplicate_trade(tmp_path, monkeypatch) -> None` | 280 |  |
-| function | `test_reporting_error_returns_nonzero(tmp_path, monkeypatch, capsys) -> None` | 409 |  |
-| function | `test_custom_report_paths_are_forwarded(tmp_path, monkeypatch) -> None` | 436 |  |
-| function | `test_unchanged_journal_skips_report_generation(monkeypatch) -> None` | 472 |  |
-| function | `test_default_report_paths_are_project_relative() -> None` | 487 |  |
-| function | `test_default_report_paths_do_not_depend_on_cwd(tmp_path, monkeypatch) -> None` | 498 |  |
+| function | `start_lock_holder(path)` | 34 |  |
+| function | `stop_lock_holder(process)` | 49 |  |
+| function | `test_stop_loss_percent_is_two_percent() -> None` | 60 |  |
+| function | `test_buy_signal_receives_stop_loss() -> None` | 64 |  |
+| function | `test_stop_loss_closes_open_position() -> None` | 77 |  |
+| function | `test_stop_loss_triggers_at_exact_price() -> None` | 95 |  |
+| function | `test_hold_above_stop_does_not_close() -> None` | 113 |  |
+| function | `test_strategy_sell_is_preserved() -> None` | 130 |  |
+| function | `test_buy_does_not_replace_existing_stop() -> None` | 147 |  |
+| function | `install_successful_run(monkeypatch, *, journal_entry) -> None` | 164 |  |
+| function | `test_reports_are_created_after_successful_journal_change(tmp_path, monkeypatch) -> None` | 219 |  |
+| function | `test_reports_are_not_created_before_successful_processing(tmp_path, monkeypatch) -> None` | 251 |  |
+| function | `test_no_new_candle_does_not_overwrite_reports(tmp_path, monkeypatch) -> None` | 285 |  |
+| function | `test_second_run_recovers_reports_without_duplicate_trade(tmp_path, monkeypatch) -> None` | 319 |  |
+| function | `test_reporting_error_returns_nonzero(tmp_path, monkeypatch, capsys) -> None` | 448 |  |
+| function | `test_custom_report_paths_are_forwarded(tmp_path, monkeypatch) -> None` | 475 |  |
+| function | `test_unchanged_journal_skips_report_generation(monkeypatch) -> None` | 511 |  |
+| function | `test_default_report_paths_are_project_relative() -> None` | 526 |  |
+| function | `test_default_report_paths_do_not_depend_on_cwd(tmp_path, monkeypatch) -> None` | 537 |  |
+| function | `test_successful_run_with_free_custom_lock(tmp_path, monkeypatch) -> None` | 567 |  |
+| function | `test_occupied_lock_returns_two_without_side_effects(tmp_path, monkeypatch, capsys) -> None` | 578 |  |
+| function | `test_run_succeeds_after_occupied_lock_is_released(tmp_path, monkeypatch) -> None` | 645 |  |
+| function | `test_custom_lock_path_is_used(tmp_path, monkeypatch) -> None` | 664 |  |
+| function | `test_default_lock_path_is_project_relative() -> None` | 674 |  |
+| function | `test_default_lock_path_does_not_depend_on_cwd(tmp_path, monkeypatch) -> None` | 681 |  |
+| function | `test_lock_creation_error_returns_one_with_path(tmp_path, capsys) -> None` | 709 |  |
+| function | `test_lock_is_held_during_report_generation(tmp_path, monkeypatch) -> None` | 723 |  |
+| function | `test_help_does_not_import_matplotlib_or_create_files(tmp_path) -> None` | 759 |  |
 ### [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py)
 
 Строк: **122**

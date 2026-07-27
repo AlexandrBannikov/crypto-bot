@@ -20,13 +20,14 @@ from app.bybit_market_data import (
 from app.execution_runner import ExecutionRunner
 from app.indicators import ema
 from app.paper_executor import PaperExecutor
+from app.process_lock import (
+    ProcessAlreadyRunningError,
+    ProcessLock,
+    ProcessLockError,
+)
 from app.strategies import Signal
 from app.trade_signal import TradeSignal
 from app.trade_journal import JsonlTradeJournal
-from app.trade_reporting import (
-    TradeReportError,
-    generate_trade_reports,
-)
 from app.trading_controller import (
     TradingController,
     TradingControllerState,
@@ -66,6 +67,9 @@ DEFAULT_STATISTICS_REPORT_PATH = (
 DEFAULT_STATISTICS_PLOT_PATH = (
     PROJECT_ROOT / "reports/trade_statistics.png"
 )
+DEFAULT_LOCK_PATH = (
+    PROJECT_ROOT / "state/bybit_controller.lock"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,7 +88,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_STATISTICS_PLOT_PATH,
         help="path to the generated PNG trade report",
     )
+    parser.add_argument(
+        "--lock-file",
+        type=Path,
+        default=DEFAULT_LOCK_PATH,
+        help="path to the single-instance process lock",
+    )
     return parser
+
+
+def generate_trade_reports(*args, **kwargs):
+    from app.trade_reporting import generate_trade_reports as generate
+
+    return generate(*args, **kwargs)
 
 
 def generate_reports(
@@ -92,6 +108,8 @@ def generate_reports(
     text_report: Path,
     png_report: Path,
 ) -> int:
+    from app.trade_reporting import TradeReportError
+
     try:
         reports = generate_trade_reports(
             JOURNAL_PATH,
@@ -261,9 +279,7 @@ def build_execution_signal(
     return strategy_signal, False
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-
+def run_controller(args: argparse.Namespace) -> int:
     feed = BybitMarketDataFeed(
         BybitMarketDataConfig(
             symbol=SYMBOL,
@@ -466,6 +482,28 @@ def main(argv: list[str] | None = None) -> int:
         text_report=args.statistics_report,
         png_report=args.statistics_plot,
     )
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    try:
+        with ProcessLock(args.lock_file):
+            return run_controller(args)
+    except ProcessAlreadyRunningError as exc:
+        print(
+            "Bybit controller уже запущен; "
+            f"lock-файл: {args.lock_file}. {exc}",
+            file=sys.stderr,
+        )
+        return 2
+    except ProcessLockError as exc:
+        print(
+            "Ошибка single-instance lock "
+            f"{args.lock_file}: {exc}",
+            file=sys.stderr,
+        )
+        return 1
 
 
 if __name__ == "__main__":

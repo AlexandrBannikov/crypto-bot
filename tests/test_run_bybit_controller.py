@@ -1,4 +1,9 @@
 from decimal import Decimal
+import os
+from pathlib import Path
+import select
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -16,6 +21,40 @@ from tests.test_trade_journal import make_entry
 
 STOP_LOSS_PERCENT = run_bybit_controller.STOP_LOSS_PERCENT
 build_execution_signal = run_bybit_controller.build_execution_signal
+
+HOLDER_CODE = """
+import sys
+from app.process_lock import ProcessLock
+with ProcessLock(sys.argv[1]):
+    print("locked", flush=True)
+    sys.stdin.read()
+"""
+
+
+def start_lock_holder(path):
+    process = subprocess.Popen(
+        [sys.executable, "-c", HOLDER_CODE, str(path)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stdout is not None
+    ready, _, _ = select.select([process.stdout], [], [], 5)
+    assert ready, "lock-holder process did not become ready"
+    assert process.stdout.readline().strip() == "locked"
+    return process
+
+
+def stop_lock_holder(process):
+    try:
+        if process.stdin is not None:
+            process.stdin.close()
+        process.wait(timeout=5)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
 
 
 def test_stop_loss_percent_is_two_percent() -> None:
@@ -523,3 +562,237 @@ def test_default_report_paths_do_not_depend_on_cwd(
             / "reports/trade_statistics.png",
         )
     ]
+
+
+def test_successful_run_with_free_custom_lock(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    install_successful_run(monkeypatch, journal_entry=None)
+
+    assert run_bybit_controller.main(
+        ["--lock-file", str(tmp_path / "controller.lock")]
+    ) == 0
+
+
+def test_occupied_lock_returns_two_without_side_effects(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    lock_path = tmp_path / "controller.lock"
+    timestamp_path = tmp_path / "timestamp.txt"
+    journal_path = tmp_path / "journal.jsonl"
+    report_path = tmp_path / "report.txt"
+    plot_path = tmp_path / "report.png"
+    timestamp_path.write_text("old timestamp", encoding="utf-8")
+    journal_path.write_text("old journal", encoding="utf-8")
+    report_path.write_text("old report", encoding="utf-8")
+    plot_path.write_bytes(b"old plot")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("controller work must not start while lock is held")
+
+    monkeypatch.setattr(
+        run_bybit_controller, "BybitMarketDataFeed", forbidden
+    )
+    monkeypatch.setattr(
+        run_bybit_controller, "BybitMarketDataConfig", forbidden
+    )
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "TradingControllerStateStore",
+        forbidden,
+    )
+    monkeypatch.setattr(
+        run_bybit_controller, "TradingController", forbidden
+    )
+    monkeypatch.setattr(
+        run_bybit_controller, "load_last_candle_timestamp", forbidden
+    )
+    monkeypatch.setattr(
+        run_bybit_controller, "save_last_candle_timestamp", forbidden
+    )
+    monkeypatch.setattr(
+        run_bybit_controller, "generate_trade_reports", forbidden
+    )
+
+    holder = start_lock_holder(lock_path)
+    try:
+        exit_code = run_bybit_controller.main(
+            [
+                "--lock-file",
+                str(lock_path),
+                "--statistics-report",
+                str(report_path),
+                "--statistics-plot",
+                str(plot_path),
+            ]
+        )
+    finally:
+        stop_lock_holder(holder)
+
+    assert exit_code == 2
+    error = capsys.readouterr().err
+    assert "controller уже запущен" in error
+    assert str(lock_path) in error
+    assert timestamp_path.read_text(encoding="utf-8") == "old timestamp"
+    assert journal_path.read_text(encoding="utf-8") == "old journal"
+    assert report_path.read_text(encoding="utf-8") == "old report"
+    assert plot_path.read_bytes() == b"old plot"
+
+
+def test_run_succeeds_after_occupied_lock_is_released(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    lock_path = tmp_path / "controller.lock"
+    holder = start_lock_holder(lock_path)
+    try:
+        assert run_bybit_controller.main(
+            ["--lock-file", str(lock_path)]
+        ) == 2
+    finally:
+        stop_lock_holder(holder)
+
+    install_successful_run(monkeypatch, journal_entry=None)
+    assert run_bybit_controller.main(
+        ["--lock-file", str(lock_path)]
+    ) == 0
+
+
+def test_custom_lock_path_is_used(tmp_path, monkeypatch) -> None:
+    lock_path = tmp_path / "custom/location/controller.lock"
+    install_successful_run(monkeypatch, journal_entry=None)
+
+    assert run_bybit_controller.main(
+        ["--lock-file", str(lock_path)]
+    ) == 0
+    assert lock_path.exists()
+
+
+def test_default_lock_path_is_project_relative() -> None:
+    assert run_bybit_controller.DEFAULT_LOCK_PATH == (
+        run_bybit_controller.PROJECT_ROOT
+        / "state/bybit_controller.lock"
+    )
+
+
+def test_default_lock_path_does_not_depend_on_cwd(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    captured = []
+
+    class RecordingLock:
+        def __init__(self, path):
+            captured.append(path)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(run_bybit_controller, "ProcessLock", RecordingLock)
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "run_controller",
+        lambda args: 0,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    assert run_bybit_controller.main([]) == 0
+    assert captured == [run_bybit_controller.DEFAULT_LOCK_PATH]
+
+
+def test_lock_creation_error_returns_one_with_path(
+    tmp_path,
+    capsys,
+) -> None:
+    parent_file = tmp_path / "not-a-directory"
+    parent_file.write_text("content", encoding="utf-8")
+    lock_path = parent_file / "controller.lock"
+
+    assert run_bybit_controller.main(
+        ["--lock-file", str(lock_path)]
+    ) == 1
+    assert str(lock_path) in capsys.readouterr().err
+
+
+def test_lock_is_held_during_report_generation(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    lock_path = tmp_path / "controller.lock"
+    install_successful_run(monkeypatch, journal_entry=make_entry())
+
+    def generate(journal, text, png):
+        contender = subprocess.run(
+            [sys.executable, "-c", HOLDER_CODE, str(lock_path)],
+            input="",
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        assert contender.returncode != 0
+        return SimpleNamespace(text_report=text, png_report=png)
+
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "generate_trade_reports",
+        generate,
+    )
+
+    assert run_bybit_controller.main(
+        [
+            "--lock-file",
+            str(lock_path),
+            "--statistics-report",
+            str(tmp_path / "report.txt"),
+            "--statistics-plot",
+            str(tmp_path / "report.png"),
+        ]
+    ) == 0
+
+
+def test_help_does_not_import_matplotlib_or_create_files(
+    tmp_path,
+) -> None:
+    script_path = (
+        Path(run_bybit_controller.__file__).resolve()
+    )
+    lock_path = tmp_path / "state/controller.lock"
+    text_path = tmp_path / "reports/statistics.txt"
+    png_path = tmp_path / "reports/statistics.png"
+    environment = os.environ.copy()
+    environment["HOME"] = str(tmp_path / "unwritable-home")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--lock-file",
+            str(lock_path),
+            "--statistics-report",
+            str(text_path),
+            "--statistics-plot",
+            str(png_path),
+            "--help",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0
+    stderr = completed.stderr.lower()
+    assert "matplotlib" not in stderr
+    assert "mplconfigdir" not in stderr
+    assert "temporary cache" not in stderr
+    assert not lock_path.exists()
+    assert not text_path.exists()
+    assert not png_path.exists()
+    assert not (tmp_path / "state").exists()
