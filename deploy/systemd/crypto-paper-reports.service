@@ -1,0 +1,10 @@
+[Unit]
+Description=Generate crypto paper runtime reports
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/paper-shadow.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/run_periodic_reports.py --timezone UTC
+StandardOutput=journal
+StandardError=journal

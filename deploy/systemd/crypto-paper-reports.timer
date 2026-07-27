@@ -1,0 +1,10 @@
+[Unit]
+Description=Generate crypto paper reports daily
+
+[Timer]
+OnCalendar=*-*-* 00:10:00 UTC
+Persistent=true
+Unit=crypto-paper-reports.service
+
+[Install]
+WantedBy=timers.target

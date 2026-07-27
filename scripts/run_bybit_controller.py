@@ -52,8 +52,8 @@ from app.trading_controller_store import (
 from app.trading_runtime import TradingRuntime
 
 
-SYMBOL = "ETHUSDT"
-INTERVAL = "60"
+SYMBOL = os.environ.get("SYMBOL", "ETHUSDT")
+INTERVAL = os.environ.get("TIMEFRAME", "60")
 CANDLE_LIMIT = 500
 
 FAST_EMA = 20

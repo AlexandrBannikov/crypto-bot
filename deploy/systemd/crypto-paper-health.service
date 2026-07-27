@@ -1,0 +1,10 @@
+[Unit]
+Description=Check crypto paper runtime health
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/paper-shadow.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/check_runtime_alerts.py
+StandardOutput=journal
+StandardError=journal

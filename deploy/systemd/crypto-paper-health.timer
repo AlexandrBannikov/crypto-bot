@@ -1,0 +1,11 @@
+[Unit]
+Description=Check crypto paper runtime health every 15 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Persistent=true
+Unit=crypto-paper-health.service
+
+[Install]
+WantedBy=timers.target

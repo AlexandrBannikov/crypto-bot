@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 11:30 UTC**
+Обновлено: **2026-07-27 14:16 UTC**
 
 ## Сводка
 
-- Python-файлов: **144**
-- Определений: **1236**
-- Строк Python-кода: **29071**
-- Тестовых модулей: **63**
+- Python-файлов: **157**
+- Определений: **1285**
+- Строк Python-кода: **29927**
+- Тестовых модулей: **69**
 
 ## Быстрый каталог
 
@@ -42,6 +42,7 @@
 - [`app/order_builder.py`](../app/order_builder.py) — 135 строк, 9 определений
 - [`app/paper_engine.py`](../app/paper_engine.py) — 81 строк, 3 определений
 - [`app/paper_executor.py`](../app/paper_executor.py) — 135 строк, 9 определений
+- [`app/paper_runtime_reports.py`](../app/paper_runtime_reports.py) — 103 строк, 7 определений
 - [`app/paper_session.py`](../app/paper_session.py) — 882 строк, 19 определений
 - [`app/paper_state.py`](../app/paper_state.py) — 314 строк, 9 определений
 - [`app/paper_statistics.py`](../app/paper_statistics.py) — 91 строк, 1 определений
@@ -53,6 +54,7 @@
 - [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py) — 147 строк, 10 определений
 - [`app/risk.py`](../app/risk.py) — 152 строк, 7 определений
 - [`app/runtime.py`](../app/runtime.py) — 35 строк, 2 определений
+- [`app/runtime_health.py`](../app/runtime_health.py) — 208 строк, 10 определений
 - [`app/settings.py`](../app/settings.py) — 66 строк, 4 определений
 - [`app/shadow_decision_journal.py`](../app/shadow_decision_journal.py) — 169 строк, 9 определений
 - [`app/signal_generator.py`](../app/signal_generator.py) — 35 строк, 5 определений
@@ -76,6 +78,7 @@
 - [`scripts/backtest.py`](../scripts/backtest.py) — 116 строк, 1 определений
 - [`scripts/build_project_index.py`](../scripts/build_project_index.py) — 578 строк, 12 определений
 - [`scripts/check_runtime.py`](../scripts/check_runtime.py) — 74 строк, 3 определений
+- [`scripts/check_runtime_alerts.py`](../scripts/check_runtime_alerts.py) — 64 строк, 2 определений
 - [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py) — 483 строк, 15 определений
 - [`scripts/compare_strategies.py`](../scripts/compare_strategies.py) — 192 строк, 5 определений
 - [`scripts/download_eth_5m.py`](../scripts/download_eth_5m.py) — 195 строк, 4 определений
@@ -84,14 +87,18 @@
 - [`scripts/optimize_ema.py`](../scripts/optimize_ema.py) — 168 строк, 2 определений
 - [`scripts/optimize_ma.py`](../scripts/optimize_ma.py) — 212 строк, 4 определений
 - [`scripts/plot_trade_statistics.py`](../scripts/plot_trade_statistics.py) — 84 строк, 4 определений
+- [`scripts/report_paper_daily.py`](../scripts/report_paper_daily.py) — 74 строк, 3 определений
+- [`scripts/report_paper_weekly.py`](../scripts/report_paper_weekly.py) — 77 строк, 3 определений
 - [`scripts/report_shadow_decisions.py`](../scripts/report_shadow_decisions.py) — 133 строк, 5 определений
 - [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 57 строк, 4 определений
 - [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 624 строк, 11 определений
 - [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py) — 208 строк, 3 определений
 - [`scripts/run_engine_ema.py`](../scripts/run_engine_ema.py) — 128 строк, 2 определений
+- [`scripts/run_periodic_reports.py`](../scripts/run_periodic_reports.py) — 51 строк, 2 определений
 - [`scripts/run_strategy_comparison.py`](../scripts/run_strategy_comparison.py) — 102 строк, 3 определений
 - [`scripts/run_trend_pullback.py`](../scripts/run_trend_pullback.py) — 115 строк, 2 определений
 - [`scripts/run_trend_pullback_5m.py`](../scripts/run_trend_pullback_5m.py) — 176 строк, 2 определений
+- [`scripts/runtime_status.py`](../scripts/runtime_status.py) — 96 строк, 3 определений
 - [`scripts/validate_ema_out_of_sample.py`](../scripts/validate_ema_out_of_sample.py) — 169 строк, 4 определений
 - [`scripts/walk_forward_ema.py`](../scripts/walk_forward_ema.py) — 427 строк, 7 определений
 - [`scripts/walk_forward_regime_filter.py`](../scripts/walk_forward_regime_filter.py) — 250 строк, 11 определений
@@ -105,6 +112,7 @@
 - [`tests/test_bybit_orders.py`](../tests/test_bybit_orders.py) — 476 строк, 13 определений
 - [`tests/test_candle_mapper.py`](../tests/test_candle_mapper.py) — 75 строк, 5 определений
 - [`tests/test_check_runtime.py`](../tests/test_check_runtime.py) — 45 строк, 4 определений
+- [`tests/test_check_runtime_alerts.py`](../tests/test_check_runtime_alerts.py) — 9 строк, 1 определений
 - [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py) — 260 строк, 8 определений
 - [`tests/test_config.py`](../tests/test_config.py) — 123 строк, 12 определений
 - [`tests/test_data_loader.py`](../tests/test_data_loader.py) — 107 строк, 9 определений
@@ -133,11 +141,16 @@
 - [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py) — 154 строк, 7 определений
 - [`tests/test_process_lock.py`](../tests/test_process_lock.py) — 178 строк, 13 определений
 - [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py) — 237 строк, 19 определений
+- [`tests/test_report_paper_daily.py`](../tests/test_report_paper_daily.py) — 33 строк, 4 определений
+- [`tests/test_report_paper_weekly.py`](../tests/test_report_paper_weekly.py) — 12 строк, 1 определений
 - [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 82 строк, 4 определений
 - [`tests/test_risk.py`](../tests/test_risk.py) — 272 строк, 13 определений
 - [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 798 строк, 28 определений
 - [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py) — 122 строк, 7 определений
+- [`tests/test_run_periodic_reports.py`](../tests/test_run_periodic_reports.py) — 40 строк, 5 определений
 - [`tests/test_runtime.py`](../tests/test_runtime.py) — 41 строк, 4 определений
+- [`tests/test_runtime_health.py`](../tests/test_runtime_health.py) — 69 строк, 7 определений
+- [`tests/test_runtime_status.py`](../tests/test_runtime_status.py) — 20 строк, 1 определений
 - [`tests/test_settings.py`](../tests/test_settings.py) — 66 строк, 4 определений
 - [`tests/test_shadow_decision_journal.py`](../tests/test_shadow_decision_journal.py) — 112 строк, 8 определений
 - [`tests/test_shadow_report.py`](../tests/test_shadow_report.py) — 66 строк, 3 определений
@@ -582,6 +595,19 @@ _Публичных классов и функций не найдено._
 | method | `get_order_status(self, *, symbol: str, order_id: str \| None = None, client_order_id: str \| None = None) -> ExecutionResult` | 60 |  |
 | method | `cancel_order(self, *, symbol: str, order_id: str \| None = None, client_order_id: str \| None = None) -> ExecutionResult` | 78 |  |
 | method | `_find_order(self, *, symbol: str, order_id: str \| None, client_order_id: str \| None) -> ExecutionResult \| None` | 103 |  |
+### [`app/paper_runtime_reports.py`](../app/paper_runtime_reports.py)
+
+Строк: **103**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `atomic_write(path: Path, content: str) -> None` | 19 |  |
+| function | `parse_datetime(value: str) -> datetime` | 33 |  |
+| function | `load_period_data(state_path: Path, journal_path: Path, shadow_path: Path, start: datetime, end: datetime) -> tuple[Any, list[TradeJournalEntry], list[dict[str, Any]]]` | 40 |  |
+| function | `shadow_summary(records: list[dict[str, Any]]) -> dict[str, Any]` | 49 |  |
+| function | `trade_summary(trades: list[TradeJournalEntry]) -> dict[str, Any]` | 65 |  |
+| function | `render_text(report: dict[str, Any]) -> str` | 91 |  |
+| function | `write_report(report: dict[str, Any], json_output: Path \| None, text_output: Path \| None) -> None` | 99 |  |
 ### [`app/paper_session.py`](../app/paper_session.py)
 
 Строк: **882**
@@ -773,6 +799,24 @@ _Публичных классов и функций не найдено._
 |---|---|---:|---|
 | dataclass | `Runtime` | 15 |  |
 | function | `build_runtime(settings: Settings \| None = None) -> Runtime` | 21 |  |
+### [`app/runtime_health.py`](../app/runtime_health.py)
+
+Строк: **208**
+
+Связанные тесты: [`tests/test_runtime_health.py`](../tests/test_runtime_health.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| enum | `HealthStatus` | 16 |  |
+| dataclass | `HealthCheckResult` | 23 |  |
+| method | `to_dict(self) -> dict[str, Any]` | 30 |  |
+| function | `utc_now() -> datetime` | 36 |  |
+| function | `read_timestamp(path: Path) -> int` | 40 |  |
+| function | `read_jsonl_safely(path: Path, *, parser: Callable[[object], Any] \| None = None) -> tuple[list[Any], bool]` | 47 | Read JSONL without modifying it; ignore only an incomplete final line. |
+| function | `check_lock(path: Path, *, now: datetime \| None = None) -> HealthCheckResult` | 72 |  |
+| function | `_result(name: str, status: HealthStatus, message: str, details: dict[str, Any], now: datetime) -> HealthCheckResult` | 114 |  |
+| function | `run_health_checks(*, state_path: Path, candle_path: Path, journal_path: Path, shadow_path: Path, lock_path: Path, symbol: str = 'ETHUSDT', timeframe: str = '60', max_candle_age_minutes: int = 90, max_market_lag_candles: int = 1, no_network: bool = False, now: datetime \| None = None, market_fetcher: Callable[[], int] \| None = None) -> tuple[list[HealthCheckResult], dict[str, Any]]` | 118 |  |
+| function | `overall_status(checks: list[HealthCheckResult]) -> HealthStatus` | 207 |  |
 ### [`app/settings.py`](../app/settings.py)
 
 Строк: **66**
@@ -1073,6 +1117,16 @@ _Публичных классов и функций не найдено._
 | dataclass | `RuntimeSummary` | 10 |  |
 | function | `summarize_runtime(runtime: Runtime) -> RuntimeSummary` | 19 |  |
 | function | `main() -> None` | 36 |  |
+### [`scripts/check_runtime_alerts.py`](../scripts/check_runtime_alerts.py)
+
+Строк: **64**
+
+Связанные тесты: [`tests/test_check_runtime_alerts.py`](../tests/test_check_runtime_alerts.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 15 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 25 |  |
 ### [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py)
 
 Строк: **483**
@@ -1162,6 +1216,28 @@ _Публичных классов и функций не найдено._
 | function | `positive_float(value: str) -> float` | 30 |  |
 | function | `build_parser() -> argparse.ArgumentParser` | 37 |  |
 | function | `main(argv: list[str] \| None = None) -> int` | 64 |  |
+### [`scripts/report_paper_daily.py`](../scripts/report_paper_daily.py)
+
+Строк: **74**
+
+Связанные тесты: [`tests/test_report_paper_daily.py`](../tests/test_report_paper_daily.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 18 |  |
+| function | `create_report(args: argparse.Namespace) -> dict` | 30 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 62 |  |
+### [`scripts/report_paper_weekly.py`](../scripts/report_paper_weekly.py)
+
+Строк: **77**
+
+Связанные тесты: [`tests/test_report_paper_weekly.py`](../tests/test_report_paper_weekly.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 19 |  |
+| function | `create_report(args: argparse.Namespace) -> dict` | 31 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 65 |  |
 ### [`scripts/report_shadow_decisions.py`](../scripts/report_shadow_decisions.py)
 
 Строк: **133**
@@ -1223,6 +1299,16 @@ _Публичных классов и функций не найдено._
 |---|---|---:|---|
 | function | `dataframe_to_candles(data: pd.DataFrame) -> list[Candle]` | 18 |  |
 | function | `main() -> None` | 38 |  |
+### [`scripts/run_periodic_reports.py`](../scripts/run_periodic_reports.py)
+
+Строк: **51**
+
+Связанные тесты: [`tests/test_run_periodic_reports.py`](../tests/test_run_periodic_reports.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 17 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 27 |  |
 ### [`scripts/run_strategy_comparison.py`](../scripts/run_strategy_comparison.py)
 
 Строк: **102**
@@ -1248,6 +1334,17 @@ _Публичных классов и функций не найдено._
 |---|---|---:|---|
 | function | `print_result(result) -> None` | 14 |  |
 | function | `main() -> None` | 136 |  |
+### [`scripts/runtime_status.py`](../scripts/runtime_status.py)
+
+Строк: **96**
+
+Связанные тесты: [`tests/test_runtime_status.py`](../tests/test_runtime_status.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 21 |  |
+| function | `build_status(args: argparse.Namespace) -> tuple[dict, HealthStatus]` | 32 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 77 |  |
 ### [`scripts/validate_ema_out_of_sample.py`](../scripts/validate_ema_out_of_sample.py)
 
 Строк: **169**
@@ -1450,6 +1547,13 @@ _Публичных классов и функций не найдено._
 | function | `test_summarizes_paper_runtime() -> None` | 18 |  |
 | function | `test_summary_does_not_contain_credentials() -> None` | 31 |  |
 | function | `test_summary_mode_matches_executor() -> None` | 40 |  |
+### [`tests/test_check_runtime_alerts.py`](../tests/test_check_runtime_alerts.py)
+
+Строк: **9**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `test_runtime_alerts_exit_code_is_defined()` | 6 |  |
 ### [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py)
 
 Строк: **260**
@@ -1978,6 +2082,23 @@ _Публичных классов и функций не найдено._
 | method | `generate_signal(self, candles, index)` | 197 |  |
 | function | `test_base_strategy_is_not_reconfigured_or_replaced() -> None` | 201 |  |
 | function | `test_allowed_and_blocked_counters_accumulate() -> None` | 215 |  |
+### [`tests/test_report_paper_daily.py`](../tests/test_report_paper_daily.py)
+
+Строк: **33**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `files(tmp_path: Path, trade: dict \| None = None, shadow: dict \| None = None)` | 8 |  |
+| function | `trade()` | 17 |  |
+| function | `test_daily_without_trades_is_valid_and_atomic(tmp_path)` | 21 |  |
+| function | `test_daily_trade_fees_pnl_and_shadow(tmp_path)` | 28 |  |
+### [`tests/test_report_paper_weekly.py`](../tests/test_report_paper_weekly.py)
+
+Строк: **12**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `test_weekly_aggregation_and_daily_breakdown(tmp_path)` | 6 |  |
 ### [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py)
 
 Строк: **82**
@@ -2054,6 +2175,17 @@ _Публичных классов и функций не найдено._
 | method | `generate_signal(self, candles, index)` | 25 |  |
 | function | `test_run_once_processes_new_candles_and_saves_state(tmp_path: Path) -> None` | 32 |  |
 | function | `test_run_once_executes_saved_pending_open(tmp_path: Path) -> None` | 77 |  |
+### [`tests/test_run_periodic_reports.py`](../tests/test_run_periodic_reports.py)
+
+Строк: **40**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| class | `Clock` | 7 |  |
+| method | `now(zone)` | 9 |  |
+| function | `test_periodic_does_not_overwrite_without_force(monkeypatch, tmp_path)` | 15 |  |
+| function | `test_force_overwrites(monkeypatch, tmp_path)` | 26 |  |
+| function | `test_templates_use_absolute_paths_and_shadow()` | 35 |  |
 ### [`tests/test_runtime.py`](../tests/test_runtime.py)
 
 Строк: **41**
@@ -2064,6 +2196,26 @@ _Публичных классов и функций не найдено._
 | function | `test_build_runtime_returns_runtime() -> None` | 21 |  |
 | function | `test_runtime_uses_same_settings_instance() -> None` | 30 |  |
 | function | `test_runtime_executor_mode_matches_execution_mode() -> None` | 38 |  |
+### [`tests/test_runtime_health.py`](../tests/test_runtime_health.py)
+
+Строк: **69**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `make_runtime(tmp_path: Path, *, candle: int \| None = None) -> dict` | 11 |  |
+| function | `test_valid_state_is_ok_without_network(tmp_path)` | 27 |  |
+| function | `test_missing_and_damaged_state_are_critical(tmp_path)` | 32 |  |
+| function | `test_stale_candle_and_aggregation(tmp_path)` | 42 |  |
+| function | `test_bybit_unavailable_is_captured(tmp_path)` | 48 |  |
+| function | `test_incomplete_final_jsonl_is_safe(tmp_path)` | 55 |  |
+| function | `test_invalid_balance_and_position_are_critical(tmp_path)` | 63 |  |
+### [`tests/test_runtime_status.py`](../tests/test_runtime_status.py)
+
+Строк: **20**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `test_cli_works_from_another_cwd_and_hides_secrets(tmp_path)` | 10 |  |
 ### [`tests/test_settings.py`](../tests/test_settings.py)
 
 Строк: **66**

@@ -1,0 +1,14 @@
+[Unit]
+Description=Crypto bot paper shadow controller cycle
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/paper-shadow.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/run_bybit_controller.py --strategy-mode shadow --lock-file /opt/crypto-bot/state/bybit_controller.lock
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=30

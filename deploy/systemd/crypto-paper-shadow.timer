@@ -1,0 +1,11 @@
+[Unit]
+Description=Run crypto paper shadow controller hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=30
+Unit=crypto-paper-shadow.service
+
+[Install]
+WantedBy=timers.target
