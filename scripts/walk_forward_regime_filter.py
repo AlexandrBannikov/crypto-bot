@@ -56,10 +56,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA_PATH)
     parser.add_argument(
-        "--fast-ema", type=positive_int, default=defaults.fast_ema
+        "--fast-period",
+        "--fast-ema",
+        dest="fast_period",
+        type=positive_int,
+        default=defaults.fast_ema,
     )
     parser.add_argument(
-        "--slow-ema", type=positive_int, default=defaults.slow_ema
+        "--slow-period",
+        "--slow-ema",
+        dest="slow_period",
+        type=positive_int,
+        default=defaults.slow_ema,
     )
     parser.add_argument(
         "--fee-rate",
@@ -117,15 +125,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=defaults.minimum_confidence,
     )
     parser.add_argument("--max-windows", type=positive_int)
-    parser.add_argument("--json-output", type=Path)
-    parser.add_argument("--csv-output", type=Path)
+    parser.add_argument(
+        "--output-json",
+        "--json-output",
+        dest="output_json",
+        type=Path,
+    )
+    parser.add_argument(
+        "--output-csv",
+        "--csv-output",
+        dest="output_csv",
+        type=Path,
+    )
     return parser
 
 
 def config_from_args(args: argparse.Namespace) -> ResearchConfig:
     return ResearchConfig(
-        fast_ema=args.fast_ema,
-        slow_ema=args.slow_ema,
+        fast_ema=args.fast_period,
+        slow_ema=args.slow_period,
         fee_rate=args.fee_rate,
         initial_balance=args.initial_balance,
         train_months=args.train_months,
@@ -199,12 +217,14 @@ def print_report(report: dict[str, object]) -> None:
     results = report["window_results"]
     print(
         f"{'Win':>3} {'Test period':<23} {'Variant':<14} "
-        f"{'Return':>9} {'DD':>8} {'PF':>8} {'Trades':>7} {'Blocked':>8}"
+        f"{'Candles':>7} {'Return':>9} {'DD':>8} {'PF':>8} "
+        f"{'Trades':>7} {'Blocked':>8}"
     )
     for item in results:
         period = f"{item['test_start'][:10]}..{item['test_end'][:10]}"
         print(
             f"{item['window_number']:>3} {period:<23} {item['variant']:<14} "
+            f"{item['test_candles']:>7} "
             f"{item['return_percent']:>+8.2f}% "
             f"{item['maximum_drawdown_percent']:>7.2f}% "
             f"{item['profit_factor']:>8.2f} "
@@ -237,10 +257,10 @@ def main(argv: list[str] | None = None) -> int:
         results = run_walk_forward(data, config)
         report = build_report(data, args.data, config, results)
         print_report(report)
-        if args.json_output:
-            save_json(args.json_output, report)
-        if args.csv_output:
-            save_csv(args.csv_output, results)
+        if args.output_json:
+            save_json(args.output_json, report)
+        if args.output_csv:
+            save_csv(args.output_csv, results)
     except (OSError, RuntimeError, ValueError) as exc:
         parser.error(str(exc))
     return 0

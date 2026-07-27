@@ -6,7 +6,7 @@ import statistics
 import struct
 import tempfile
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -98,6 +98,8 @@ class WindowResult:
     train_end: str
     test_start: str
     test_end: str
+    train_candles: int
+    test_candles: int
     variant: str
     initial_balance: float
     final_balance: float
@@ -143,7 +145,7 @@ class WarmupStrategy:
 
 
 class CausalRegimeCache:
-    """Window-scoped cache keyed by detector config and exact prefix."""
+    """Index cache scoped to one immutable candle sequence."""
 
     def __init__(
         self,
@@ -153,34 +155,26 @@ class CausalRegimeCache:
     ) -> None:
         self.detector = detector
         self.window_id = window_id
-        self.detector_parameters = detector_parameter_tuple(detector)
-        self._cache: dict[tuple[object, ...], MarketRegime] = {}
+        self._source: Sequence[Candle] | None = None
+        self._cache: dict[int, MarketRegime] = {}
 
     def detect(self, candles: Sequence[Candle]) -> MarketRegime:
-        fingerprint = fingerprint_candles(candles)
-        key = (
-            self.window_id,
-            self.detector_parameters,
-            len(candles),
-            fingerprint,
-        )
-        if key not in self._cache:
-            self._cache[key] = self.detector.detect(candles)
-        return self._cache[key]
+        # Prefix provenance cannot be established cheaply here.
+        return self.detector.detect(candles)
 
-
-def detector_parameter_tuple(
-    detector: MarketRegimeDetector,
-) -> tuple[object, ...]:
-    return (
-        detector.fast_ema_period,
-        detector.slow_ema_period,
-        detector.adx_period,
-        detector.adx_threshold,
-        detector.atr_period,
-        detector.low_volatility_threshold,
-        detector.high_volatility_threshold,
-    )
+    def detect_at(
+        self,
+        candles: Sequence[Candle],
+        index: int,
+    ) -> MarketRegime:
+        if candles is not self._source:
+            self._source = candles
+            self._cache = {}
+        if index not in self._cache:
+            self._cache[index] = self.detector.detect(
+                candles[: index + 1]
+            )
+        return self._cache[index]
 
 
 def fingerprint_candles(candles: Sequence[Candle]) -> str:
@@ -269,6 +263,8 @@ def _run_variant(
     variant: str,
     config: ResearchConfig,
     cache: CausalRegimeCache,
+    train_candles: int | None = None,
+    test_candles: int | None = None,
 ) -> tuple[WindowResult, BacktestResult]:
     base = WarmupStrategy(
         EMACrossStrategy(config.fast_ema, config.slow_ema),
@@ -311,6 +307,16 @@ def _run_variant(
         train_end=window.train_end.isoformat(),
         test_start=window.test_start.isoformat(),
         test_end=window.test_end.isoformat(),
+        train_candles=(
+            trade_start_index
+            if train_candles is None
+            else train_candles
+        ),
+        test_candles=(
+            len(history) - trade_start_index
+            if test_candles is None
+            else test_candles
+        ),
         variant=variant,
         initial_balance=result.initial_balance,
         final_balance=result.final_balance,
@@ -374,6 +380,8 @@ def run_walk_forward(
                 variant=variant,
                 config=config,
                 cache=cache,
+                train_candles=len(train),
+                test_candles=len(test),
             )
             for variant in VARIANTS
         ]
@@ -381,6 +389,25 @@ def run_walk_forward(
             raise RuntimeError(
                 "detector-only BacktestResult differs from baseline "
                 f"in window {window.number}"
+            )
+        baseline, detector_only, filtered = (
+            item for item, _ in runs
+        )
+        potential_entries = detector_only.allowed_entries
+        if baseline.allowed_entries != potential_entries:
+            baseline = replace(
+                baseline,
+                allowed_entries=potential_entries,
+            )
+            runs[0] = (baseline, runs[0][1])
+        if baseline.blocked_entries or detector_only.blocked_entries:
+            raise RuntimeError("unfiltered variant blocked an entry")
+        if (
+            filtered.allowed_entries + filtered.blocked_entries
+            != potential_entries
+        ):
+            raise RuntimeError(
+                "filtered entry accounting differs from baseline"
             )
         test_start_timestamp = int(window.test_start.timestamp())
         if any(
@@ -400,10 +427,27 @@ def summarize(
     items = [item for item in results if item.variant == variant]
     returns = [item.return_percent for item in items]
     drawdowns = [item.maximum_drawdown_percent for item in items]
+    # BacktestEngine defines PF as 0 with no trades and +inf when there
+    # are profits but no losing trades.  fmean intentionally propagates
+    # +inf; JSON serialization represents non-finite diagnostics as null.
     factors = [item.profit_factor for item in items]
     trades = [item.trade_count for item in items]
     fees = [item.total_fees for item in items]
     count = len(items)
+    blocked_reasons = {
+        "range": sum(item.blocked_range for item in items),
+        "downtrend": sum(item.blocked_downtrend for item in items),
+        "high_volatility": sum(
+            item.blocked_high_volatility for item in items
+        ),
+        "low_confidence": sum(
+            item.blocked_low_confidence for item in items
+        ),
+        "unknown": sum(item.blocked_unknown for item in items),
+    }
+    total_blocked = sum(item.blocked_entries for item in items)
+    if sum(blocked_reasons.values()) != total_blocked:
+        raise RuntimeError("aggregate blocked reasons do not match total")
     return {
         "windows": count,
         "profitable_windows": sum(value > 0 for value in returns),
@@ -425,13 +469,14 @@ def summarize(
         "mean_trades_per_window": statistics.fmean(trades),
         "total_fees": sum(fees),
         "mean_fees_per_window": statistics.fmean(fees),
-        "total_blocked_entries": sum(
-            item.blocked_entries for item in items
-        ),
+        "total_blocked_entries": total_blocked,
+        "blocked_by_reason": blocked_reasons,
     }
 
 
-def compare_variants(results: list[WindowResult]) -> dict[str, int]:
+def compare_variants(
+    results: list[WindowResult],
+) -> dict[str, int | float]:
     pairs = []
     for number in sorted({item.window_number for item in results}):
         items = {
@@ -534,15 +579,28 @@ def build_analysis(
     baseline = summarize(results, "baseline")
     filtered = summarize(results, "filtered")
     comparison = compare_variants(results)
+    compounded = compounded_diagnostics(results, initial_balance)
+    baseline["compounded_return_percent"] = compounded[
+        "baseline_compounded_return_percent"
+    ]
+    filtered["compounded_return_percent"] = compounded[
+        "filtered_compounded_return_percent"
+    ]
+    comparison["compounded_return_difference_points"] = (
+        compounded["filtered_compounded_return_percent"]
+        - compounded["baseline_compounded_return_percent"]
+    )
+    comparison["mean_drawdown_difference_points"] = (
+        filtered["mean_maximum_drawdown_percent"]
+        - baseline["mean_maximum_drawdown_percent"]
+    )
     return {
         "summary": {
             "baseline": baseline,
             "filtered": filtered,
         },
         "comparison": comparison,
-        "compounded_diagnostics": compounded_diagnostics(
-            results, initial_balance
-        ),
+        "compounded_diagnostics": compounded,
         "verdict_criteria": VERDICT_CRITERIA,
         "verdict": research_verdict(
             baseline, filtered, comparison

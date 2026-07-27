@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from dataclasses import replace
@@ -25,9 +26,11 @@ from app.regime_filter_research import (
     _run_variant,
     build_analysis,
     build_windows,
+    compounded_diagnostics,
     fingerprint_candles,
     research_verdict,
     run_walk_forward,
+    summarize,
 )
 from app.regime_filtered_strategy import RegimeFilteredStrategy
 from app.strategies import Signal
@@ -89,10 +92,38 @@ def test_build_windows_has_half_open_boundaries_and_exact_step() -> None:
         ]
         assert set(train.datetime).isdisjoint(test.datetime)
         assert test.datetime.iloc[0] == window.test_start
+        combined = pd.concat([train, test]).sort_index()
+        expected = data[
+            (data.datetime >= window.train_start)
+            & (data.datetime < window.test_end)
+        ]
+        assert combined.index.tolist() == expected.index.tolist()
     assert (
         windows[1].train_start
         == windows[0].train_start + pd.DateOffset(months=3)
     )
+
+
+def test_windows_preserve_timezone_and_drop_incomplete_tail() -> None:
+    data = market_data(periods=400)
+    data["datetime"] = data["datetime"].dt.tz_convert("Asia/Tokyo")
+    windows = build_windows(
+        data,
+        small_config(
+            train_months=6,
+            test_months=3,
+            step_months=3,
+        ),
+    )
+
+    assert len(windows) == 2
+    assert str(windows[0].test_start.tz) == "Asia/Tokyo"
+    assert windows[-1].test_end <= (
+        data.datetime.iloc[-1] + pd.Timedelta(days=1)
+    )
+    next_train_start = windows[-1].train_start + pd.DateOffset(months=3)
+    next_test_end = next_train_start + pd.DateOffset(months=9)
+    assert next_test_end > data.datetime.iloc[-1] + pd.Timedelta(days=1)
 
 
 def test_warmup_updates_strategy_but_suppresses_train_signals() -> None:
@@ -160,6 +191,66 @@ def test_every_window_has_independent_balance_and_state() -> None:
     assert [item.window_number for item in results].count(2) == 3
 
 
+def test_every_window_builds_fresh_research_objects(monkeypatch) -> None:
+    from app import regime_filter_research as research
+
+    created = {
+        "ema": [],
+        "wrapper": [],
+        "detector": [],
+        "cache": [],
+        "engine": [],
+    }
+
+    def recorder(name, original):
+        def create(*args, **kwargs):
+            item = original(*args, **kwargs)
+            created[name].append(item)
+            return item
+
+        return create
+
+    monkeypatch.setattr(
+        research,
+        "EMACrossStrategy",
+        recorder("ema", research.EMACrossStrategy),
+    )
+    monkeypatch.setattr(
+        research,
+        "RegimeFilteredStrategy",
+        recorder("wrapper", research.RegimeFilteredStrategy),
+    )
+    monkeypatch.setattr(
+        research,
+        "MarketRegimeDetector",
+        recorder("detector", research.MarketRegimeDetector),
+    )
+    monkeypatch.setattr(
+        research,
+        "CausalRegimeCache",
+        recorder("cache", research.CausalRegimeCache),
+    )
+    monkeypatch.setattr(
+        research,
+        "BacktestEngine",
+        recorder("engine", research.BacktestEngine),
+    )
+
+    run_walk_forward(market_data(), small_config(max_windows=2))
+
+    assert len(created["ema"]) == 6
+    assert len(created["wrapper"]) == 4
+    # One detector is constructed by config validation; the remaining
+    # two are the independent detector instances for the two windows.
+    assert len(created["detector"]) == 3
+    assert len(created["cache"]) == 2
+    assert len(created["engine"]) == 6
+    assert all(
+        len(items) == len({id(item) for item in items})
+        for items in created.values()
+    )
+
+
 def test_fingerprint_and_cache_distinguish_ohlc_and_windows() -> None:
     first = [
         Candle(1, 100, 101, 99, 100, 1),
@@ -177,10 +268,10 @@ def test_fingerprint_and_cache_distinguish_ohlc_and_windows() -> None:
     cache_one = CausalRegimeCache(detector_one, window_id="one")
     cache_two = CausalRegimeCache(detector_two, window_id="two")
 
-    cache_one.detect(first)
-    cache_one.detect(first)
-    cache_one.detect(changed)
-    cache_two.detect(first)
+    cache_one.detect_at(first, 1)
+    cache_one.detect_at(first, 1)
+    cache_one.detect_at(changed, 1)
+    cache_two.detect_at(first, 1)
 
     assert detector_one.detect.call_count == 2
     assert detector_two.detect.call_count == 1
@@ -208,6 +299,42 @@ def test_detector_only_equals_baseline_and_never_blocks() -> None:
     ):
         assert getattr(detector_only, field) == getattr(baseline, field)
     assert detector_only.blocked_entries == 0
+
+
+def test_detector_only_full_backtest_result_equals_baseline() -> None:
+    data = market_data(periods=500)
+    config = small_config(max_windows=1)
+    window = build_windows(data, config)[0]
+    train = data[
+        (data.datetime >= window.train_start)
+        & (data.datetime < window.train_end)
+    ]
+    test = data[
+        (data.datetime >= window.test_start)
+        & (data.datetime < window.test_end)
+    ]
+    history = dataframe_to_candles(pd.concat([train, test]))
+    cache = CausalRegimeCache(MarketRegimeDetector(2, 4))
+
+    baseline = _run_variant(
+        history,
+        trade_start_index=len(train),
+        window=window,
+        variant="baseline",
+        config=config,
+        cache=cache,
+    )
+    detector_only = _run_variant(
+        history,
+        trade_start_index=len(train),
+        window=window,
+        variant="detector_only",
+        config=config,
+        cache=cache,
+    )
+
+    assert detector_only[1] == baseline[1]
+    assert detector_only[1].trades == baseline[1].trades
 
 
 def test_filtered_preserves_exit_and_stop_loss() -> None:
@@ -285,10 +412,10 @@ def test_future_change_cannot_change_past_decisions_or_trades() -> None:
 
 
 def test_blocked_reason_sum_is_exact() -> None:
-    filtered = run_walk_forward(
+    baseline, detector_only, filtered = run_walk_forward(
         market_data(periods=500),
         small_config(max_windows=1),
-    )[2]
+    )
 
     assert filtered.blocked_entries == sum(
         (
@@ -299,6 +426,54 @@ def test_blocked_reason_sum_is_exact() -> None:
             filtered.blocked_unknown,
         )
     )
+    assert baseline.blocked_entries == 0
+    assert detector_only.blocked_entries == 0
+    assert (
+        filtered.allowed_entries + filtered.blocked_entries
+        == baseline.allowed_entries
+        == detector_only.allowed_entries
+    )
+
+
+def test_cached_and_plain_detector_are_equivalent() -> None:
+    data = market_data(periods=500)
+    config = small_config(max_windows=1)
+    window = build_windows(data, config)[0]
+    train = data[
+        (data.datetime >= window.train_start)
+        & (data.datetime < window.train_end)
+    ]
+    test = data[
+        (data.datetime >= window.test_start)
+        & (data.datetime < window.test_end)
+    ]
+    history = dataframe_to_candles(pd.concat([train, test]))
+
+    class PlainDetector:
+        def __init__(self):
+            self.detector = MarketRegimeDetector(2, 4)
+
+        def detect_at(self, candles, index):
+            return self.detector.detect(candles[: index + 1])
+
+    cached = _run_variant(
+        history,
+        trade_start_index=len(train),
+        window=window,
+        variant="filtered",
+        config=config,
+        cache=CausalRegimeCache(MarketRegimeDetector(2, 4)),
+    )
+    plain = _run_variant(
+        history,
+        trade_start_index=len(train),
+        window=window,
+        variant="filtered",
+        config=config,
+        cache=PlainDetector(),
+    )
+
+    assert cached == plain
 
 
 @pytest.mark.parametrize(
@@ -331,9 +506,9 @@ def test_json_and_csv_are_atomic_and_deterministic(tmp_path) -> None:
     arguments = [
         "--data",
         str(data_path),
-        "--fast-ema",
+        "--fast-period",
         "2",
-        "--slow-ema",
+        "--slow-period",
         "4",
         "--train-months",
         "6",
@@ -343,9 +518,9 @@ def test_json_and_csv_are_atomic_and_deterministic(tmp_path) -> None:
         "3",
         "--max-windows",
         "1",
-        "--json-output",
+        "--output-json",
         str(json_path),
-        "--csv-output",
+        "--output-csv",
         str(csv_path),
     ]
 
@@ -361,6 +536,33 @@ def test_json_and_csv_are_atomic_and_deterministic(tmp_path) -> None:
     assert not list(json_path.parent.glob("*.tmp"))
 
 
+@pytest.mark.parametrize("writer", ["json", "csv"])
+def test_atomic_output_failure_preserves_existing_file(
+    tmp_path,
+    monkeypatch,
+    writer,
+) -> None:
+    output = tmp_path / f"report.{writer}"
+    output.write_text("original\n", encoding="utf-8")
+
+    def fail_replace(source, destination):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(os, "replace", fail_replace)
+    with pytest.raises(OSError, match="replace failed"):
+        if writer == "json":
+            script.save_json(output, {"result": 1})
+        else:
+            results = run_walk_forward(
+                market_data(periods=500),
+                small_config(max_windows=1),
+            )
+            script.save_csv(output, results)
+
+    assert output.read_text(encoding="utf-8") == "original\n"
+    assert not list(tmp_path.glob(f".{output.name}.*"))
+
+
 def test_cli_works_from_another_cwd(tmp_path) -> None:
     data_path = tmp_path / "market.csv"
     market_data(periods=500).to_csv(data_path, index=False)
@@ -370,9 +572,9 @@ def test_cli_works_from_another_cwd(tmp_path) -> None:
             str(Path(script.__file__).resolve()),
             "--data",
             str(data_path),
-            "--fast-ema",
+            "--fast-period",
             "2",
-            "--slow-ema",
+            "--slow-period",
             "4",
             "--train-months",
             "6",
@@ -389,6 +591,24 @@ def test_cli_works_from_another_cwd(tmp_path) -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert "Verdict:" in completed.stdout
+    assert {path.name for path in tmp_path.iterdir()} == {"market.csv"}
+
+
+@pytest.mark.parametrize(
+    ("arguments", "message"),
+    [
+        (["--fast-period", "50", "--slow-period", "20"], "fast EMA"),
+        (["--train-months", "0"], "greater than zero"),
+        (["--fee-rate", "1"], "between 0 and 1"),
+        (["--initial-balance", "0"], "greater than zero"),
+    ],
+)
+def test_cli_rejects_invalid_arguments(arguments, message, capsys) -> None:
+    with pytest.raises(SystemExit) as captured:
+        script.main(arguments)
+
+    assert captured.value.code == 2
+    assert message in capsys.readouterr().err
 
 
 def test_verdict_uses_fixed_criteria_and_few_windows_inconclusive() -> None:
@@ -424,4 +644,131 @@ def test_analysis_contains_summary_comparison_compounding_and_verdict() -> None:
     assert "baseline_compounded_final_balance" in analysis[
         "compounded_diagnostics"
     ]
+    baseline = analysis["summary"]["baseline"]
+    filtered = analysis["summary"]["filtered"]
+    compounded = analysis["compounded_diagnostics"]
+    assert baseline["compounded_return_percent"] == compounded[
+        "baseline_compounded_return_percent"
+    ]
+    assert filtered["compounded_return_percent"] == compounded[
+        "filtered_compounded_return_percent"
+    ]
+    assert sum(filtered["blocked_by_reason"].values()) == filtered[
+        "total_blocked_entries"
+    ]
+    assert analysis["comparison"][
+        "compounded_return_difference_points"
+    ] == pytest.approx(
+        filtered["compounded_return_percent"]
+        - baseline["compounded_return_percent"]
+    )
     assert analysis["verdict"] == "INCONCLUSIVE"
+
+
+def test_compounding_multiplies_mixed_window_returns() -> None:
+    template = run_walk_forward(
+        market_data(periods=500),
+        small_config(max_windows=1),
+    )[0]
+    results = [
+        replace(
+            template,
+            window_number=1,
+            variant="baseline",
+            return_percent=10.0,
+        ),
+        replace(
+            template,
+            window_number=2,
+            variant="baseline",
+            return_percent=-20.0,
+        ),
+        replace(
+            template,
+            window_number=1,
+            variant="filtered",
+            return_percent=-10.0,
+        ),
+        replace(
+            template,
+            window_number=2,
+            variant="filtered",
+            return_percent=30.0,
+        ),
+    ]
+
+    compounded = compounded_diagnostics(results, 1000.0)
+
+    assert compounded["baseline_compounded_final_balance"] == pytest.approx(
+        1000 * 1.10 * 0.80
+    )
+    assert compounded["baseline_compounded_return_percent"] == pytest.approx(
+        -12.0
+    )
+    assert compounded["filtered_compounded_final_balance"] == pytest.approx(
+        1000 * 0.90 * 1.30
+    )
+    assert compounded["filtered_compounded_return_percent"] == pytest.approx(
+        17.0
+    )
+
+
+def test_summary_calculates_all_required_aggregates() -> None:
+    template = run_walk_forward(
+        market_data(periods=500),
+        small_config(max_windows=1),
+    )[0]
+    rows = [
+        replace(
+            template,
+            window_number=1,
+            return_percent=10.0,
+            maximum_drawdown_percent=5.0,
+            profit_factor=2.0,
+            trade_count=3,
+            total_fees=4.0,
+        ),
+        replace(
+            template,
+            window_number=2,
+            return_percent=-4.0,
+            maximum_drawdown_percent=9.0,
+            profit_factor=0.0,
+            trade_count=1,
+            total_fees=2.0,
+        ),
+    ]
+
+    summary = summarize(rows, "baseline")
+
+    assert summary["windows"] == 2
+    assert summary["profitable_windows"] == 1
+    assert summary["losing_windows"] == 1
+    assert summary["mean_return_percent"] == 3.0
+    assert summary["median_return_percent"] == 3.0
+    assert summary["worst_return_percent"] == -4.0
+    assert summary["best_return_percent"] == 10.0
+    assert summary["mean_maximum_drawdown_percent"] == 7.0
+    assert summary["worst_maximum_drawdown_percent"] == 9.0
+    assert summary["mean_profit_factor"] == 1.0
+    assert summary["total_trades"] == 4
+    assert summary["total_fees"] == 6.0
+
+
+def test_profit_factor_zero_and_infinity_are_preserved() -> None:
+    template = run_walk_forward(
+        market_data(periods=500),
+        small_config(max_windows=1),
+    )[0]
+    no_trades = replace(template, profit_factor=0.0, trade_count=0)
+    no_losses = replace(
+        template,
+        window_number=2,
+        profit_factor=float("inf"),
+    )
+
+    assert summarize([no_trades], "baseline")["mean_profit_factor"] == 0.0
+    assert summarize(
+        [no_trades, no_losses],
+        "baseline",
+    )["mean_profit_factor"] == float("inf")
