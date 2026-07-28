@@ -5,7 +5,7 @@ import os
 import statistics
 import struct
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Protocol
@@ -18,6 +18,7 @@ from app.ema_cross_strategy import EMACrossStrategy
 from app.engine import BacktestEngine, BacktestResult
 from app.market_regime import MarketRegime, MarketRegimeDetector
 from app.regime_filtered_strategy import (
+    EntryBlockPolicy,
     EntryBlockReason,
     RegimeFilteredStrategy,
     StrategySignal,
@@ -176,6 +177,18 @@ class CausalRegimeCache:
             )
         return self._cache[index]
 
+    def seed(
+        self,
+        candles: Sequence[Candle],
+        regimes: Mapping[int, MarketRegime],
+    ) -> None:
+        self._source = candles
+        self._cache = dict(regimes)
+
+    @property
+    def snapshot(self) -> dict[int, MarketRegime]:
+        return dict(self._cache)
+
 
 def fingerprint_candles(candles: Sequence[Candle]) -> str:
     digest = hashlib.sha256()
@@ -262,9 +275,10 @@ def _run_variant(
     window: WalkForwardWindow,
     variant: str,
     config: ResearchConfig,
-    cache: CausalRegimeCache,
+    cache: CausalRegimeCache | None,
     train_candles: int | None = None,
     test_candles: int | None = None,
+    block_policy: EntryBlockPolicy | None = None,
 ) -> tuple[WindowResult, BacktestResult]:
     base = WarmupStrategy(
         EMACrossStrategy(config.fast_ema, config.slow_ema),
@@ -273,11 +287,21 @@ def _run_variant(
     wrapped: RegimeFilteredStrategy | None = None
     strategy: SignalStrategy = base
     if variant != "baseline":
+        if cache is None:
+            raise ValueError("non-baseline variant requires a detector cache")
+        policy = (
+            EntryBlockPolicy.full()
+            if block_policy is None and variant == "filtered"
+            else block_policy
+        )
         wrapped = RegimeFilteredStrategy(
             base,
             cache,
             TradingFilter(config.minimum_confidence),
-            apply_filter=(variant == "filtered"),
+            apply_filter=(
+                variant == "filtered" or block_policy is not None
+            ),
+            block_policy=policy,
         )
         strategy = wrapped
     result = BacktestEngine(
@@ -351,6 +375,30 @@ def run_walk_forward(
     data: pd.DataFrame,
     config: ResearchConfig,
 ) -> list[WindowResult]:
+    return run_policy_walk_forward(
+        data,
+        config,
+        {
+            "baseline": None,
+            "detector_only": EntryBlockPolicy.empty(),
+            "filtered": EntryBlockPolicy.full(),
+        },
+    )
+
+
+def run_policy_walk_forward(
+    data: pd.DataFrame,
+    config: ResearchConfig,
+    policies: Mapping[str, EntryBlockPolicy | None],
+) -> list[WindowResult]:
+    if tuple(policies)[:2] != ("baseline", "detector_only"):
+        raise ValueError(
+            "policies must start with baseline and detector_only"
+        )
+    if policies["baseline"] is not None:
+        raise ValueError("baseline policy must be None")
+    if policies["detector_only"] != EntryBlockPolicy.empty():
+        raise ValueError("detector-only policy must be empty")
     windows = build_windows(data, config)
     output: list[WindowResult] = []
     for window in windows:
@@ -365,15 +413,22 @@ def run_walk_forward(
         if train.empty or test.empty:
             raise ValueError(f"window {window.number} has an empty interval")
         history = dataframe_to_candles(pd.concat([train, test]))
-        cache = CausalRegimeCache(
-            make_detector(config),
-            window_id=(
-                f"{window.number}:{window.train_start.isoformat()}:"
-                f"{window.test_end.isoformat()}"
-            ),
-        )
-        runs = [
-            _run_variant(
+        runs: list[tuple[WindowResult, BacktestResult]] = []
+        regime_seed: dict[int, MarketRegime] = {}
+        for variant, policy in policies.items():
+            cache = None
+            if variant != "baseline":
+                cache = CausalRegimeCache(
+                    make_detector(config),
+                    window_id=(
+                        f"{window.number}:{variant}:"
+                        f"{window.train_start.isoformat()}:"
+                        f"{window.test_end.isoformat()}"
+                    ),
+                )
+                if regime_seed:
+                    cache.seed(history, regime_seed)
+            run = _run_variant(
                 history,
                 trade_start_index=len(train),
                 window=window,
@@ -382,17 +437,20 @@ def run_walk_forward(
                 cache=cache,
                 train_candles=len(train),
                 test_candles=len(test),
+                block_policy=policy,
             )
-            for variant in VARIANTS
-        ]
+            runs.append(run)
+            if variant == "detector_only":
+                assert cache is not None
+                regime_seed = cache.snapshot
         if runs[0][1] != runs[1][1]:
             raise RuntimeError(
                 "detector-only BacktestResult differs from baseline "
                 f"in window {window.number}"
             )
-        baseline, detector_only, filtered = (
-            item for item, _ in runs
-        )
+        by_variant = {item.variant: item for item, _ in runs}
+        baseline = by_variant["baseline"]
+        detector_only = by_variant["detector_only"]
         potential_entries = detector_only.allowed_entries
         if baseline.allowed_entries != potential_entries:
             baseline = replace(
@@ -400,15 +458,18 @@ def run_walk_forward(
                 allowed_entries=potential_entries,
             )
             runs[0] = (baseline, runs[0][1])
+            by_variant["baseline"] = baseline
         if baseline.blocked_entries or detector_only.blocked_entries:
             raise RuntimeError("unfiltered variant blocked an entry")
-        if (
-            filtered.allowed_entries + filtered.blocked_entries
-            != potential_entries
-        ):
-            raise RuntimeError(
-                "filtered entry accounting differs from baseline"
-            )
+        for item in by_variant.values():
+            if (
+                item.allowed_entries + item.blocked_entries
+                != potential_entries
+            ):
+                raise RuntimeError(
+                    f"{item.variant} entry accounting differs "
+                    "from baseline"
+                )
         test_start_timestamp = int(window.test_start.timestamp())
         if any(
             trade.entry_timestamp < test_start_timestamp
@@ -539,6 +600,106 @@ def compounded_diagnostics(
             balance / initial_balance - 1
         ) * 100
     return output
+
+
+def compound_variant(
+    results: list[WindowResult],
+    variant: str,
+    initial_balance: float,
+) -> tuple[float, float]:
+    balance = initial_balance
+    for item in results:
+        if item.variant == variant:
+            balance *= 1 + item.return_percent / 100
+    return balance, (balance / initial_balance - 1) * 100
+
+
+def compare_variant_to_baseline(
+    results: list[WindowResult],
+    variant: str,
+    initial_balance: float,
+) -> dict[str, int | float]:
+    pairs = []
+    for number in sorted({item.window_number for item in results}):
+        items = {
+            item.variant: item
+            for item in results
+            if item.window_number == number
+        }
+        pairs.append((items["baseline"], items[variant]))
+    baseline_summary = summarize(results, "baseline")
+    variant_summary = summarize(results, variant)
+    _, baseline_compounded = compound_variant(
+        results, "baseline", initial_balance
+    )
+    _, variant_compounded = compound_variant(
+        results, variant, initial_balance
+    )
+    return {
+        "better_return_windows": sum(
+            item.return_percent > baseline.return_percent
+            for baseline, item in pairs
+        ),
+        "worse_return_windows": sum(
+            item.return_percent < baseline.return_percent
+            for baseline, item in pairs
+        ),
+        "lower_drawdown_windows": sum(
+            item.maximum_drawdown_percent
+            < baseline.maximum_drawdown_percent
+            for baseline, item in pairs
+        ),
+        "better_return_and_drawdown_windows": sum(
+            item.return_percent > baseline.return_percent
+            and item.maximum_drawdown_percent
+            < baseline.maximum_drawdown_percent
+            for baseline, item in pairs
+        ),
+        "compounded_return_difference_points": (
+            variant_compounded - baseline_compounded
+        ),
+        "mean_drawdown_difference_points": (
+            float(variant_summary["mean_maximum_drawdown_percent"])
+            - float(baseline_summary["mean_maximum_drawdown_percent"])
+        ),
+        "fees_difference": (
+            float(variant_summary["total_fees"])
+            - float(baseline_summary["total_fees"])
+        ),
+        "trades_difference": (
+            int(variant_summary["total_trades"])
+            - int(baseline_summary["total_trades"])
+        ),
+    }
+
+
+def build_component_analysis(
+    results: list[WindowResult],
+    variants: Sequence[str],
+    initial_balance: float,
+) -> dict[str, object]:
+    summaries: dict[str, dict[str, object]] = {}
+    comparisons: dict[str, dict[str, int | float]] = {}
+    for variant in variants:
+        summary = summarize(results, variant)
+        balance, compounded_return = compound_variant(
+            results,
+            variant,
+            initial_balance,
+        )
+        summary["compounded_balance"] = balance
+        summary["compounded_return_percent"] = compounded_return
+        summaries[variant] = summary
+        if variant != "baseline":
+            comparisons[variant] = compare_variant_to_baseline(
+                results,
+                variant,
+                initial_balance,
+            )
+    return {
+        "summary": summaries,
+        "comparison_to_baseline": comparisons,
+    }
 
 
 def research_verdict(

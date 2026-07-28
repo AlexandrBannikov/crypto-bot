@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-27 18:50 UTC**
+Обновлено: **2026-07-27 19:08 UTC**
 
 ## Сводка
 
-- Python-файлов: **157**
-- Определений: **1311**
-- Строк Python-кода: **30681**
-- Тестовых модулей: **69**
+- Python-файлов: **159**
+- Определений: **1361**
+- Строк Python-кода: **31616**
+- Тестовых модулей: **70**
 
 ## Быстрый каталог
 
@@ -50,8 +50,8 @@
 - [`app/paper_trader.py`](../app/paper_trader.py) — 200 строк, 11 определений
 - [`app/performance_analyzer.py`](../app/performance_analyzer.py) — 217 строк, 6 определений
 - [`app/process_lock.py`](../app/process_lock.py) — 136 строк, 8 определений
-- [`app/regime_filter_research.py`](../app/regime_filter_research.py) — 630 строк, 25 определений
-- [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py) — 167 строк, 12 определений
+- [`app/regime_filter_research.py`](../app/regime_filter_research.py) — 791 строк, 31 определений
+- [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py) — 201 строк, 17 определений
 - [`app/risk.py`](../app/risk.py) — 152 строк, 7 определений
 - [`app/runtime.py`](../app/runtime.py) — 35 строк, 2 определений
 - [`app/runtime_health.py`](../app/runtime_health.py) — 208 строк, 10 определений
@@ -79,6 +79,7 @@
 - [`scripts/build_project_index.py`](../scripts/build_project_index.py) — 578 строк, 12 определений
 - [`scripts/check_runtime.py`](../scripts/check_runtime.py) — 74 строк, 3 определений
 - [`scripts/check_runtime_alerts.py`](../scripts/check_runtime_alerts.py) — 64 строк, 2 определений
+- [`scripts/compare_regime_filter_components.py`](../scripts/compare_regime_filter_components.py) — 282 строк, 11 определений
 - [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py) — 559 строк, 23 определений
 - [`scripts/compare_strategies.py`](../scripts/compare_strategies.py) — 192 строк, 5 определений
 - [`scripts/download_eth_5m.py`](../scripts/download_eth_5m.py) — 195 строк, 4 определений
@@ -113,6 +114,7 @@
 - [`tests/test_candle_mapper.py`](../tests/test_candle_mapper.py) — 75 строк, 5 определений
 - [`tests/test_check_runtime.py`](../tests/test_check_runtime.py) — 45 строк, 4 определений
 - [`tests/test_check_runtime_alerts.py`](../tests/test_check_runtime_alerts.py) — 9 строк, 1 определений
+- [`tests/test_compare_regime_filter_components.py`](../tests/test_compare_regime_filter_components.py) — 458 строк, 28 определений
 - [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py) — 451 строк, 14 определений
 - [`tests/test_config.py`](../tests/test_config.py) — 123 строк, 12 определений
 - [`tests/test_data_loader.py`](../tests/test_data_loader.py) — 107 строк, 9 определений
@@ -727,38 +729,44 @@ _Публичных классов и функций не найдено._
 | method | `_release_file(lock_file: IO[str]) -> None` | 132 |  |
 ### [`app/regime_filter_research.py`](../app/regime_filter_research.py)
 
-Строк: **630**
+Строк: **791**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| protocol | `SignalStrategy` | 42 |  |
-| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 43 |  |
-| dataclass | `ResearchConfig` | 52 |  |
-| method | `validate(self) -> None` | 68 |  |
-| dataclass | `WalkForwardWindow` | 86 |  |
-| dataclass | `WindowResult` | 95 |  |
-| class | `WarmupStrategy` | 125 | Warm strategy state while suppressing all pre-test trading. |
-| method | `__init__(self, strategy: SignalStrategy, trade_start_index: int) -> None` | 128 |  |
-| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 136 |  |
-| class | `CausalRegimeCache` | 147 | Index cache scoped to one immutable candle sequence. |
-| method | `__init__(self, detector: MarketRegimeDetector, *, window_id: str = 'standalone') -> None` | 150 |  |
-| method | `detect(self, candles: Sequence[Candle]) -> MarketRegime` | 161 |  |
-| method | `detect_at(self, candles: Sequence[Candle], index: int) -> MarketRegime` | 165 |  |
-| function | `fingerprint_candles(candles: Sequence[Candle]) -> str` | 180 |  |
-| function | `make_detector(config: ResearchConfig) -> MarketRegimeDetector` | 197 |  |
-| function | `build_windows(data: pd.DataFrame, config: ResearchConfig) -> list[WalkForwardWindow]` | 209 |  |
-| function | `_run_variant(history: list[Candle], *, trade_start_index: int, window: WalkForwardWindow, variant: str, config: ResearchConfig, cache: CausalRegimeCache, train_candles: int \| None = None, test_candles: int \| None = None) -> tuple[WindowResult, BacktestResult]` | 258 |  |
-| function | `run_walk_forward(data: pd.DataFrame, config: ResearchConfig) -> list[WindowResult]` | 350 |  |
-| function | `summarize(results: list[WindowResult], variant: str) -> dict[str, float \| int]` | 423 |  |
-| function | `compare_variants(results: list[WindowResult]) -> dict[str, int \| float]` | 477 |  |
-| function | `compounded_diagnostics(results: list[WindowResult], initial_balance: float) -> dict[str, float]` | 527 |  |
-| function | `research_verdict(baseline: dict[str, float \| int], filtered: dict[str, float \| int], comparison: dict[str, int]) -> str` | 544 |  |
-| function | `build_analysis(results: list[WindowResult], initial_balance: float) -> dict[str, object]` | 575 |  |
-| function | `atomic_write(path: Path, content: str) -> None` | 611 |  |
-| function | `config_dict(config: ResearchConfig) -> dict[str, object]` | 629 |  |
+| protocol | `SignalStrategy` | 43 |  |
+| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 44 |  |
+| dataclass | `ResearchConfig` | 53 |  |
+| method | `validate(self) -> None` | 69 |  |
+| dataclass | `WalkForwardWindow` | 87 |  |
+| dataclass | `WindowResult` | 96 |  |
+| class | `WarmupStrategy` | 126 | Warm strategy state while suppressing all pre-test trading. |
+| method | `__init__(self, strategy: SignalStrategy, trade_start_index: int) -> None` | 129 |  |
+| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 137 |  |
+| class | `CausalRegimeCache` | 148 | Index cache scoped to one immutable candle sequence. |
+| method | `__init__(self, detector: MarketRegimeDetector, *, window_id: str = 'standalone') -> None` | 151 |  |
+| method | `detect(self, candles: Sequence[Candle]) -> MarketRegime` | 162 |  |
+| method | `detect_at(self, candles: Sequence[Candle], index: int) -> MarketRegime` | 166 |  |
+| method | `seed(self, candles: Sequence[Candle], regimes: Mapping[int, MarketRegime]) -> None` | 180 |  |
+| method | `snapshot(self) -> dict[int, MarketRegime]` | 189 |  |
+| function | `fingerprint_candles(candles: Sequence[Candle]) -> str` | 193 |  |
+| function | `make_detector(config: ResearchConfig) -> MarketRegimeDetector` | 210 |  |
+| function | `build_windows(data: pd.DataFrame, config: ResearchConfig) -> list[WalkForwardWindow]` | 222 |  |
+| function | `_run_variant(history: list[Candle], *, trade_start_index: int, window: WalkForwardWindow, variant: str, config: ResearchConfig, cache: CausalRegimeCache \| None, train_candles: int \| None = None, test_candles: int \| None = None, block_policy: EntryBlockPolicy \| None = None) -> tuple[WindowResult, BacktestResult]` | 271 |  |
+| function | `run_walk_forward(data: pd.DataFrame, config: ResearchConfig) -> list[WindowResult]` | 374 |  |
+| function | `run_policy_walk_forward(data: pd.DataFrame, config: ResearchConfig, policies: Mapping[str, EntryBlockPolicy \| None]) -> list[WindowResult]` | 389 |  |
+| function | `summarize(results: list[WindowResult], variant: str) -> dict[str, float \| int]` | 484 |  |
+| function | `compare_variants(results: list[WindowResult]) -> dict[str, int \| float]` | 538 |  |
+| function | `compounded_diagnostics(results: list[WindowResult], initial_balance: float) -> dict[str, float]` | 588 |  |
+| function | `compound_variant(results: list[WindowResult], variant: str, initial_balance: float) -> tuple[float, float]` | 605 |  |
+| function | `compare_variant_to_baseline(results: list[WindowResult], variant: str, initial_balance: float) -> dict[str, int \| float]` | 617 |  |
+| function | `build_component_analysis(results: list[WindowResult], variants: Sequence[str], initial_balance: float) -> dict[str, object]` | 676 |  |
+| function | `research_verdict(baseline: dict[str, float \| int], filtered: dict[str, float \| int], comparison: dict[str, int]) -> str` | 705 |  |
+| function | `build_analysis(results: list[WindowResult], initial_balance: float) -> dict[str, object]` | 736 |  |
+| function | `atomic_write(path: Path, content: str) -> None` | 772 |  |
+| function | `config_dict(config: ResearchConfig) -> dict[str, object]` | 790 |  |
 ### [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py)
 
-Строк: **167**
+Строк: **201**
 
 Связанные тесты: [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py)
 
@@ -769,13 +777,18 @@ _Публичных классов и функций не найдено._
 | protocol | `IndexedRegimeDetector` | 35 |  |
 | method | `detect_at(self, candles: Sequence[Candle], index: int) -> MarketRegime` | 36 |  |
 | enum | `EntryBlockReason` | 44 |  |
-| dataclass | `EntryFilterStatistics` | 53 |  |
-| function | `classify_entry_block_reason(regime: MarketRegime) -> EntryBlockReason` | 59 |  |
-| class | `RegimeFilteredStrategy` | 76 | Apply a market-regime filter only to new position entries. |
-| method | `__init__(self, base_strategy: Strategy, regime_detector: MarketRegimeDetector, trading_filter: TradingFilter, *, apply_filter: bool = True) -> None` | 79 |  |
-| method | `statistics(self) -> EntryFilterStatistics` | 97 |  |
-| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 109 |  |
-| method | `_register_exit(self, action: TradeAction) -> None` | 159 |  |
+| dataclass | `EntryBlockPolicy` | 53 | Immutable set of primary regime reasons that block new entries. |
+| method | `__post_init__(self) -> None` | 58 |  |
+| method | `blocks(self, reason: EntryBlockReason) -> bool` | 70 |  |
+| method | `full(cls) -> EntryBlockPolicy` | 74 |  |
+| method | `empty(cls) -> EntryBlockPolicy` | 78 |  |
+| dataclass | `EntryFilterStatistics` | 83 |  |
+| function | `classify_entry_block_reason(regime: MarketRegime) -> EntryBlockReason` | 89 |  |
+| class | `RegimeFilteredStrategy` | 106 | Apply a market-regime filter only to new position entries. |
+| method | `__init__(self, base_strategy: Strategy, regime_detector: MarketRegimeDetector, trading_filter: TradingFilter, *, apply_filter: bool = True, block_policy: EntryBlockPolicy \| None = None) -> None` | 109 |  |
+| method | `statistics(self) -> EntryFilterStatistics` | 133 |  |
+| method | `generate_signal(self, candles: Sequence[Candle], index: int) -> StrategySignal` | 145 |  |
+| method | `_register_exit(self, action: TradeAction) -> None` | 193 |  |
 ### [`app/risk.py`](../app/risk.py)
 
 Строк: **152**
@@ -1129,6 +1142,25 @@ _Публичных классов и функций не найдено._
 |---|---|---:|---|
 | function | `parser() -> argparse.ArgumentParser` | 15 |  |
 | function | `main(argv: list[str] \| None = None) -> int` | 25 |  |
+### [`scripts/compare_regime_filter_components.py`](../scripts/compare_regime_filter_components.py)
+
+Строк: **282**
+
+Связанные тесты: [`tests/test_compare_regime_filter_components.py`](../tests/test_compare_regime_filter_components.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `policy(*names: str) -> EntryBlockPolicy` | 40 |  |
+| function | `positive_int(value: str) -> int` | 63 |  |
+| function | `non_negative_float(value: str) -> float` | 70 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 77 |  |
+| function | `config_from_args(args: argparse.Namespace) -> ResearchConfig` | 123 |  |
+| function | `json_safe(value)` | 135 |  |
+| function | `build_report(data, data_path: Path, config: ResearchConfig, results)` | 145 |  |
+| function | `save_json(path: Path, report: dict[str, object]) -> None` | 175 |  |
+| function | `save_csv(path: Path, results) -> None` | 185 |  |
+| function | `print_report(report: dict[str, object]) -> None` | 194 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 258 |  |
 ### [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py)
 
 Строк: **559**
@@ -1564,6 +1596,40 @@ _Публичных классов и функций не найдено._
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
 | function | `test_runtime_alerts_exit_code_is_defined()` | 6 |  |
+### [`tests/test_compare_regime_filter_components.py`](../tests/test_compare_regime_filter_components.py)
+
+Строк: **458**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `market_data(start: str = '2020-01-01', periods: int = 500) -> pd.DataFrame` | 35 |  |
+| function | `small_config() -> ResearchConfig` | 56 |  |
+| class | `OneSignalStrategy` | 67 |  |
+| method | `__init__(self, signal) -> None` | 68 |  |
+| method | `generate_signal(self, candles, index)` | 71 |  |
+| function | `wrapped(signal, regime, policy)` | 75 |  |
+| function | `detected(trend: MarketTrend, volatility: MarketVolatility = MarketVolatility.NORMAL) -> MarketRegime` | 86 |  |
+| function | `candle() -> list[Candle]` | 93 |  |
+| function | `test_policy_is_immutable_and_validates_names() -> None` | 97 |  |
+| function | `test_range_only_blocks_range() -> None` | 109 |  |
+| function | `test_range_only_does_not_block_high_volatility() -> None` | 120 |  |
+| function | `test_high_volatility_only_does_not_block_range() -> None` | 131 |  |
+| function | `test_primary_reason_priority_controls_policy() -> None` | 142 |  |
+| function | `test_full_policy_matches_default_filter() -> None` | 155 |  |
+| function | `test_empty_policy_matches_detector_only() -> None` | 170 |  |
+| function | `test_non_entries_are_never_blocked(signal) -> None` | 190 |  |
+| function | `test_trade_signal_is_not_mutated() -> None` | 201 |  |
+| function | `component_results()` | 221 |  |
+| function | `test_all_variants_have_independent_results_and_invariants(component_results) -> None` | 229 |  |
+| function | `test_component_reasons_match_each_policy(component_results) -> None` | 262 |  |
+| function | `test_no_lookahead() -> None` | 286 |  |
+| function | `test_full_filtered_reproduces_committed_five_windows() -> None` | 309 |  |
+| function | `test_component_aggregates_and_compounding(component_results) -> None` | 324 |  |
+| function | `test_mixed_compounding_is_multiplicative(component_results) -> None` | 345 |  |
+| function | `test_json_csv_are_atomic_and_deterministic(tmp_path) -> None` | 362 |  |
+| function | `test_cli_works_from_any_cwd_without_default_reports(tmp_path) -> None` | 397 |  |
+| function | `test_invalid_arguments(arguments, capsys) -> None` | 437 |  |
+| function | `test_empty_and_short_datasets_are_rejected() -> None` | 445 |  |
 ### [`tests/test_compare_regime_filters.py`](../tests/test_compare_regime_filters.py)
 
 Строк: **451**

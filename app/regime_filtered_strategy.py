@@ -4,7 +4,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import FrozenSet, Protocol
 
 from app.candle import Candle
 from app.market_regime import (
@@ -50,6 +50,36 @@ class EntryBlockReason(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class EntryBlockPolicy:
+    """Immutable set of primary regime reasons that block new entries."""
+
+    blocked_reasons: FrozenSet[EntryBlockReason]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "blocked_reasons",
+            frozenset(self.blocked_reasons),
+        )
+        if any(
+            not isinstance(reason, EntryBlockReason)
+            for reason in self.blocked_reasons
+        ):
+            raise ValueError("policy contains an invalid block reason")
+
+    def blocks(self, reason: EntryBlockReason) -> bool:
+        return reason in self.blocked_reasons
+
+    @classmethod
+    def full(cls) -> EntryBlockPolicy:
+        return cls(frozenset(EntryBlockReason))
+
+    @classmethod
+    def empty(cls) -> EntryBlockPolicy:
+        return cls(frozenset())
+
+
+@dataclass(frozen=True, slots=True)
 class EntryFilterStatistics:
     allowed_entries: int
     blocked_entries: int
@@ -83,11 +113,17 @@ class RegimeFilteredStrategy:
         trading_filter: TradingFilter,
         *,
         apply_filter: bool = True,
+        block_policy: EntryBlockPolicy | None = None,
     ) -> None:
         self.base_strategy = base_strategy
         self.regime_detector = regime_detector
         self.trading_filter = trading_filter
         self.apply_filter = apply_filter
+        self.block_policy = (
+            EntryBlockPolicy.full()
+            if block_policy is None
+            else block_policy
+        )
         self._position_side: PositionSide | None = None
         self._allowed_entries = 0
         self._blocked_entries = 0
@@ -139,14 +175,12 @@ class RegimeFilteredStrategy:
             regime = self.regime_detector.detect(candles[: index + 1])
         else:
             regime = detect_at(self.regime_detector, candles, index)
-        if (
-            self.apply_filter
-            and not self.trading_filter.allow_entry(regime)
-        ):
-            self._blocked_entries += 1
+        if self.apply_filter and not self.trading_filter.allow_entry(regime):
             reason = classify_entry_block_reason(regime)
-            self._blocked_by_reason[reason.value] += 1
-            return TradeAction.HOLD
+            if self.block_policy.blocks(reason):
+                self._blocked_entries += 1
+                self._blocked_by_reason[reason.value] += 1
+                return TradeAction.HOLD
 
         self._allowed_entries += 1
         self._position_side = (

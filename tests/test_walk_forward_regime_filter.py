@@ -240,10 +240,10 @@ def test_every_window_builds_fresh_research_objects(monkeypatch) -> None:
 
     assert len(created["ema"]) == 6
     assert len(created["wrapper"]) == 4
-    # One detector is constructed by config validation; the remaining
-    # two are the independent detector instances for the two windows.
-    assert len(created["detector"]) == 3
-    assert len(created["cache"]) == 2
+    # One detector is constructed by config validation; each non-baseline
+    # variant then gets an independent detector/cache in every window.
+    assert len(created["detector"]) == 5
+    assert len(created["cache"]) == 4
     assert len(created["engine"]) == 6
     assert all(
         len(items) == len({id(item) for item in items})
