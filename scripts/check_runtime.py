@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import sys
 
@@ -77,13 +78,45 @@ def run_checks(*, no_network: bool = False) -> int:
         )
         summary = None
 
-    state_path = Path("state/trading_controller.json")
-    operational_path = Path("state/regime_runtime.json")
-    journal_path = Path("state/controller_trade_journal.jsonl")
-    decision_path = Path("state/shadow_decisions.jsonl")
-    report_dir = Path("reports/runtime")
-    lock_path = Path("state/bybit_controller.lock")
-    candle_path = Path("state/trading_controller_last_candle.txt")
+    state_path = Path(
+        os.environ.get(
+            "CONTROLLER_STATE_PATH",
+            "state/trading_controller.json",
+        )
+    )
+    operational_path = Path(
+        os.environ.get(
+            "REGIME_RUNTIME_STATE_PATH",
+            "state/regime_runtime.json",
+        )
+    )
+    journal_path = Path(
+        os.environ.get(
+            "CONTROLLER_TRADE_JOURNAL_PATH",
+            "state/controller_trade_journal.jsonl",
+        )
+    )
+    decision_path = Path(
+        os.environ.get(
+            "SHADOW_DIAGNOSTICS_PATH",
+            "state/shadow_decisions.jsonl",
+        )
+    )
+    report_dir = Path(
+        os.environ.get("RUNTIME_REPORT_DIR", "reports/runtime")
+    )
+    lock_path = Path(
+        os.environ.get(
+            "CONTROLLER_LOCK_PATH",
+            "state/bybit_controller.lock",
+        )
+    )
+    candle_path = Path(
+        os.environ.get(
+            "CONTROLLER_LAST_CANDLE_PATH",
+            "state/trading_controller_last_candle.txt",
+        )
+    )
 
     try:
         operational = RegimeRuntimeStateStore(operational_path).load()

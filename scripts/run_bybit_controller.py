@@ -71,11 +71,24 @@ ENTRY_QUANTITY = Decimal("0.01")
 # Защитный стоп на 2% ниже цены входа.
 STOP_LOSS_PERCENT = Decimal("0.02")
 
-STATE_PATH = Path("state/trading_controller.json")
-LAST_CANDLE_PATH = Path(
-    "state/trading_controller_last_candle.txt"
+STATE_PATH = Path(
+    os.environ.get(
+        "CONTROLLER_STATE_PATH",
+        "state/trading_controller.json",
+    )
 )
-RUNTIME_STATE_PATH = Path("state/regime_runtime.json")
+LAST_CANDLE_PATH = Path(
+    os.environ.get(
+        "CONTROLLER_LAST_CANDLE_PATH",
+        "state/trading_controller_last_candle.txt",
+    )
+)
+RUNTIME_STATE_PATH = Path(
+    os.environ.get(
+        "REGIME_RUNTIME_STATE_PATH",
+        "state/regime_runtime.json",
+    )
+)
 JOURNAL_PATH = Path(
     os.environ.get(
         "CONTROLLER_TRADE_JOURNAL_PATH",
@@ -83,13 +96,28 @@ JOURNAL_PATH = Path(
     )
 )
 DEFAULT_STATISTICS_REPORT_PATH = (
-    PROJECT_ROOT / "reports/trade_statistics.txt"
+    Path(
+        os.environ.get(
+            "CONTROLLER_STATISTICS_REPORT_PATH",
+            str(PROJECT_ROOT / "reports/trade_statistics.txt"),
+        )
+    )
 )
 DEFAULT_STATISTICS_PLOT_PATH = (
-    PROJECT_ROOT / "reports/trade_statistics.png"
+    Path(
+        os.environ.get(
+            "CONTROLLER_STATISTICS_PLOT_PATH",
+            str(PROJECT_ROOT / "reports/trade_statistics.png"),
+        )
+    )
 )
 DEFAULT_LOCK_PATH = (
-    PROJECT_ROOT / "state/bybit_controller.lock"
+    Path(
+        os.environ.get(
+            "CONTROLLER_LOCK_PATH",
+            str(PROJECT_ROOT / "state/bybit_controller.lock"),
+        )
+    )
 )
 
 

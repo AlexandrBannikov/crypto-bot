@@ -523,14 +523,16 @@ def test_unchanged_journal_skips_report_generation(
     assert run_bybit_controller.main([]) == 0
 
 
-def test_default_report_paths_are_project_relative() -> None:
-    assert run_bybit_controller.DEFAULT_STATISTICS_REPORT_PATH == (
-        run_bybit_controller.PROJECT_ROOT
-        / "reports/trade_statistics.txt"
+def test_default_report_paths_are_test_isolated(
+    isolated_runtime_artifacts,
+) -> None:
+    assert (
+        run_bybit_controller.DEFAULT_STATISTICS_REPORT_PATH
+        == isolated_runtime_artifacts / "reports/trade_statistics.txt"
     )
-    assert run_bybit_controller.DEFAULT_STATISTICS_PLOT_PATH == (
-        run_bybit_controller.PROJECT_ROOT
-        / "reports/trade_statistics.png"
+    assert (
+        run_bybit_controller.DEFAULT_STATISTICS_PLOT_PATH
+        == isolated_runtime_artifacts / "reports/trade_statistics.png"
     )
 
 
@@ -556,10 +558,8 @@ def test_default_report_paths_do_not_depend_on_cwd(
     assert calls == [
         (
             run_bybit_controller.JOURNAL_PATH,
-            run_bybit_controller.PROJECT_ROOT
-            / "reports/trade_statistics.txt",
-            run_bybit_controller.PROJECT_ROOT
-            / "reports/trade_statistics.png",
+            run_bybit_controller.DEFAULT_STATISTICS_REPORT_PATH,
+            run_bybit_controller.DEFAULT_STATISTICS_PLOT_PATH,
         )
     ]
 
@@ -671,10 +671,11 @@ def test_custom_lock_path_is_used(tmp_path, monkeypatch) -> None:
     assert lock_path.exists()
 
 
-def test_default_lock_path_is_project_relative() -> None:
+def test_default_lock_path_is_test_isolated(
+    isolated_runtime_artifacts,
+) -> None:
     assert run_bybit_controller.DEFAULT_LOCK_PATH == (
-        run_bybit_controller.PROJECT_ROOT
-        / "state/bybit_controller.lock"
+        isolated_runtime_artifacts / "state/bybit_controller.lock"
     )
 
 
