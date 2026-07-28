@@ -80,6 +80,7 @@ class ShadowDecisionJournal:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with self.path.open("a", encoding="utf-8") as file:
+                os.fchmod(file.fileno(), 0o640)
                 json.dump(
                     asdict(record),
                     file,

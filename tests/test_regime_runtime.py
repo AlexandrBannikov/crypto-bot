@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+import stat
 
 import pytest
 
@@ -93,7 +94,18 @@ def test_state_write_is_atomic_and_persists_counters(tmp_path) -> None:
     assert store.load().counters.signals_total == 3
     assert store.load().last_processed_closed_candle == 123
     assert store.load().last_journal_sequence == 7
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
     assert not list(path.parent.glob("*.tmp"))
+
+
+def test_state_rewrite_restores_read_only_group_mode(tmp_path) -> None:
+    path = tmp_path / "runtime.json"
+    path.write_text("{}", encoding="utf-8")
+    path.chmod(0o600)
+
+    RegimeRuntimeStateStore(path).save(RegimeRuntimeState())
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
 
 
 def test_old_empty_state_is_migrated(tmp_path) -> None:

@@ -174,6 +174,7 @@ class RegimeRuntimeStateStore:
         temporary = Path(name)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                os.fchmod(handle.fileno(), 0o640)
                 json.dump(asdict(state), handle, ensure_ascii=False, indent=2)
                 handle.write("\n")
                 handle.flush()

@@ -39,7 +39,6 @@ def paths(tmp_path: Path) -> TelegramPaths:
         last_candle=state / "last_candle.txt",
         trade_journal=state / "trades.jsonl",
         decision_journal=state / "decisions.jsonl",
-        controller_lock=state / "controller.lock",
         notification_state=state / "telegram.json",
     )
 
@@ -352,6 +351,7 @@ def test_unexpected_live_enabled_is_visible_for_critical_alert(
     )
 
     assert observed.live_trading_enabled is True
+    assert all(item.name != "controller_lock" for item in checks)
     assert any("LIVE_TRADING_ENABLED" in item for item in sent)
 
 

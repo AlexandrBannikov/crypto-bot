@@ -121,12 +121,13 @@ def run_health_checks(
     candle_path: Path,
     journal_path: Path,
     shadow_path: Path,
-    lock_path: Path,
+    lock_path: Path | None,
     symbol: str = "ETHUSDT",
     timeframe: str = "60",
     max_candle_age_minutes: int = 90,
     max_market_lag_candles: int = 1,
     no_network: bool = False,
+    inspect_lock: bool = True,
     now: datetime | None = None,
     market_fetcher: Callable[[], int] | None = None,
 ) -> tuple[list[HealthCheckResult], dict[str, Any]]:
@@ -180,7 +181,10 @@ def run_health_checks(
             context[name] = []
             checks.append(_result(name, HealthStatus.CRITICAL, f"{name.replace('_', ' ')} is invalid: {exc}", {"path": str(path)}, current))
 
-    checks.append(check_lock(lock_path, now=current))
+    if inspect_lock:
+        if lock_path is None:
+            raise ValueError("lock_path is required when lock inspection is enabled")
+        checks.append(check_lock(lock_path, now=current))
     if no_network:
         checks.append(_result("bybit_api", HealthStatus.OK, "network check disabled", {"skipped": True}, current))
     else:

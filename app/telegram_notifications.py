@@ -40,7 +40,6 @@ class TelegramPaths:
     last_candle: Path
     trade_journal: Path
     decision_journal: Path
-    controller_lock: Path
     notification_state: Path
 
     @classmethod
@@ -76,12 +75,6 @@ class TelegramPaths:
                 os.environ.get(
                     "SHADOW_DIAGNOSTICS_PATH",
                     "state/shadow_decisions.jsonl",
-                )
-            ),
-            controller_lock=Path(
-                os.environ.get(
-                    "CONTROLLER_LOCK_PATH",
-                    "state/bybit_controller.lock",
                 )
             ),
             notification_state=notification_state
@@ -294,7 +287,10 @@ def collect_snapshot(
         candle_path=paths.last_candle,
         journal_path=paths.trade_journal,
         shadow_path=paths.decision_journal,
-        lock_path=paths.controller_lock,
+        # The Telegram contour does not need controller lock metadata.
+        # Avoid granting its DynamicUser access to this writable lock.
+        lock_path=None,
+        inspect_lock=False,
         max_candle_age_minutes=max(1, max_data_age_seconds // 60),
         no_network=no_network,
         now=current,

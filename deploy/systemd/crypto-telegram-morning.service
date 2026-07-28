@@ -6,6 +6,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 DynamicUser=yes
+SupplementaryGroups=crypto-bot-runtime
 WorkingDirectory=/opt/crypto-bot
 EnvironmentFile=/etc/crypto-bot/telegram.env
 ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/telegram_report.py morning

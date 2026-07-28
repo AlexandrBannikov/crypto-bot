@@ -1,4 +1,5 @@
 import json
+import stat
 from dataclasses import asdict
 
 import pytest
@@ -41,6 +42,17 @@ def test_append_and_read_jsonl(tmp_path) -> None:
     assert journal.append(record()) is True
 
     assert journal.read_all() == [record()]
+    assert stat.S_IMODE(journal.path.stat().st_mode) == 0o640
+
+
+def test_append_restores_read_only_group_mode(tmp_path) -> None:
+    path = tmp_path / "shadow.jsonl"
+    path.write_text("", encoding="utf-8")
+    path.chmod(0o600)
+
+    ShadowDecisionJournal(path).append(record())
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
 
 
 def test_same_candle_is_not_appended_twice(tmp_path) -> None:

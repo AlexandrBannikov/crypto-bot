@@ -29,6 +29,12 @@ read-only mirror of the paper deployment. They must stay aligned with
 `paper-shadow.env`; exchange credentials must never be copied into
 `telegram.env`.
 
+Production runtime access is limited through the
+`crypto-bot-runtime` supplementary group. The `state` directory is owned by
+`root:crypto-bot-runtime` with mode `2750`; only the operational runtime state
+and shadow decision journal are group-readable (`0640`). The controller lock
+stays private (`0600`) and is neither configured nor inspected by Telegram.
+
 ## Components
 
 - `telegram_bot.py` long-polls commands `/start`, `/status`, `/trades`,
