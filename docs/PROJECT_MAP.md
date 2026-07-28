@@ -3,14 +3,14 @@
 > Файл создан автоматически командой `python scripts/build_project_index.py`.
 > Не редактировать вручную.
 
-Обновлено: **2026-07-28 04:02 UTC**
+Обновлено: **2026-07-28 05:15 UTC**
 
 ## Сводка
 
-- Python-файлов: **162**
-- Определений: **1393**
-- Строк Python-кода: **32350**
-- Тестовых модулей: **71**
+- Python-файлов: **172**
+- Определений: **1464**
+- Строк Python-кода: **34286**
+- Тестовых модулей: **75**
 
 ## Быстрый каталог
 
@@ -52,7 +52,7 @@
 - [`app/process_lock.py`](../app/process_lock.py) — 136 строк, 8 определений
 - [`app/regime_filter_research.py`](../app/regime_filter_research.py) — 791 строк, 31 определений
 - [`app/regime_filtered_strategy.py`](../app/regime_filtered_strategy.py) — 213 строк, 18 определений
-- [`app/regime_runtime.py`](../app/regime_runtime.py) — 189 строк, 14 определений
+- [`app/regime_runtime.py`](../app/regime_runtime.py) — 191 строк, 14 определений
 - [`app/risk.py`](../app/risk.py) — 152 строк, 7 определений
 - [`app/runtime.py`](../app/runtime.py) — 35 строк, 2 определений
 - [`app/runtime_health.py`](../app/runtime_health.py) — 208 строк, 10 определений
@@ -62,6 +62,8 @@
 - [`app/signal_normalizer.py`](../app/signal_normalizer.py) — 49 строк, 1 определений
 - [`app/stop_manager.py`](../app/stop_manager.py) — 87 строк, 3 определений
 - [`app/strategies.py`](../app/strategies.py) — 89 строк, 3 определений
+- [`app/telegram_config.py`](../app/telegram_config.py) — 69 строк, 5 определений
+- [`app/telegram_notifications.py`](../app/telegram_notifications.py) — 760 строк, 28 определений
 - [`app/trade_accounting.py`](../app/trade_accounting.py) — 61 строк, 2 определений
 - [`app/trade_analyzer.py`](../app/trade_analyzer.py) — 198 строк, 6 определений
 - [`app/trade_journal.py`](../app/trade_journal.py) — 147 строк, 9 определений
@@ -78,7 +80,7 @@
 - [`scripts/analyze_trends.py`](../scripts/analyze_trends.py) — 105 строк, 1 определений
 - [`scripts/backtest.py`](../scripts/backtest.py) — 116 строк, 1 определений
 - [`scripts/build_project_index.py`](../scripts/build_project_index.py) — 578 строк, 12 определений
-- [`scripts/check_runtime.py`](../scripts/check_runtime.py) — 177 строк, 4 определений
+- [`scripts/check_runtime.py`](../scripts/check_runtime.py) — 210 строк, 4 определений
 - [`scripts/check_runtime_alerts.py`](../scripts/check_runtime_alerts.py) — 64 строк, 2 определений
 - [`scripts/compare_regime_filter_components.py`](../scripts/compare_regime_filter_components.py) — 282 строк, 11 определений
 - [`scripts/compare_regime_filters.py`](../scripts/compare_regime_filters.py) — 559 строк, 23 определений
@@ -89,12 +91,13 @@
 - [`scripts/optimize_ema.py`](../scripts/optimize_ema.py) — 168 строк, 2 определений
 - [`scripts/optimize_ma.py`](../scripts/optimize_ma.py) — 212 строк, 4 определений
 - [`scripts/plot_trade_statistics.py`](../scripts/plot_trade_statistics.py) — 84 строк, 4 определений
-- [`scripts/report_paper_daily.py`](../scripts/report_paper_daily.py) — 117 строк, 3 определений
+- [`scripts/rebaseline_paper_runtime.py`](../scripts/rebaseline_paper_runtime.py) — 192 строк, 6 определений
+- [`scripts/report_paper_daily.py`](../scripts/report_paper_daily.py) — 119 строк, 3 определений
 - [`scripts/report_paper_weekly.py`](../scripts/report_paper_weekly.py) — 77 строк, 3 определений
 - [`scripts/report_shadow_decisions.py`](../scripts/report_shadow_decisions.py) — 133 строк, 5 определений
 - [`scripts/report_trade_journal.py`](../scripts/report_trade_journal.py) — 57 строк, 4 определений
 - [`scripts/reset_runtime_halt.py`](../scripts/reset_runtime_halt.py) — 51 строк, 1 определений
-- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 747 строк, 12 определений
+- [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py) — 775 строк, 12 определений
 - [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py) — 208 строк, 3 определений
 - [`scripts/run_engine_ema.py`](../scripts/run_engine_ema.py) — 128 строк, 2 определений
 - [`scripts/run_periodic_reports.py`](../scripts/run_periodic_reports.py) — 51 строк, 2 определений
@@ -102,10 +105,14 @@
 - [`scripts/run_trend_pullback.py`](../scripts/run_trend_pullback.py) — 115 строк, 2 определений
 - [`scripts/run_trend_pullback_5m.py`](../scripts/run_trend_pullback_5m.py) — 176 строк, 2 определений
 - [`scripts/runtime_status.py`](../scripts/runtime_status.py) — 96 строк, 3 определений
+- [`scripts/telegram_bot.py`](../scripts/telegram_bot.py) — 90 строк, 2 определений
+- [`scripts/telegram_health.py`](../scripts/telegram_health.py) — 67 строк, 2 определений
+- [`scripts/telegram_report.py`](../scripts/telegram_report.py) — 60 строк, 2 определений
 - [`scripts/validate_ema_out_of_sample.py`](../scripts/validate_ema_out_of_sample.py) — 169 строк, 4 определений
 - [`scripts/walk_forward_ema.py`](../scripts/walk_forward_ema.py) — 427 строк, 7 определений
 - [`scripts/walk_forward_regime_filter.py`](../scripts/walk_forward_regime_filter.py) — 270 строк, 11 определений
 - [`tests/__init__.py`](../tests/__init__.py) — 0 строк, 0 определений
+- [`tests/conftest.py`](../tests/conftest.py) — 124 строк, 3 определений
 - [`tests/test_backtester.py`](../tests/test_backtester.py) — 164 строк, 9 определений
 - [`tests/test_bybit_account.py`](../tests/test_bybit_account.py) — 338 строк, 16 определений
 - [`tests/test_bybit_account_check.py`](../tests/test_bybit_account_check.py) — 234 строк, 17 определений
@@ -144,18 +151,20 @@
 - [`tests/test_performance_analyzer.py`](../tests/test_performance_analyzer.py) — 136 строк, 6 определений
 - [`tests/test_plot_trade_statistics.py`](../tests/test_plot_trade_statistics.py) — 154 строк, 7 определений
 - [`tests/test_process_lock.py`](../tests/test_process_lock.py) — 178 строк, 13 определений
+- [`tests/test_rebaseline_paper_runtime.py`](../tests/test_rebaseline_paper_runtime.py) — 106 строк, 4 определений
 - [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py) — 279 строк, 20 определений
 - [`tests/test_regime_runtime.py`](../tests/test_regime_runtime.py) — 104 строк, 10 определений
 - [`tests/test_report_paper_daily.py`](../tests/test_report_paper_daily.py) — 33 строк, 4 определений
 - [`tests/test_report_paper_weekly.py`](../tests/test_report_paper_weekly.py) — 12 строк, 1 определений
 - [`tests/test_report_trade_journal.py`](../tests/test_report_trade_journal.py) — 82 строк, 4 определений
 - [`tests/test_risk.py`](../tests/test_risk.py) — 272 строк, 13 определений
-- [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 798 строк, 28 определений
+- [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py) — 799 строк, 28 определений
 - [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py) — 122 строк, 7 определений
 - [`tests/test_run_periodic_reports.py`](../tests/test_run_periodic_reports.py) — 40 строк, 5 определений
 - [`tests/test_runtime.py`](../tests/test_runtime.py) — 41 строк, 4 определений
 - [`tests/test_runtime_health.py`](../tests/test_runtime_health.py) — 69 строк, 7 определений
 - [`tests/test_runtime_status.py`](../tests/test_runtime_status.py) — 20 строк, 1 определений
+- [`tests/test_runtime_test_isolation.py`](../tests/test_runtime_test_isolation.py) — 29 строк, 1 определений
 - [`tests/test_settings.py`](../tests/test_settings.py) — 66 строк, 4 определений
 - [`tests/test_shadow_decision_journal.py`](../tests/test_shadow_decision_journal.py) — 112 строк, 8 определений
 - [`tests/test_shadow_report.py`](../tests/test_shadow_report.py) — 66 строк, 3 определений
@@ -163,6 +172,7 @@
 - [`tests/test_signal_normalizer.py`](../tests/test_signal_normalizer.py) — 74 строк, 5 определений
 - [`tests/test_stop_manager.py`](../tests/test_stop_manager.py) — 155 строк, 14 определений
 - [`tests/test_strategies.py`](../tests/test_strategies.py) — 90 строк, 6 определений
+- [`tests/test_telegram_notifications.py`](../tests/test_telegram_notifications.py) — 373 строк, 18 определений
 - [`tests/test_trade_accounting.py`](../tests/test_trade_accounting.py) — 74 строк, 4 определений
 - [`tests/test_trade_analyzer.py`](../tests/test_trade_analyzer.py) — 282 строк, 8 определений
 - [`tests/test_trade_journal.py`](../tests/test_trade_journal.py) — 88 строк, 5 определений
@@ -798,7 +808,7 @@ _Публичных классов и функций не найдено._
 | method | `_register_exit(self, action: TradeAction) -> None` | 205 |  |
 ### [`app/regime_runtime.py`](../app/regime_runtime.py)
 
-Строк: **189**
+Строк: **191**
 
 Связанные тесты: [`tests/test_regime_runtime.py`](../tests/test_regime_runtime.py)
 
@@ -808,16 +818,16 @@ _Публичных классов и функций не найдено._
 | method | `validate(self) -> None` | 41 |  |
 | method | `record_block(self, reason: str, *, shadow: bool) -> None` | 53 |  |
 | dataclass | `RegimeRuntimeState` | 68 |  |
-| method | `__post_init__(self) -> None` | 84 |  |
-| method | `update_risk(self, balance: Decimal, config: RuntimeSafetyConfig, *, now: datetime \| None = None) -> None` | 87 |  |
-| method | `reset_drawdown_halt(self, balance: Decimal \| None = None) -> None` | 136 |  |
-| method | `permits_entry(self) -> bool` | 144 |  |
-| class | `RegimeRuntimeStateStore` | 148 | Backward-compatible, atomic operational-state persistence. |
-| method | `__init__(self, path: str \| Path) -> None` | 151 |  |
-| method | `load(self) -> RegimeRuntimeState` | 154 |  |
-| method | `save(self, state: RegimeRuntimeState) -> None` | 164 |  |
-| function | `is_entry(action: TradeAction) -> bool` | 184 |  |
-| function | `is_exit(action: TradeAction) -> bool` | 188 |  |
+| method | `__post_init__(self) -> None` | 86 |  |
+| method | `update_risk(self, balance: Decimal, config: RuntimeSafetyConfig, *, now: datetime \| None = None) -> None` | 89 |  |
+| method | `reset_drawdown_halt(self, balance: Decimal \| None = None) -> None` | 138 |  |
+| method | `permits_entry(self) -> bool` | 146 |  |
+| class | `RegimeRuntimeStateStore` | 150 | Backward-compatible, atomic operational-state persistence. |
+| method | `__init__(self, path: str \| Path) -> None` | 153 |  |
+| method | `load(self) -> RegimeRuntimeState` | 156 |  |
+| method | `save(self, state: RegimeRuntimeState) -> None` | 166 |  |
+| function | `is_entry(action: TradeAction) -> bool` | 186 |  |
+| function | `is_exit(action: TradeAction) -> bool` | 190 |  |
 ### [`app/risk.py`](../app/risk.py)
 
 Строк: **152**
@@ -934,6 +944,53 @@ _Публичных классов и функций не найдено._
 | enum | `Signal` | 8 |  |
 | function | `ma_cross_signals(data: pd.DataFrame, fast_period: int, slow_period: int) -> pd.Series` | 14 |  |
 | function | `rsi_signals(data: pd.DataFrame, period: int = 14, buy_level: float = 30.0, sell_level: float = 70.0) -> pd.Series` | 55 |  |
+### [`app/telegram_config.py`](../app/telegram_config.py)
+
+Строк: **69**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `_boolean(name: str, default: bool) -> bool` | 9 |  |
+| function | `_clock(name: str, default: str) -> time` | 21 |  |
+| dataclass | `TelegramConfig` | 30 |  |
+| method | `__post_init__(self) -> None` | 38 |  |
+| method | `from_env(cls) -> 'TelegramConfig'` | 55 |  |
+### [`app/telegram_notifications.py`](../app/telegram_notifications.py)
+
+Строк: **760**
+
+Связанные тесты: [`tests/test_telegram_notifications.py`](../tests/test_telegram_notifications.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| dataclass | `TelegramPaths` | 37 |  |
+| method | `from_env(cls, *, notification_state: Path \| None = None) -> 'TelegramPaths'` | 47 |  |
+| dataclass | `RuntimeSnapshot` | 98 |  |
+| dataclass | `NotificationState` | 118 |  |
+| class | `NotificationStateStore` | 130 |  |
+| method | `__init__(self, path: Path) -> None` | 131 |  |
+| method | `load(self) -> NotificationState` | 134 |  |
+| method | `save(self, state: NotificationState) -> None` | 145 |  |
+| class | `TelegramClient` | 166 |  |
+| method | `__init__(self, token: str, *, timeout: float = 10.0, retries: int = 2, opener: Callable[..., Any] = urlopen) -> None` | 167 |  |
+| method | `call(self, method: str, payload: dict[str, Any]) -> Any` | 182 |  |
+| method | `send_message(self, chat_id: str, text: str) -> None` | 210 |  |
+| function | `_systemd_state(unit: str) -> str` | 221 |  |
+| function | `_cycle_failed() -> bool` | 236 |  |
+| function | `collect_snapshot(paths: TelegramPaths, *, no_network: bool = False, now: datetime \| None = None, systemd_state: Callable[[str], str] = _systemd_state, market_fetcher: Callable[[], int] \| None = None) -> tuple[RuntimeSnapshot, list[HealthCheckResult]]` | 256 |  |
+| function | `_age(value: float \| None) -> str` | 354 |  |
+| function | `format_status(snapshot: RuntimeSnapshot) -> str` | 358 |  |
+| function | `_period_records(path: Path, start: datetime, end: datetime, timestamp_key: str) -> list[dict[str, Any]]` | 390 |  |
+| function | `_report_period(paths: TelegramPaths, start: datetime, end: datetime) -> dict[str, Any]` | 409 |  |
+| function | `format_morning_report(snapshot: RuntimeSnapshot, paths: TelegramPaths, *, now: datetime \| None = None, timezone_name: str = 'Asia/Yekaterinburg') -> str` | 447 |  |
+| function | `format_evening_report(snapshot: RuntimeSnapshot, paths: TelegramPaths, *, now: datetime \| None = None, timezone_name: str = 'Asia/Yekaterinburg') -> str` | 488 |  |
+| function | `format_trades(paths: TelegramPaths, limit: int = 5) -> str` | 532 |  |
+| function | `format_decision(paths: TelegramPaths) -> str` | 549 |  |
+| function | `format_mode(snapshot: RuntimeSnapshot) -> str` | 580 |  |
+| function | `command_response(command: str, snapshot: RuntimeSnapshot, paths: TelegramPaths) -> str` | 606 |  |
+| function | `process_update(update: dict[str, Any], *, allowed_chat_id: str, responder: Callable[[str], str], sender: Callable[[str, str], None]) -> bool` | 625 |  |
+| function | `transition_alerts(previous: NotificationState, snapshot: RuntimeSnapshot, checks: list[HealthCheckResult], *, cycle_failed: bool) -> tuple[list[tuple[str, str]], NotificationState]` | 647 |  |
+| function | `send_transition_alerts(state_store: NotificationStateStore, snapshot: RuntimeSnapshot, checks: list[HealthCheckResult], sender: Callable[[str], None], *, cycle_failed: bool \| None = None, now: datetime \| None = None, cooldown_seconds: int = 1800) -> int` | 731 |  |
 ### [`app/trade_accounting.py`](../app/trade_accounting.py)
 
 Строк: **61**
@@ -1152,16 +1209,16 @@ _Публичных классов и функций не найдено._
 | function | `main() -> None` | 490 |  |
 ### [`scripts/check_runtime.py`](../scripts/check_runtime.py)
 
-Строк: **177**
+Строк: **210**
 
 Связанные тесты: [`tests/test_check_runtime.py`](../tests/test_check_runtime.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| dataclass | `RuntimeSummary` | 20 |  |
-| function | `summarize_runtime(runtime: Runtime) -> RuntimeSummary` | 29 |  |
-| function | `main() -> None` | 46 |  |
-| function | `run_checks(*, no_network: bool = False) -> int` | 50 |  |
+| dataclass | `RuntimeSummary` | 21 |  |
+| function | `summarize_runtime(runtime: Runtime) -> RuntimeSummary` | 30 |  |
+| function | `main() -> None` | 47 |  |
+| function | `run_checks(*, no_network: bool = False) -> int` | 51 |  |
 ### [`scripts/check_runtime_alerts.py`](../scripts/check_runtime_alerts.py)
 
 Строк: **64**
@@ -1288,9 +1345,23 @@ _Публичных классов и функций не найдено._
 | function | `positive_float(value: str) -> float` | 30 |  |
 | function | `build_parser() -> argparse.ArgumentParser` | 37 |  |
 | function | `main(argv: list[str] \| None = None) -> int` | 64 |  |
+### [`scripts/rebaseline_paper_runtime.py`](../scripts/rebaseline_paper_runtime.py)
+
+Строк: **192**
+
+Связанные тесты: [`tests/test_rebaseline_paper_runtime.py`](../tests/test_rebaseline_paper_runtime.py)
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 29 |  |
+| function | `_paths(root: Path) -> dict[str, Path]` | 41 |  |
+| function | `_load_decisions(path: Path) -> list[dict]` | 51 |  |
+| function | `_validate(paths: dict[str, Path]) -> tuple` | 61 |  |
+| function | `_backup(root: Path, paths: dict[str, Path], timestamp: str) -> Path` | 112 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 133 |  |
 ### [`scripts/report_paper_daily.py`](../scripts/report_paper_daily.py)
 
-Строк: **117**
+Строк: **119**
 
 Связанные тесты: [`tests/test_report_paper_daily.py`](../tests/test_report_paper_daily.py)
 
@@ -1298,7 +1369,7 @@ _Публичных классов и функций не найдено._
 |---|---|---:|---|
 | function | `parser() -> argparse.ArgumentParser` | 20 |  |
 | function | `create_report(args: argparse.Namespace) -> dict` | 32 |  |
-| function | `main(argv: list[str] \| None = None) -> int` | 105 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 107 |  |
 ### [`scripts/report_paper_weekly.py`](../scripts/report_paper_weekly.py)
 
 Строк: **77**
@@ -1342,24 +1413,24 @@ _Публичных классов и функций не найдено._
 | function | `main(argv: list[str] \| None = None) -> int` | 16 |  |
 ### [`scripts/run_bybit_controller.py`](../scripts/run_bybit_controller.py)
 
-Строк: **747**
+Строк: **775**
 
 Связанные тесты: [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
-| function | `build_parser() -> argparse.ArgumentParser` | 96 |  |
-| function | `generate_trade_reports(*args, **kwargs)` | 129 |  |
-| function | `generate_reports(*, text_report: Path, png_report: Path) -> int` | 135 |  |
-| function | `load_last_candle_timestamp() -> int \| None` | 157 |  |
-| function | `save_last_candle_timestamp(timestamp: int) -> None` | 184 |  |
-| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 204 |  |
-| function | `signal_name(signal: Signal) -> str` | 256 |  |
-| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 264 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
-| function | `run_controller(args: argparse.Namespace) -> int` | 311 |  |
-| function | `controller_equity(state: TradingControllerState, price: Decimal) -> Decimal` | 647 | Mark the paper position to market for risk limits. |
-| function | `build_shadow_record(*, decision: PaperStrategyDecision, latest_candle, state: TradingControllerState, controller_run_identifier: str, state_after: TradingControllerState \| None = None, price: Decimal \| None = None, data_age_seconds: float \| None = None, journal_sequence: int \| None = None, baseline_trade_executed: bool = False) -> ShadowDecisionRecord` | 655 |  |
-| function | `main(argv: list[str] \| None = None) -> int` | 721 |  |
+| function | `build_parser() -> argparse.ArgumentParser` | 124 |  |
+| function | `generate_trade_reports(*args, **kwargs)` | 157 |  |
+| function | `generate_reports(*, text_report: Path, png_report: Path) -> int` | 163 |  |
+| function | `load_last_candle_timestamp() -> int \| None` | 185 |  |
+| function | `save_last_candle_timestamp(timestamp: int) -> None` | 212 |  |
+| function | `calculate_latest_signal(candles: tuple) -> tuple[Signal, float, float]` | 232 |  |
+| function | `signal_name(signal: Signal) -> str` | 284 |  |
+| function | `build_execution_signal(*, strategy_signal: Signal, price: Decimal, state: TradingControllerState) -> tuple[Signal \| TradeSignal, bool]` | 292 | Добавляет защитный стоп к новой LONG-позиции и принудительно закрывает позицию при его достижении. |
+| function | `run_controller(args: argparse.Namespace) -> int` | 339 |  |
+| function | `controller_equity(state: TradingControllerState, price: Decimal) -> Decimal` | 675 | Mark the paper position to market for risk limits. |
+| function | `build_shadow_record(*, decision: PaperStrategyDecision, latest_candle, state: TradingControllerState, controller_run_identifier: str, state_after: TradingControllerState \| None = None, price: Decimal \| None = None, data_age_seconds: float \| None = None, journal_sequence: int \| None = None, baseline_trade_executed: bool = False) -> ShadowDecisionRecord` | 683 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 749 |  |
 ### [`scripts/run_bybit_paper.py`](../scripts/run_bybit_paper.py)
 
 Строк: **208**
@@ -1425,6 +1496,30 @@ _Публичных классов и функций не найдено._
 | function | `parser() -> argparse.ArgumentParser` | 21 |  |
 | function | `build_status(args: argparse.Namespace) -> tuple[dict, HealthStatus]` | 32 |  |
 | function | `main(argv: list[str] \| None = None) -> int` | 77 |  |
+### [`scripts/telegram_bot.py`](../scripts/telegram_bot.py)
+
+Строк: **90**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 23 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 37 |  |
+### [`scripts/telegram_health.py`](../scripts/telegram_health.py)
+
+Строк: **67**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 21 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 36 |  |
+### [`scripts/telegram_report.py`](../scripts/telegram_report.py)
+
+Строк: **60**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `parser() -> argparse.ArgumentParser` | 21 |  |
+| function | `main(argv: list[str] \| None = None) -> int` | 29 |  |
 ### [`scripts/validate_ema_out_of_sample.py`](../scripts/validate_ema_out_of_sample.py)
 
 Строк: **169**
@@ -1475,6 +1570,15 @@ _Публичных классов и функций не найдено._
 Строк: **0**
 
 _Публичных классов и функций не найдено._
+### [`tests/conftest.py`](../tests/conftest.py)
+
+Строк: **124**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `_artifact_snapshot() -> dict[str, tuple]` | 16 |  |
+| function | `production_artifacts_are_immutable()` | 41 | Fail the suite if any production runtime artifact changes. |
+| function | `isolated_runtime_artifacts(tmp_path: Path, monkeypatch)` | 53 | Redirect every runtime default that can write to a per-test sandbox. |
 ### [`tests/test_backtester.py`](../tests/test_backtester.py)
 
 Строк: **164**
@@ -2178,6 +2282,16 @@ _Публичных классов и функций не найдено._
 | function | `test_open_error_is_wrapped_and_contains_path(tmp_path) -> None` | 148 |  |
 | function | `test_control_flow_exceptions_are_not_wrapped(tmp_path, exception_type) -> None` | 159 |  |
 | function | `test_same_object_cannot_be_entered_twice(tmp_path) -> None` | 173 |  |
+### [`tests/test_rebaseline_paper_runtime.py`](../tests/test_rebaseline_paper_runtime.py)
+
+Строк: **106**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `prepared_root(tmp_path: Path) -> Path` | 14 |  |
+| function | `test_dry_run_does_not_change_files(tmp_path, capsys) -> None` | 57 |  |
+| function | `test_confirm_removes_only_test_records_and_resets_counters(tmp_path, capsys) -> None` | 70 |  |
+| function | `test_refuses_when_real_trade_journal_exists(tmp_path, capsys) -> None` | 97 |  |
 ### [`tests/test_regime_filtered_strategy.py`](../tests/test_regime_filtered_strategy.py)
 
 Строк: **279**
@@ -2268,7 +2382,7 @@ _Публичных классов и функций не найдено._
 | function | `test_accepts_full_risk_and_full_position_fraction() -> None` | 262 |  |
 ### [`tests/test_run_bybit_controller.py`](../tests/test_run_bybit_controller.py)
 
-Строк: **798**
+Строк: **799**
 
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
@@ -2289,17 +2403,17 @@ _Публичных классов и функций не найдено._
 | function | `test_reporting_error_returns_nonzero(tmp_path, monkeypatch, capsys) -> None` | 448 |  |
 | function | `test_custom_report_paths_are_forwarded(tmp_path, monkeypatch) -> None` | 475 |  |
 | function | `test_unchanged_journal_skips_report_generation(monkeypatch) -> None` | 511 |  |
-| function | `test_default_report_paths_are_project_relative() -> None` | 526 |  |
-| function | `test_default_report_paths_do_not_depend_on_cwd(tmp_path, monkeypatch) -> None` | 537 |  |
+| function | `test_default_report_paths_are_test_isolated(isolated_runtime_artifacts) -> None` | 526 |  |
+| function | `test_default_report_paths_do_not_depend_on_cwd(tmp_path, monkeypatch) -> None` | 539 |  |
 | function | `test_successful_run_with_free_custom_lock(tmp_path, monkeypatch) -> None` | 567 |  |
 | function | `test_occupied_lock_returns_two_without_side_effects(tmp_path, monkeypatch, capsys) -> None` | 578 |  |
 | function | `test_run_succeeds_after_occupied_lock_is_released(tmp_path, monkeypatch) -> None` | 645 |  |
 | function | `test_custom_lock_path_is_used(tmp_path, monkeypatch) -> None` | 664 |  |
-| function | `test_default_lock_path_is_project_relative() -> None` | 674 |  |
-| function | `test_default_lock_path_does_not_depend_on_cwd(tmp_path, monkeypatch) -> None` | 681 |  |
-| function | `test_lock_creation_error_returns_one_with_path(tmp_path, capsys) -> None` | 709 |  |
-| function | `test_lock_is_held_during_report_generation(tmp_path, monkeypatch) -> None` | 723 |  |
-| function | `test_help_does_not_import_matplotlib_or_create_files(tmp_path) -> None` | 759 |  |
+| function | `test_default_lock_path_is_test_isolated(isolated_runtime_artifacts) -> None` | 674 |  |
+| function | `test_default_lock_path_does_not_depend_on_cwd(tmp_path, monkeypatch) -> None` | 682 |  |
+| function | `test_lock_creation_error_returns_one_with_path(tmp_path, capsys) -> None` | 710 |  |
+| function | `test_lock_is_held_during_report_generation(tmp_path, monkeypatch) -> None` | 724 |  |
+| function | `test_help_does_not_import_matplotlib_or_create_files(tmp_path) -> None` | 760 |  |
 ### [`tests/test_run_bybit_paper.py`](../tests/test_run_bybit_paper.py)
 
 Строк: **122**
@@ -2354,6 +2468,13 @@ _Публичных классов и функций не найдено._
 | Тип | Определение | Строка | Описание |
 |---|---|---:|---|
 | function | `test_cli_works_from_another_cwd_and_hides_secrets(tmp_path)` | 10 |  |
+### [`tests/test_runtime_test_isolation.py`](../tests/test_runtime_test_isolation.py)
+
+Строк: **29**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `test_runtime_defaults_are_redirected_outside_production(isolated_runtime_artifacts: Path) -> None` | 8 |  |
 ### [`tests/test_settings.py`](../tests/test_settings.py)
 
 Строк: **66**
@@ -2448,6 +2569,30 @@ _Публичных классов и функций не найдено._
 | function | `test_rsi_returns_valid_signals() -> None` | 48 |  |
 | function | `test_rsi_invalid_levels() -> None` | 70 |  |
 | function | `test_missing_close_column() -> None` | 81 |  |
+### [`tests/test_telegram_notifications.py`](../tests/test_telegram_notifications.py)
+
+Строк: **373**
+
+| Тип | Определение | Строка | Описание |
+|---|---|---:|---|
+| function | `paths(tmp_path: Path) -> TelegramPaths` | 33 |  |
+| function | `snapshot(**changes) -> RuntimeSnapshot` | 47 |  |
+| function | `health(status: HealthStatus = HealthStatus.OK)` | 78 |  |
+| function | `write_decision(path: Path, *, timestamp: int = 1785207600) -> None` | 97 |  |
+| function | `test_format_morning_report(tmp_path) -> None` | 118 |  |
+| function | `test_format_evening_report(tmp_path) -> None` | 134 |  |
+| function | `test_status_contains_safe_runtime_state() -> None` | 159 |  |
+| function | `test_missing_trade_journal_has_clear_message(tmp_path) -> None` | 168 |  |
+| function | `test_last_decision_record(tmp_path) -> None` | 172 |  |
+| function | `test_command_status_is_read_only(tmp_path) -> None` | 184 |  |
+| function | `test_foreign_chat_id_is_ignored_without_content_logging(caplog) -> None` | 200 |  |
+| function | `test_missing_token_is_rejected_only_when_enabled(monkeypatch) -> None` | 224 |  |
+| function | `test_telegram_timeout_is_bounded_and_token_not_in_error_or_logs(caplog) -> None` | 233 |  |
+| function | `test_identical_unhealthy_state_is_deduplicated(tmp_path) -> None` | 249 |  |
+| function | `test_recovery_notification_is_sent_once(tmp_path) -> None` | 272 |  |
+| function | `test_notification_state_is_separate_from_trading_state(tmp_path) -> None` | 299 |  |
+| function | `test_unexpected_live_enabled_is_visible_for_critical_alert(tmp_path, monkeypatch) -> None` | 321 |  |
+| function | `test_telegram_paths_follow_isolated_environment(tmp_path, monkeypatch)` | 358 |  |
 ### [`tests/test_trade_accounting.py`](../tests/test_trade_accounting.py)
 
 Строк: **74**

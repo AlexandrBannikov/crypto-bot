@@ -1,0 +1,11 @@
+[Unit]
+Description=Check crypto paper health for Telegram transitions every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=crypto-telegram-health.service
+
+[Install]
+WantedBy=timers.target

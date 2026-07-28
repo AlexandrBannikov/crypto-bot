@@ -1,0 +1,28 @@
+[Unit]
+Description=Crypto paper read-only Telegram command bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=crypto-bot-telegram
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/telegram.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/telegram_bot.py
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

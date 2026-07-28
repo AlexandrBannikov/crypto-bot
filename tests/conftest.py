@@ -75,10 +75,16 @@ def isolated_runtime_artifacts(tmp_path: Path, monkeypatch):
         ),
         "RUNTIME_REPORT_DIR": reports / "runtime",
         "PAPER_TRADE_LOG_PATH": logs / "paper_trades.csv",
+        "TELEGRAM_NOTIFICATION_STATE_PATH": (
+            state / "telegram_notifications.json"
+        ),
     }
     for name, path in paths.items():
         monkeypatch.setenv(name, str(path))
     monkeypatch.setenv("LIVE_TRADING_ENABLED", "false")
+    monkeypatch.setenv("CRYPTO_TELEGRAM_ENABLED", "false")
+    monkeypatch.delenv("CRYPTO_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("CRYPTO_TELEGRAM_CHAT_ID", raising=False)
 
     # The controller module is imported during collection, before fixtures can
     # set the environment, so patch its resolved module constants as well.

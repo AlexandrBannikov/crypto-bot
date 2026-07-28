@@ -1,0 +1,17 @@
+[Unit]
+Description=Send crypto paper evening Telegram report
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/telegram.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/telegram_report.py evening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+StandardOutput=journal
+StandardError=journal

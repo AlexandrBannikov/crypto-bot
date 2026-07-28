@@ -1,0 +1,18 @@
+[Unit]
+Description=Send transition-only crypto paper health alerts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=crypto-bot-telegram
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/telegram.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/telegram_health.py
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+StandardOutput=journal
+StandardError=journal

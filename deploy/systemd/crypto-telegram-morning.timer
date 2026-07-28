@@ -1,0 +1,10 @@
+[Unit]
+Description=Send crypto paper morning report at 09:00 Asia/Yekaterinburg
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 Asia/Yekaterinburg
+Persistent=true
+Unit=crypto-telegram-morning.service
+
+[Install]
+WantedBy=timers.target
