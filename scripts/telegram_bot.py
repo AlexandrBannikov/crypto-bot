@@ -28,7 +28,7 @@ def parser() -> argparse.ArgumentParser:
         "--bot-state-path",
         type=Path,
         default=Path(
-            "/var/lib/crypto-bot-telegram/telegram_bot_state.json"
+            "/var/lib/crypto-bot-telegram-bot/telegram_bot_state.json"
         ),
     )
     return result

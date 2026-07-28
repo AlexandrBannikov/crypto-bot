@@ -26,7 +26,8 @@ def parser() -> argparse.ArgumentParser:
         "--notification-state-path",
         type=Path,
         default=Path(
-            "/var/lib/crypto-bot-telegram/telegram_notifications.json"
+            "/var/lib/crypto-bot-telegram-health/"
+            "telegram_notifications.json"
         ),
     )
     result.add_argument("--no-network", action="store_true")

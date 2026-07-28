@@ -2,8 +2,10 @@
 
 The Telegram integration is a separate, read-only operational contour. It
 does not run inside the paper controller, cannot submit orders, and writes
-only its own notification and polling-offset state under
-`/var/lib/crypto-bot-telegram/`.
+only its own state. The command bot keeps its polling offset under
+`/var/lib/crypto-bot-telegram-bot/`; the health service keeps transition and
+cooldown state under `/var/lib/crypto-bot-telegram-health/`. The two
+`DynamicUser` services never share a writable state directory.
 
 Use a dedicated Telegram bot token. Do not reuse a token belonging to the VPN
 bot or any other long-polling process: Telegram permits only one reliable
@@ -45,6 +47,11 @@ stays private (`0600`) and is neither configured nor inspected by Telegram.
   transitions. Repeated failures are deduplicated and cooldown-protected.
 - `telegram_notifications.json` contains alert transition state only.
 - `telegram_bot_state.json` contains the independent `getUpdates` offset.
+
+The bot and health units use separate `StateDirectory=` values with mode
+`0700`. Morning and evening report services are stateless and do not declare a
+state directory. This prevents one dynamic user from changing ownership of
+another service's files.
 
 Unauthorized chat IDs are ignored. The log records only the numeric chat ID,
 never the received message text. Messages are plain text; Telegram
