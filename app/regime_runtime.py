@@ -77,6 +77,8 @@ class RegimeRuntimeState:
     drawdown_halt_latched: bool = False
     last_processed_closed_candle: int | None = None
     last_journal_sequence: int = 0
+    rebaseline_at: str | None = None
+    rebaseline_note: str | None = None
     counters: RegimeRuntimeCounters = field(
         default_factory=RegimeRuntimeCounters
     )

@@ -86,6 +86,8 @@ def create_report(args: argparse.Namespace) -> dict:
         "api_errors": operational.counters.api_error_halts,
         "risk_halts": operational.counters.risk_limit_halts,
         "active_halt_reason": operational.active_halt_reason,
+        "rebaseline_at": operational.rebaseline_at,
+        "rebaseline_note": operational.rebaseline_note,
         "latest_candle": int(candle_path.read_text().strip()) if candle_path.exists() else None,
         "health_status": overall_status(checks).name,
         "data_age_seconds": (
