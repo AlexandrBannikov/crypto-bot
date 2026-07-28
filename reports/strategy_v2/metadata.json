@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-07-28T12:53:35.739404+00:00",
-  "git_commit": "60c66103ccbabafc1b87f36d14b06c61b48d6c1b",
+  "timestamp": "2026-07-28T17:57:55.228103+00:00",
+  "git_commit": "585de59ab16b69a93e638bc63b94140c8bce4012",
   "data_path": "/opt/crypto-bot/data/eth_usdt_1h_full.csv",
   "data_fingerprint": "4bf7bfbbd41707f76e62542e218cf6b689da46077b2bf435c1f48717780366c6",
   "candles": 35391,
@@ -22,6 +22,11 @@
     "enabled": true,
     "period": 14,
     "minimum_adx": 20.0
+  },
+  "pullback": {
+    "enabled": true,
+    "max_wait_bars": 5,
+    "touch_mode": "LOW_TOUCH"
   },
   "walk_forward": {
     "train_months": 18,

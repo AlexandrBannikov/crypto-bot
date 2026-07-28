@@ -14,6 +14,9 @@ from app.strategy_v2_filters import (
     AllEntryFilters,
     EntryFilterDecision,
     EntryFilterReason,
+    PullbackEntryFilter,
+    PullbackFilterConfig,
+    PullbackTouchMode,
     ResearchEntryFilteredStrategy,
 )
 from app.trading_types import TradeAction
@@ -55,6 +58,7 @@ def test_disabled_filters_are_identical_to_baseline() -> None:
                 (
                     ATRVolatilityFilter(ATRFilterConfig()),
                     ADXStrengthFilter(ADXFilterConfig()),
+                    PullbackEntryFilter(PullbackFilterConfig()),
                 )
             ),
         ),
@@ -253,3 +257,161 @@ def test_atr_and_adx_fixed_reference_values() -> None:
     # 53.9387137749703 on this fixture. The small, explicit difference
     # comes from the project's adjust=False EWM seed and is preserved.
 
+
+def pullback_market() -> list[Candle]:
+    closes = [100, 101, 102, 104, 106, 107, 108, 109]
+    result = []
+    for index, close in enumerate(closes):
+        result.append(
+            Candle(
+                timestamp=index * 3600,
+                open=close,
+                high=close + 1,
+                low=close - 1,
+                close=close,
+                volume=100,
+            )
+        )
+    return result
+
+
+def test_pullback_waits_then_confirms_low_touch() -> None:
+    market = pullback_market()
+    item = PullbackEntryFilter(
+        PullbackFilterConfig(enabled=True, max_wait_bars=3),
+        fast_ema_period=2,
+        slow_ema_period=3,
+    )
+    assert item.arm(market, 3).reason is EntryFilterReason.WAITING_PULLBACK
+    market[4] = replace(market[4], low=100, close=106)
+
+    decision = item.evaluate(market, 4)
+
+    assert decision.allowed is True
+    assert decision.reason is EntryFilterReason.PULLBACK_CONFIRMED
+    assert item.events[0].wait_bars == 1
+
+
+def test_pullback_times_out_after_inclusive_wait_window() -> None:
+    market = pullback_market()
+    item = PullbackEntryFilter(
+        PullbackFilterConfig(enabled=True, max_wait_bars=2),
+        fast_ema_period=2,
+        slow_ema_period=3,
+    )
+    item.arm(market, 3)
+    market[4] = replace(market[4], low=106)
+    market[5] = replace(market[5], low=107)
+
+    assert item.evaluate(market, 4).reason is EntryFilterReason.WAITING_PULLBACK
+    assert item.evaluate(market, 5).reason is EntryFilterReason.PULLBACK_TIMEOUT
+
+
+def test_pullback_close_touch_requires_reclaim() -> None:
+    market = pullback_market()
+    item = PullbackEntryFilter(
+        PullbackFilterConfig(
+            enabled=True,
+            max_wait_bars=3,
+            touch_mode=PullbackTouchMode.CLOSE_TOUCH,
+        ),
+        fast_ema_period=2,
+        slow_ema_period=3,
+    )
+    item.arm(market, 3)
+    market[4] = replace(market[4], close=102)
+    market[5] = replace(market[5], close=107)
+
+    assert item.evaluate(market, 4).reason is EntryFilterReason.WAITING_PULLBACK
+    assert item.evaluate(market, 5).reason is EntryFilterReason.PULLBACK_CONFIRMED
+
+
+def test_pullback_has_no_look_ahead() -> None:
+    prefix = pullback_market()[:6]
+    one = prefix + [replace(prefix[-1], timestamp=6 * 3600, low=1)]
+    two = prefix + [replace(prefix[-1], timestamp=6 * 3600, low=10_000)]
+    first = PullbackEntryFilter(
+        PullbackFilterConfig(enabled=True),
+        fast_ema_period=2,
+        slow_ema_period=3,
+    )
+    second = PullbackEntryFilter(
+        PullbackFilterConfig(enabled=True),
+        fast_ema_period=2,
+        slow_ema_period=3,
+    )
+    first.arm(one, 3)
+    second.arm(two, 3)
+
+    assert first.evaluate(one, 4) == second.evaluate(two, 4)
+
+
+class IndexedStrategy:
+    def __init__(self, actions):
+        self.actions = actions
+
+    def generate_signal(self, market, index):
+        return self.actions.get(index, TradeAction.HOLD)
+
+
+def test_repeated_long_signal_restarts_pullback_wait() -> None:
+    market = pullback_market()
+    pullback = PullbackEntryFilter(
+        PullbackFilterConfig(enabled=True),
+        fast_ema_period=2,
+        slow_ema_period=3,
+    )
+    strategy = ResearchEntryFilteredStrategy(
+        IndexedStrategy(
+            {3: TradeAction.OPEN_LONG, 4: TradeAction.OPEN_LONG}
+        ),
+        AllEntryFilters((pullback,)),
+    )
+
+    strategy.generate_signal(market, 3)
+    strategy.generate_signal(market, 4)
+
+    assert len(pullback.events) == 2
+    assert (
+        pullback.events[0].reason
+        is EntryFilterReason.PULLBACK_CANCELLED
+    )
+    assert pullback.events[1].cross_index == 4
+
+
+@pytest.mark.parametrize("filter_name", ["atr", "adx"])
+def test_pullback_is_compatible_with_other_and_filters(
+    filter_name: str,
+) -> None:
+    market = pullback_market()
+    market[4] = replace(market[4], low=100)
+    blocker = FixedFilter(filter_name, False)
+    pullback = PullbackEntryFilter(
+        PullbackFilterConfig(enabled=True),
+        fast_ema_period=2,
+        slow_ema_period=3,
+    )
+    strategy = ResearchEntryFilteredStrategy(
+        IndexedStrategy({3: TradeAction.OPEN_LONG}),
+        AllEntryFilters((blocker, pullback)),
+    )
+
+    assert strategy.generate_signal(market, 3) is TradeAction.HOLD
+    assert strategy.generate_signal(market, 4) is TradeAction.HOLD
+    assert blocker.calls == 1
+
+
+def test_pullback_never_filters_exit() -> None:
+    pullback = PullbackEntryFilter(
+        PullbackFilterConfig(enabled=True),
+        fast_ema_period=2,
+        slow_ema_period=3,
+    )
+    strategy = ResearchEntryFilteredStrategy(
+        ExitStrategy(), AllEntryFilters((pullback,))
+    )
+
+    assert (
+        strategy.generate_signal(pullback_market(), 3)
+        is TradeAction.CLOSE_LONG
+    )

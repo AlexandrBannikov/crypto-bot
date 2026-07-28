@@ -7,6 +7,8 @@ from app.strategy_v2_research import (
     StrategyV2Config,
     fingerprint_candles,
     metadata,
+    run_pullback_comparison,
+    run_pullback_period,
     run_comparison,
     run_period,
 )
@@ -87,3 +89,30 @@ def test_metadata_contains_data_fingerprint(tmp_path) -> None:
     assert result["candles"] == len(data)
     assert result["atr"]["period"] == 14
     assert result["adx"]["minimum_adx"] == 20
+    assert result["pullback"]["max_wait_bars"] == 5
+    assert result["pullback"]["touch_mode"] == "LOW_TOUCH"
+
+
+def test_pullback_runner_is_reproducible() -> None:
+    data = market_data()
+    first = run_pullback_period(
+        data,
+        period="full",
+        variant="atr_adx_pullback",
+        config=small_config(),
+    )
+    second = run_pullback_period(
+        data,
+        period="full",
+        variant="atr_adx_pullback",
+        config=small_config(),
+    )
+
+    assert first == second
+
+
+def test_pullback_comparison_contains_eight_factorial_variants() -> None:
+    rows = run_pullback_comparison(market_data(), small_config())
+
+    assert len(rows) == 24
+    assert len({row.variant for row in rows}) == 8

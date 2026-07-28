@@ -22,6 +22,10 @@ class EntryFilterReason(str, Enum):
     BLOCKED_BY_ADX = "blocked_by_adx"
     INSUFFICIENT_HISTORY = "insufficient_history"
     INVALID_INDICATOR_VALUE = "invalid_indicator_value"
+    WAITING_PULLBACK = "waiting_pullback"
+    PULLBACK_CONFIRMED = "pullback_confirmed"
+    PULLBACK_TIMEOUT = "pullback_timeout"
+    PULLBACK_CANCELLED = "pullback_cancelled"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +94,36 @@ class ADXFilterConfig:
             raise ValueError("minimum ADX must be finite")
         if self.minimum_adx < 0:
             raise ValueError("minimum ADX must not be negative")
+
+
+class PullbackTouchMode(str, Enum):
+    LOW_TOUCH = "LOW_TOUCH"
+    CLOSE_TOUCH = "CLOSE_TOUCH"
+
+
+@dataclass(frozen=True, slots=True)
+class PullbackFilterConfig:
+    enabled: bool = False
+    max_wait_bars: int = 5
+    touch_mode: PullbackTouchMode = PullbackTouchMode.LOW_TOUCH
+
+    def __post_init__(self) -> None:
+        if self.max_wait_bars <= 0:
+            raise ValueError(
+                "pullback max wait bars must be greater than zero"
+            )
+        if not isinstance(self.touch_mode, PullbackTouchMode):
+            raise ValueError("invalid pullback touch mode")
+
+
+@dataclass(slots=True)
+class PullbackEvent:
+    cross_index: int
+    cross_price: float
+    resolution_index: int | None = None
+    wait_bars: int | None = None
+    reason: EntryFilterReason = EntryFilterReason.WAITING_PULLBACK
+    entry_allowed: bool = False
 
 
 def _ohlc_frame(
@@ -211,6 +245,208 @@ class ADXStrengthFilter:
         )
 
 
+class PullbackEntryFilter:
+    """Defer LONG entries until an EMA-fast pullback is confirmed.
+
+    LOW_TOUCH confirms when low <= fast EMA and close > fast EMA.
+    CLOSE_TOUCH requires a close at/below fast EMA followed by a close back
+    above it. The original cross bar is never eligible for confirmation.
+    """
+
+    name = "pullback"
+
+    def __init__(
+        self,
+        config: PullbackFilterConfig,
+        *,
+        fast_ema_period: int = 20,
+        slow_ema_period: int = 50,
+    ) -> None:
+        if fast_ema_period <= 0 or slow_ema_period <= 0:
+            raise ValueError("pullback EMA periods must be positive")
+        if fast_ema_period >= slow_ema_period:
+            raise ValueError(
+                "pullback fast EMA must be lower than slow EMA"
+            )
+        self.config = config
+        self.enabled = config.enabled
+        self.fast_ema_period = fast_ema_period
+        self.slow_ema_period = slow_ema_period
+        self._pending: PullbackEvent | None = None
+        self.events: list[PullbackEvent] = []
+
+    @property
+    def pending(self) -> bool:
+        return self._pending is not None
+
+    def arm(
+        self,
+        candles: Sequence[Candle],
+        index: int,
+    ) -> EntryFilterDecision:
+        if index < 0 or index >= len(candles):
+            raise IndexError("candle index is out of range")
+        event = PullbackEvent(
+            cross_index=index,
+            cross_price=float(candles[index].close),
+        )
+        self._pending = event
+        self.events.append(event)
+        return EntryFilterDecision(
+            self.name,
+            False,
+            EntryFilterReason.WAITING_PULLBACK,
+        )
+
+    def cancel(self, index: int) -> EntryFilterDecision:
+        if self._pending is not None:
+            self._resolve(
+                self._pending,
+                index,
+                EntryFilterReason.PULLBACK_CANCELLED,
+            )
+        return EntryFilterDecision(
+            self.name,
+            False,
+            EntryFilterReason.PULLBACK_CANCELLED,
+        )
+
+    def evaluate(
+        self,
+        candles: Sequence[Candle],
+        index: int,
+    ) -> EntryFilterDecision:
+        if not self.enabled:
+            return EntryFilterDecision(
+                self.name, True, EntryFilterReason.ALLOWED
+            )
+        if self._pending is None:
+            return EntryFilterDecision(
+                self.name,
+                False,
+                EntryFilterReason.PULLBACK_CANCELLED,
+            )
+        event = self._pending
+        if index <= event.cross_index:
+            return EntryFilterDecision(
+                self.name,
+                False,
+                EntryFilterReason.WAITING_PULLBACK,
+            )
+        frame = _ohlc_frame(candles, index)
+        fast_values = frame["close"].ewm(
+            span=self.fast_ema_period,
+            adjust=False,
+            min_periods=self.fast_ema_period,
+        ).mean()
+        slow_values = frame["close"].ewm(
+            span=self.slow_ema_period,
+            adjust=False,
+            min_periods=self.slow_ema_period,
+        ).mean()
+        fast = fast_values.iloc[-1]
+        slow = slow_values.iloc[-1]
+        if pd.isna(fast) or pd.isna(slow):
+            return EntryFilterDecision(
+                self.name,
+                False,
+                EntryFilterReason.INSUFFICIENT_HISTORY,
+            )
+        fast_number = float(fast)
+        slow_number = float(slow)
+        close = float(frame["close"].iloc[-1])
+        if not all(
+            math.isfinite(value)
+            for value in (fast_number, slow_number, close)
+        ):
+            self._resolve(
+                event,
+                index,
+                EntryFilterReason.PULLBACK_CANCELLED,
+            )
+            return EntryFilterDecision(
+                self.name,
+                False,
+                EntryFilterReason.INVALID_INDICATOR_VALUE,
+            )
+        if fast_number <= slow_number:
+            self._resolve(
+                event,
+                index,
+                EntryFilterReason.PULLBACK_CANCELLED,
+            )
+            return EntryFilterDecision(
+                self.name,
+                False,
+                EntryFilterReason.PULLBACK_CANCELLED,
+            )
+        if self.config.touch_mode is PullbackTouchMode.LOW_TOUCH:
+            touched = (
+                float(frame["low"].iloc[-1]) <= fast_number
+                and close > fast_number
+            )
+        else:
+            previous_fast = float(fast_values.iloc[-2])
+            previous_close = float(frame["close"].iloc[-2])
+            touched = (
+                math.isfinite(previous_fast)
+                and previous_close <= previous_fast
+                and close > fast_number
+            )
+        if touched:
+            self._resolve(
+                event,
+                index,
+                EntryFilterReason.PULLBACK_CONFIRMED,
+            )
+            return EntryFilterDecision(
+                self.name,
+                True,
+                EntryFilterReason.PULLBACK_CONFIRMED,
+                fast_number,
+            )
+        if index - event.cross_index >= self.config.max_wait_bars:
+            self._resolve(
+                event,
+                index,
+                EntryFilterReason.PULLBACK_TIMEOUT,
+            )
+            return EntryFilterDecision(
+                self.name,
+                False,
+                EntryFilterReason.PULLBACK_TIMEOUT,
+            )
+        return EntryFilterDecision(
+            self.name,
+            False,
+            EntryFilterReason.WAITING_PULLBACK,
+            fast_number,
+        )
+
+    def mark_entry_allowed(self) -> None:
+        if self.events:
+            self.events[-1].entry_allowed = True
+
+    def finish(self, final_index: int) -> None:
+        if self._pending is not None:
+            self._resolve(
+                self._pending,
+                final_index,
+                EntryFilterReason.PULLBACK_CANCELLED,
+            )
+
+    def _resolve(
+        self,
+        event: PullbackEvent,
+        index: int,
+        reason: EntryFilterReason,
+    ) -> None:
+        event.resolution_index = index
+        event.wait_bars = max(0, index - event.cross_index)
+        event.reason = reason
+        self._pending = None
+
+
 @dataclass(frozen=True, slots=True)
 class CompositeEntryDecision:
     allowed: bool
@@ -227,9 +463,13 @@ class AllEntryFilters:
         self,
         candles: Sequence[Candle],
         index: int,
+        *,
+        exclude: frozenset[str] = frozenset(),
     ) -> CompositeEntryDecision:
         decisions = tuple(
-            item.evaluate(candles, index) for item in self.filters
+            item.evaluate(candles, index)
+            for item in self.filters
+            if item.name not in exclude
         )
         return CompositeEntryDecision(
             allowed=all(item.allowed for item in decisions),
@@ -247,8 +487,17 @@ class ResearchEntryFilteredStrategy:
     ) -> None:
         self.base_strategy = base_strategy
         self.entry_filters = entry_filters
+        pullbacks = [
+            item
+            for item in entry_filters.filters
+            if isinstance(item, PullbackEntryFilter)
+        ]
+        if len(pullbacks) > 1:
+            raise ValueError("only one pullback filter is supported")
+        self.pullback = pullbacks[0] if pullbacks else None
         self._reason_counts: Counter[str] = Counter()
         self._entry_decisions = 0
+        self._blocked_entries = 0
 
     @property
     def reason_counts(self) -> dict[str, int]:
@@ -261,6 +510,10 @@ class ResearchEntryFilteredStrategy:
     def entry_decisions(self) -> int:
         return self._entry_decisions
 
+    @property
+    def blocked_entries(self) -> int:
+        return self._blocked_entries
+
     def generate_signal(
         self,
         candles: Sequence[Candle],
@@ -268,6 +521,45 @@ class ResearchEntryFilteredStrategy:
     ) -> StrategySignal:
         raw_signal = self.base_strategy.generate_signal(candles, index)
         action = normalize_signal(raw_signal).action
+        if self.pullback is not None:
+            if action in {
+                TradeAction.CLOSE_LONG,
+                TradeAction.CLOSE_SHORT,
+            }:
+                if self.pullback.pending:
+                    self._record(self.pullback.cancel(index))
+                return raw_signal
+            if action is TradeAction.OPEN_LONG:
+                if self.pullback.pending:
+                    self._record(self.pullback.cancel(index))
+                self._entry_decisions += 1
+                self._record(self.pullback.arm(candles, index))
+                return TradeAction.HOLD
+            if self.pullback.pending:
+                pullback_decision = self.pullback.evaluate(
+                    candles, index
+                )
+                if (
+                    pullback_decision.reason
+                    is not EntryFilterReason.WAITING_PULLBACK
+                ):
+                    self._record(pullback_decision)
+                if (
+                    pullback_decision.reason
+                    is EntryFilterReason.PULLBACK_CONFIRMED
+                ):
+                    decision = self.entry_filters.evaluate(
+                        candles,
+                        index,
+                        exclude=frozenset({self.pullback.name}),
+                    )
+                    for item in decision.decisions:
+                        self._record(item)
+                    if decision.allowed:
+                        self.pullback.mark_entry_allowed()
+                        return TradeAction.OPEN_LONG
+                    self._blocked_entries += 1
+                return raw_signal
         if action not in {
             TradeAction.OPEN_LONG,
             TradeAction.OPEN_SHORT,
@@ -278,8 +570,22 @@ class ResearchEntryFilteredStrategy:
         self._entry_decisions += 1
         decision = self.entry_filters.evaluate(candles, index)
         for item in decision.decisions:
-            self._reason_counts[item.reason.value] += 1
+            self._record(item)
         if decision.allowed:
             return raw_signal
+        self._blocked_entries += 1
         return TradeAction.HOLD
 
+    def finish(self, final_index: int) -> None:
+        if self.pullback is not None and self.pullback.pending:
+            self.pullback.finish(final_index)
+            self._record(
+                EntryFilterDecision(
+                    self.pullback.name,
+                    False,
+                    EntryFilterReason.PULLBACK_CANCELLED,
+                )
+            )
+
+    def _record(self, decision: EntryFilterDecision) -> None:
+        self._reason_counts[decision.reason.value] += 1

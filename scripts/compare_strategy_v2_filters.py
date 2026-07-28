@@ -51,7 +51,11 @@ def _json_safe(value):
 def write_csv(path: Path, rows) -> None:
     values = [asdict(row) for row in rows]
     output = io.StringIO()
-    writer = csv.DictWriter(output, fieldnames=list(values[0]))
+    writer = csv.DictWriter(
+        output,
+        fieldnames=list(values[0]),
+        lineterminator="\n",
+    )
     writer.writeheader()
     writer.writerows(values)
     atomic_write(path, output.getvalue())
