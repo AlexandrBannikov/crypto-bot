@@ -78,6 +78,18 @@ class EntryBlockPolicy:
     def empty(cls) -> EntryBlockPolicy:
         return cls(frozenset())
 
+    @classmethod
+    def runtime(cls) -> EntryBlockPolicy:
+        """Validated production policy; research policies remain available."""
+        return cls(
+            frozenset(
+                {
+                    EntryBlockReason.RANGE,
+                    EntryBlockReason.HIGH_VOLATILITY,
+                }
+            )
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class EntryFilterStatistics:

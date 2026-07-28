@@ -49,11 +49,26 @@ def load_period_data(state_path: Path, journal_path: Path, shadow_path: Path, st
 def shadow_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     evaluated = [r for r in records if r.get("baseline_signal") in ENTRY_ACTIONS]
     reasons = Counter(r.get("blocked_reason") for r in evaluated if r.get("blocked") and r.get("blocked_reason"))
+    actual_blocked = sum(
+        bool(r.get("blocked"))
+        and (r.get("filter_mode") or r.get("strategy_mode")) in {"enforce", "filtered"}
+        for r in evaluated
+    )
+    would_block = sum(
+        bool(r.get("shadow_would_block"))
+        or (
+            bool(r.get("blocked"))
+            and (r.get("filter_mode") or r.get("strategy_mode")) == "shadow"
+        )
+        for r in evaluated
+    )
     same = sum(r.get("baseline_signal") == r.get("filtered_signal") for r in records)
     blocked = sum(bool(r.get("blocked")) for r in evaluated)
     return {
         "evaluations": len(evaluated), "allowed_entries": sum(r.get("allowed") is True for r in evaluated),
         "blocked_entries": blocked, "blocked_reasons": dict(sorted(reasons.items())),
+        "actual_blocked_entries": actual_blocked,
+        "shadow_would_block": would_block,
         "detector_errors": sum(bool(r.get("detector_error")) for r in records),
         "baseline_only_decisions": sum(r.get("baseline_signal") in ENTRY_ACTIONS and r.get("filtered_signal") not in ENTRY_ACTIONS for r in records),
         "filtered_only_decisions": sum(r.get("filtered_signal") in ENTRY_ACTIONS and r.get("baseline_signal") not in ENTRY_ACTIONS for r in records),

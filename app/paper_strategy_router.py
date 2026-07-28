@@ -9,7 +9,10 @@ from typing import Protocol
 from app.candle import Candle
 from app.config import PaperStrategyConfig, PaperStrategyMode
 from app.market_regime import MarketRegime, MarketRegimeDetector
-from app.regime_filtered_strategy import classify_entry_block_reason
+from app.regime_filtered_strategy import (
+    EntryBlockPolicy,
+    classify_entry_block_reason,
+)
 from app.signal_normalizer import normalize_signal
 from app.strategies import Signal
 from app.trade_signal import TradeSignal
@@ -54,6 +57,7 @@ class PaperStrategyRouter:
         slow_ema_period: int = 50,
         detector: RegimeDetector | None = None,
         trading_filter: TradingFilter | None = None,
+        block_policy: EntryBlockPolicy | None = None,
     ) -> None:
         self.config = config
         self.detector_parameters = {
@@ -92,6 +96,7 @@ class PaperStrategyRouter:
         self.trading_filter = trading_filter or TradingFilter(
             minimum_confidence=config.minimum_confidence
         )
+        self.block_policy = block_policy or EntryBlockPolicy.runtime()
 
     def route(
         self,
@@ -125,7 +130,11 @@ class PaperStrategyRouter:
 
         try:
             regime = self.detector.detect(candles)
-            allowed = self.trading_filter.allow_entry(regime)
+            filter_allowed = self.trading_filter.allow_entry(regime)
+            primary_reason = classify_entry_block_reason(regime)
+            allowed = filter_allowed or not self.block_policy.blocks(
+                primary_reason
+            )
             filtered = (
                 baseline
                 if allowed
@@ -134,7 +143,7 @@ class PaperStrategyRouter:
             reason = (
                 None
                 if allowed
-                else classify_entry_block_reason(regime).value
+                else primary_reason.value
             )
             diagnostics = DetectorDiagnostics(
                 parameters_fingerprint=self.parameters_fingerprint,

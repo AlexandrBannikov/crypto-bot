@@ -5,6 +5,27 @@ execution remains identical to baseline. It never enables real-money execution
 and needs no private Bybit keys: the controller reads public closed candles and
 uses `PaperExecutor` with live execution disabled.
 
+The canonical switch is `REGIME_FILTER_MODE=off|shadow|enforce`.
+`PAPER_STRATEGY_MODE=baseline|shadow|filtered` remains a read-only compatibility
+alias. `off` preserves baseline paper execution, `shadow` executes the same
+baseline paper action and records whether the filter would block it, and
+`enforce` suppresses only new paper entries. Signal exits and stop-loss exits
+always bypass the regime and risk entry gates.
+
+The paper runtime refuses `LIVE_TRADING_ENABLED=true`,
+`MAX_OPEN_POSITIONS` other than `1`, and `HALT_ON_API_ERROR=false`. Runtime
+counters, daily-loss state, the latched maximum-drawdown halt, last processed
+candle, and journal sequence are stored atomically in
+`state/regime_runtime.json`. A maximum-drawdown halt survives restart. After
+investigation it can only be cleared explicitly:
+
+```bash
+python scripts/reset_runtime_halt.py --confirm-maximum-drawdown-reset
+```
+
+This reset command does not fetch market data, execute a cycle, or enable live
+trading.
+
 ## Configuration and manual operation
 
 ```bash

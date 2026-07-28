@@ -32,9 +32,13 @@ DEFAULT_CONFIG = BacktestConfig()
 
 
 class PaperStrategyMode(str, Enum):
-    BASELINE = "baseline"
-    FILTERED = "filtered"
+    OFF = "off"
     SHADOW = "shadow"
+    ENFORCE = "enforce"
+    # Source-compatible names for callers introduced before the runtime
+    # terminology was standardised.
+    BASELINE = "off"
+    FILTERED = "enforce"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +58,7 @@ class PaperStrategyConfig:
     def __post_init__(self) -> None:
         if not isinstance(self.mode, PaperStrategyMode):
             raise ValueError(
-                "mode must be baseline, filtered, or shadow"
+                "mode must be off, shadow, or enforce"
             )
         if self.adx_period <= 0:
             raise ValueError("REGIME_ADX_PERIOD must be positive")
@@ -104,16 +108,24 @@ class PaperStrategyConfig:
         *,
         mode_override: str | None = None,
     ) -> "PaperStrategyConfig":
-        mode_value = mode_override or os.environ.get(
-            "PAPER_STRATEGY_MODE",
-            PaperStrategyMode.BASELINE.value,
+        mode_value = (
+            mode_override
+            or os.environ.get("REGIME_FILTER_MODE")
+            or os.environ.get("PAPER_STRATEGY_MODE")
+            or PaperStrategyMode.OFF.value
+        )
+        legacy_modes = {"baseline": "off", "filtered": "enforce"}
+        normalized_mode = legacy_modes.get(
+            str(mode_value).strip().lower(),
+            str(mode_value).strip().lower(),
         )
         try:
-            mode = PaperStrategyMode(mode_value.strip().lower())
+            mode = PaperStrategyMode(normalized_mode)
         except (AttributeError, ValueError) as exc:
             allowed = ", ".join(item.value for item in PaperStrategyMode)
             raise ValueError(
-                f"invalid PAPER_STRATEGY_MODE; expected one of: {allowed}"
+                "invalid PAPER_STRATEGY_MODE or REGIME_FILTER_MODE; "
+                f"expected one of: {allowed}"
             ) from exc
 
         return cls(
@@ -139,6 +151,55 @@ class PaperStrategyConfig:
             shadow_diagnostics_enabled=_env_bool(
                 "SHADOW_DIAGNOSTICS_ENABLED", True
             ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSafetyConfig:
+    live_trading_enabled: bool = False
+    max_open_positions: int = 1
+    max_daily_loss_percent: float = 5.0
+    max_drawdown_percent: float = 10.0
+    max_data_age_seconds: int = 5400
+    halt_on_api_error: bool = True
+
+    def __post_init__(self) -> None:
+        if self.live_trading_enabled:
+            raise ValueError(
+                "LIVE_TRADING_ENABLED must remain false for paper runtime"
+            )
+        if self.max_open_positions != 1:
+            raise ValueError("MAX_OPEN_POSITIONS must be exactly 1")
+        for name, value in (
+            ("MAX_DAILY_LOSS_PERCENT", self.max_daily_loss_percent),
+            ("MAX_DRAWDOWN_PERCENT", self.max_drawdown_percent),
+        ):
+            if not math.isfinite(value) or value <= 0 or value > 100:
+                raise ValueError(f"{name} must be in (0, 100]")
+        if self.max_data_age_seconds <= 0:
+            raise ValueError("MAX_DATA_AGE_SECONDS must be positive")
+        if not self.halt_on_api_error:
+            raise ValueError(
+                "HALT_ON_API_ERROR must remain true for paper runtime"
+            )
+
+    @classmethod
+    def from_env(cls) -> "RuntimeSafetyConfig":
+        return cls(
+            live_trading_enabled=_env_bool(
+                "LIVE_TRADING_ENABLED", False
+            ),
+            max_open_positions=_env_int("MAX_OPEN_POSITIONS", 1),
+            max_daily_loss_percent=_env_float(
+                "MAX_DAILY_LOSS_PERCENT", 5.0
+            ),
+            max_drawdown_percent=_env_float(
+                "MAX_DRAWDOWN_PERCENT", 10.0
+            ),
+            max_data_age_seconds=_env_int(
+                "MAX_DATA_AGE_SECONDS", 5400
+            ),
+            halt_on_api_error=_env_bool("HALT_ON_API_ERROR", True),
         )
 
 

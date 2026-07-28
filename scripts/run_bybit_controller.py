@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -21,6 +22,7 @@ from app.bybit_market_data import (
 from app.config import (
     PaperStrategyConfig,
     PaperStrategyMode,
+    RuntimeSafetyConfig,
 )
 from app.execution_runner import ExecutionRunner
 from app.indicators import ema
@@ -33,6 +35,11 @@ from app.process_lock import (
     ProcessAlreadyRunningError,
     ProcessLock,
     ProcessLockError,
+)
+from app.regime_runtime import (
+    RegimeRuntimeStateStore,
+    is_entry,
+    is_exit,
 )
 from app.strategies import Signal
 from app.shadow_decision_journal import (
@@ -68,6 +75,7 @@ STATE_PATH = Path("state/trading_controller.json")
 LAST_CANDLE_PATH = Path(
     "state/trading_controller_last_candle.txt"
 )
+RUNTIME_STATE_PATH = Path("state/regime_runtime.json")
 JOURNAL_PATH = Path(
     os.environ.get(
         "CONTROLLER_TRADE_JOURNAL_PATH",
@@ -109,10 +117,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--strategy-mode",
-        choices=[item.value for item in PaperStrategyMode],
         help=(
-            "paper strategy mode: baseline keeps legacy behavior; "
-            "filtered filters new paper entries; shadow executes "
+            "regime filter mode: off keeps legacy behavior; "
+            "enforce filters new paper entries; shadow executes "
             "baseline and records filter decisions"
         ),
     )
@@ -305,6 +312,9 @@ def run_controller(args: argparse.Namespace) -> int:
     strategy_config = PaperStrategyConfig.from_env(
         mode_override=getattr(args, "strategy_mode", None)
     )
+    safety_config = RuntimeSafetyConfig.from_env()
+    runtime_state_store = RegimeRuntimeStateStore(RUNTIME_STATE_PATH)
+    operational_state = runtime_state_store.load()
     diagnostics_path = strategy_config.shadow_diagnostics_path
     if not diagnostics_path.is_absolute():
         diagnostics_path = PROJECT_ROOT / diagnostics_path
@@ -334,8 +344,25 @@ def run_controller(args: argparse.Namespace) -> int:
 
     print("Получаем закрытые свечи Bybit...")
 
-    candles = feed.get_candles()
+    try:
+        candles = feed.get_candles()
+    except Exception:
+        if safety_config.halt_on_api_error:
+            operational_state.active_halt_reason = "api_error"
+            operational_state.counters.api_error_halts += 1
+            runtime_state_store.save(operational_state)
+        raise
     latest_candle = candles[-1]
+    now = datetime.now(timezone.utc)
+    data_age_seconds = max(
+        0.0, now.timestamp() - float(latest_candle.timestamp)
+    )
+    if (
+        data_age_seconds <= safety_config.max_data_age_seconds
+        and operational_state.active_halt_reason
+        in {"stale_data", "api_error"}
+    ):
+        operational_state.active_halt_reason = None
 
     last_processed_timestamp = (
         load_last_candle_timestamp()
@@ -388,6 +415,11 @@ def run_controller(args: argparse.Namespace) -> int:
         state_store=state_store,
         trade_journal=JsonlTradeJournal(JOURNAL_PATH),
     )
+    operational_state.update_risk(
+        controller_equity(controller.state, Decimal(str(latest_candle.close))),
+        safety_config,
+        now=now,
+    )
 
     # Создаём состояние даже при первом HOLD
     # и обновляем старый формат JSON.
@@ -405,25 +437,50 @@ def run_controller(args: argparse.Namespace) -> int:
         )
     )
     decision = router.route(execution_signal, candles)
+    before_state = controller.state
+    baseline_action = decision.baseline_signal.action
+    operational_state.counters.signals_total += 1
+    if is_entry(baseline_action):
+        operational_state.counters.entry_signals_total += 1
+    elif is_exit(baseline_action):
+        operational_state.counters.exits_total += 1
 
-    if (
-        strategy_config.shadow_diagnostics_enabled
-        and strategy_config.mode
-        in {PaperStrategyMode.SHADOW, PaperStrategyMode.FILTERED}
-    ):
-        record = build_shadow_record(
-            decision=decision,
-            latest_candle=latest_candle,
-            state=controller.state,
-            controller_run_identifier=str(uuid4()),
-        )
-        try:
-            ShadowDecisionJournal(diagnostics_path).append(record)
-        except ValueError as exc:
-            print(
-                f"Shadow diagnostics error: {exc}",
-                file=sys.stderr,
+    risk_reason = None
+    if is_entry(baseline_action):
+        if data_age_seconds > safety_config.max_data_age_seconds:
+            risk_reason = "stale_data"
+            operational_state.counters.stale_data_rejections += 1
+            operational_state.active_halt_reason = risk_reason
+        elif controller.state.has_open_position:
+            risk_reason = "maximum_positions"
+        elif not operational_state.permits_entry():
+            risk_reason = operational_state.active_halt_reason
+        if risk_reason is not None:
+            decision = decision.__class__(
+                baseline_signal=decision.baseline_signal,
+                filtered_signal=TradeSignal(action=TradeAction.HOLD),
+                execution_signal=TradeSignal(action=TradeAction.HOLD),
+                mode=decision.mode,
+                regime=decision.regime,
+                confidence=decision.confidence,
+                entry_allowed=False,
+                blocked=True,
+                blocked_reason=risk_reason,
+                detector_diagnostics=decision.detector_diagnostics,
             )
+
+    if decision.blocked and is_entry(baseline_action):
+        if strategy_config.mode is PaperStrategyMode.SHADOW and risk_reason is None:
+            operational_state.counters.record_block(
+                decision.blocked_reason or "unknown", shadow=True
+            )
+            operational_state.counters.entries_allowed += 1
+        else:
+            operational_state.counters.record_block(
+                decision.blocked_reason or "unknown", shadow=False
+            )
+    elif is_entry(baseline_action):
+        operational_state.counters.entries_allowed += 1
 
     if decision.blocked:
         print(
@@ -448,6 +505,36 @@ def run_controller(args: argparse.Namespace) -> int:
             "stop_loss" if stop_triggered else "signal"
         ),
     )
+
+    operational_state.last_processed_closed_candle = latest_candle.timestamp
+    operational_state.last_journal_sequence += 1
+    operational_state.update_risk(
+        controller_equity(result.state, current_price),
+        safety_config,
+        now=now,
+    )
+    runtime_state_store.save(operational_state)
+
+    if strategy_config.shadow_diagnostics_enabled:
+        record = build_shadow_record(
+            decision=decision,
+            latest_candle=latest_candle,
+            state=before_state,
+            state_after=result.state,
+            controller_run_identifier=str(uuid4()),
+            price=current_price,
+            data_age_seconds=data_age_seconds,
+            journal_sequence=operational_state.last_journal_sequence,
+            baseline_trade_executed=(
+                result.execution is not None
+                and decision.execution_signal.action
+                == decision.baseline_signal.action
+            ),
+        )
+        try:
+            ShadowDecisionJournal(diagnostics_path).append(record)
+        except ValueError as exc:
+            print(f"Decision journal error: {exc}", file=sys.stderr)
 
     # Отмечаем свечу обработанной только после успешного
     # завершения торгового контура.
@@ -557,12 +644,25 @@ def run_controller(args: argparse.Namespace) -> int:
     )
 
 
+def controller_equity(
+    state: TradingControllerState,
+    price: Decimal,
+) -> Decimal:
+    """Mark the paper position to market for risk limits."""
+    return state.virtual_balance + state.position_quantity * price
+
+
 def build_shadow_record(
     *,
     decision: PaperStrategyDecision,
     latest_candle,
     state: TradingControllerState,
     controller_run_identifier: str,
+    state_after: TradingControllerState | None = None,
+    price: Decimal | None = None,
+    data_age_seconds: float | None = None,
+    journal_sequence: int | None = None,
+    baseline_trade_executed: bool = False,
 ) -> ShadowDecisionRecord:
     position = "long" if state.has_open_position else "flat"
     unique_identifier = (
@@ -592,6 +692,29 @@ def build_shadow_record(
         unique_candle_identifier=unique_identifier,
         controller_run_identifier=controller_run_identifier,
         detector_error=decision.detector_diagnostics.error_type,
+        effective_action=decision.execution_signal.action.value,
+        filter_mode=decision.mode.value,
+        price=str(price) if price is not None else None,
+        position_state_before=position,
+        position_state_after=(
+            "long"
+            if state_after is not None and state_after.has_open_position
+            else "flat"
+        ),
+        data_age_seconds=data_age_seconds,
+        runtime_instance_id=controller_run_identifier,
+        shadow_would_block=(
+            decision.mode is PaperStrategyMode.SHADOW
+            and decision.blocked
+        ),
+        shadow_block_reason=(
+            decision.blocked_reason
+            if decision.mode is PaperStrategyMode.SHADOW
+            and decision.blocked
+            else None
+        ),
+        baseline_trade_executed=baseline_trade_executed,
+        journal_sequence=journal_sequence,
     )
 
 

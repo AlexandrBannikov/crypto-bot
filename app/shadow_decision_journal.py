@@ -28,6 +28,20 @@ class ShadowDecisionRecord:
     unique_candle_identifier: str
     controller_run_identifier: str | None = None
     detector_error: str | None = None
+    effective_action: str | None = None
+    filter_mode: str | None = None
+    price: str | None = None
+    position_state_before: str | None = None
+    position_state_after: str | None = None
+    strategy_name: str = "ema_cross"
+    strategy_version: str = "1"
+    detector_version: str = "market_regime_v1"
+    data_age_seconds: float | None = None
+    runtime_instance_id: str | None = None
+    shadow_would_block: bool = False
+    shadow_block_reason: str | None = None
+    baseline_trade_executed: bool = False
+    journal_sequence: int | None = None
 
     @property
     def deduplication_key(self) -> str:

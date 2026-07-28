@@ -71,7 +71,6 @@ def test_filtered_allows_valid_entry() -> None:
     ("detected", "reason"),
     [
         (regime(MarketTrend.RANGE), "range"),
-        (regime(MarketTrend.TREND_DOWN), "downtrend"),
         (
             regime(
                 MarketTrend.TREND_UP,
@@ -90,6 +89,17 @@ def test_filtered_blocks_invalid_entry(detected, reason) -> None:
 
     assert decision.execution_signal.action is TradeAction.HOLD
     assert decision.blocked_reason == reason
+
+
+def test_runtime_policy_keeps_other_model_reasons_but_does_not_block_them() -> None:
+    strategy_router, _ = router(
+        PaperStrategyMode.ENFORCE,
+        regime(MarketTrend.TREND_DOWN),
+    )
+
+    decision = strategy_router.route(Signal.BUY, candles())
+
+    assert decision.execution_signal.action is TradeAction.OPEN_LONG
 
 
 @pytest.mark.parametrize(
