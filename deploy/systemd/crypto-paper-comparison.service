@@ -1,0 +1,10 @@
+[Unit]
+Description=Generate production versus candidate paper comparison
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/paper-candidate.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/report_paper_comparison.py
+StandardOutput=journal
+StandardError=journal

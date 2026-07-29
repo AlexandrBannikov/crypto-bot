@@ -44,6 +44,9 @@ class TelegramPaths:
     trade_journal: Path
     decision_journal: Path
     notification_state: Path
+    candidate_state: Path = Path("state/bybit_candidate_controller.json")
+    candidate_trade_journal: Path = Path("state/bybit_candidate_trades.jsonl")
+    candidate_decision_journal: Path = Path("state/bybit_candidate_decisions.jsonl")
 
     @classmethod
     def from_env(
@@ -85,6 +88,24 @@ class TelegramPaths:
                 os.environ.get(
                     "TELEGRAM_NOTIFICATION_STATE_PATH",
                     "state/telegram_notifications.json",
+                )
+            ),
+            candidate_state=Path(
+                os.environ.get(
+                    "CANDIDATE_STATE_PATH",
+                    "state/bybit_candidate_controller.json",
+                )
+            ),
+            candidate_trade_journal=Path(
+                os.environ.get(
+                    "CANDIDATE_TRADE_JOURNAL_PATH",
+                    "state/bybit_candidate_trades.jsonl",
+                )
+            ),
+            candidate_decision_journal=Path(
+                os.environ.get(
+                    "CANDIDATE_DECISION_JOURNAL_PATH",
+                    "state/bybit_candidate_decisions.jsonl",
                 )
             ),
         )
@@ -663,7 +684,7 @@ def format_morning_report(
         start -= timedelta(days=1)
     period = _report_period(paths, start, current)
     c = snapshot.counters
-    return "\n".join(
+    production = "\n".join(
         [
             "Утренний отчёт crypto-bot",
             f"Период: {start.isoformat()} — {current.isoformat()}",
@@ -688,6 +709,7 @@ def format_morning_report(
             f"Health: {snapshot.health_status}; API {snapshot.api_status}",
         ]
     )
+    return production + "\n\n" + _candidate_report_block(paths)
 
 
 def format_evening_report(
@@ -714,7 +736,7 @@ def format_evening_report(
         + snapshot.counters.get("stale_data_rejections", 0)
         + snapshot.counters.get("risk_limit_halts", 0)
     )
-    return "\n".join(
+    production = "\n".join(
         [
             "Вечерний отчёт crypto-bot",
             f"Период: {start.isoformat()} — {current.isoformat()}",
@@ -730,6 +752,39 @@ def format_evening_report(
             f"Система: {snapshot.health_status}; timer {snapshot.timer_state}; API {snapshot.api_status}",
             f"Открытая позиция: {snapshot.position} ({snapshot.position_quantity})",
             f"Active halt: {snapshot.active_halt_reason or 'none'}",
+        ]
+    )
+    return production + "\n\n" + _candidate_report_block(paths)
+
+
+def _candidate_report_block(paths: TelegramPaths) -> str:
+    from app.candidate_runtime import CandidateStateStore
+
+    if not paths.candidate_state.exists():
+        return "Candidate paper\nState: not initialized"
+    try:
+        state = CandidateStateStore(paths.candidate_state).load()
+        decisions = (
+            read_jsonl_safely(paths.candidate_decision_journal)[0]
+            if paths.candidate_decision_journal.exists() else []
+        )
+        trades = (
+            read_jsonl_safely(
+                paths.candidate_trade_journal,
+                parser=TradeJournalEntry.from_dict,
+            )[0]
+            if paths.candidate_trade_journal.exists() else []
+        )
+    except (OSError, ValueError) as exc:
+        return f"Candidate paper\nCandidate runtime problem: {type(exc).__name__}"
+    return "\n".join(
+        [
+            "Candidate paper — ADX + HYBRID Pullback",
+            f"Balance: {state.controller.virtual_balance}",
+            f"PnL: {state.controller.realized_pnl}",
+            f"Position: {'LONG' if state.controller.has_open_position else 'FLAT'}",
+            f"Decisions/trades: {len(decisions)}/{len(trades)}",
+            f"Last candle: {state.last_processed_candle}",
         ]
     )
 
@@ -796,6 +851,71 @@ def format_mode(snapshot: RuntimeSnapshot) -> str:
     )
 
 
+def format_candidate(paths: TelegramPaths) -> str:
+    from app.candidate_runtime import CandidateStateStore
+
+    if not paths.candidate_state.exists():
+        return "Candidate paper ещё не инициализирован."
+    try:
+        state = CandidateStateStore(paths.candidate_state).load()
+        decisions = (
+            read_jsonl_safely(paths.candidate_decision_journal)[0]
+            if paths.candidate_decision_journal.exists()
+            else []
+        )
+        service = _systemd_unit_status("crypto-paper-candidate.service")
+    except (OSError, ValueError) as exc:
+        return f"Candidate runtime problem: {type(exc).__name__}"
+    latest = decisions[-3:]
+    recent = ", ".join(
+        f"{row.get('candle_timestamp')}:{row.get('decision')}"
+        for row in latest
+    ) or "none"
+    controller = state.controller
+    return "\n".join(
+        [
+            "Candidate paper (read-only)",
+            "Mode: PAPER; LIVE disabled",
+            "Strategy: ADX + HYBRID Pullback",
+            f"Balance: {controller.virtual_balance}",
+            f"Position: {'LONG' if controller.has_open_position else 'FLAT'}",
+            f"Recent decisions: {recent}",
+            f"Closed trades: {controller.closed_trades}",
+            f"PnL: {controller.realized_pnl}",
+            f"Health: {service.active_state}; halt {state.active_halt or 'none'}",
+        ]
+    )
+
+
+def format_comparison(paths: TelegramPaths) -> str:
+    from app.paper_comparator import compare_paper_runtimes
+
+    if not paths.candidate_state.exists():
+        return "Comparison unavailable: candidate paper not initialized."
+    try:
+        report = compare_paper_runtimes(
+            production_state=paths.controller_state,
+            production_trades=paths.trade_journal,
+            production_decisions=paths.decision_journal,
+            candidate_state=paths.candidate_state,
+            candidate_trades=paths.candidate_trade_journal,
+            candidate_decisions=paths.candidate_decision_journal,
+        )
+    except (OSError, ValueError) as exc:
+        return f"Comparison unavailable: {type(exc).__name__}"
+    return "\n".join(
+        [
+            "Production vs candidate paper",
+            f"Balance: {report['production']['balance']} / {report['candidate']['balance']}",
+            f"Balance difference (candidate-prod): {report['balance_difference']}",
+            f"PnL: {report['production']['pnl']} / {report['candidate']['pnl']}",
+            f"PnL difference: {report['pnl_difference']}",
+            f"Decision divergences: {report['decision_divergences']}",
+            "Наблюдение paper-контуров; не рекомендация реальной торговли.",
+        ]
+    )
+
+
 HELP_TEXT = "\n".join(
     [
         "Команды crypto-bot:",
@@ -803,6 +923,8 @@ HELP_TEXT = "\n".join(
         "/trades — последние 5 paper-сделок",
         "/decision — последнее shadow-решение",
         "/mode — режим исполнения",
+        "/candidate — изолированный Strategy V2 candidate",
+        "/comparison — production против candidate",
         "/help — эта справка",
     ]
 )
@@ -822,6 +944,10 @@ def command_response(
         return format_decision(paths)
     if normalized == "/mode":
         return format_mode(snapshot)
+    if normalized == "/candidate":
+        return format_candidate(paths)
+    if normalized == "/comparison":
+        return format_comparison(paths)
     if normalized in {"/start", "/help"}:
         return HELP_TEXT
     return HELP_TEXT

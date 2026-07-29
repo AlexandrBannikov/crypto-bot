@@ -1,0 +1,11 @@
+[Unit]
+Description=Run isolated paper candidate every five minutes
+
+[Timer]
+OnCalendar=*-*-* *:01/5:15 UTC
+Persistent=true
+AccuracySec=1s
+Unit=crypto-paper-candidate.service
+
+[Install]
+WantedBy=timers.target

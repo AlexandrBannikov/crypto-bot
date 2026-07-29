@@ -1,0 +1,10 @@
+[Unit]
+Description=Check isolated paper candidate health
+
+[Timer]
+OnCalendar=*-*-* *:03/5:00 UTC
+Persistent=true
+Unit=crypto-paper-candidate-health.service
+
+[Install]
+WantedBy=timers.target

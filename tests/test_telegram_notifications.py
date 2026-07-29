@@ -197,6 +197,40 @@ def test_command_status_is_read_only(tmp_path) -> None:
     assert after == before
 
 
+def test_candidate_and_comparison_commands(tmp_path, monkeypatch) -> None:
+    from app.candidate_runtime import CandidateStateStore
+    from app.trading_controller_store import TradingControllerStateStore
+
+    runtime_paths = paths(tmp_path)
+    runtime_paths = runtime_paths.__class__(
+        runtime_paths.controller_state,
+        runtime_paths.runtime_state,
+        runtime_paths.last_candle,
+        runtime_paths.trade_journal,
+        runtime_paths.decision_journal,
+        runtime_paths.notification_state,
+        tmp_path / "candidate.json",
+        tmp_path / "candidate-trades.jsonl",
+        tmp_path / "candidate-decisions.jsonl",
+    )
+    TradingControllerStateStore(runtime_paths.controller_state).save(
+        TradingControllerStateStore(runtime_paths.controller_state).load()
+    )
+    CandidateStateStore(runtime_paths.candidate_state).save(
+        CandidateStateStore(runtime_paths.candidate_state).load()
+    )
+    monkeypatch.setattr(
+        "app.telegram_notifications._systemd_unit_status",
+        lambda unit: SystemdUnitStatus(unit, True, "inactive", result="success"),
+    )
+    assert "ADX + HYBRID Pullback" in command_response(
+        "/candidate", snapshot(), runtime_paths
+    )
+    comparison = command_response("/comparison", snapshot(), runtime_paths)
+    assert "Production vs candidate" in comparison
+    assert "не рекомендация" in comparison
+
+
 def test_foreign_chat_id_is_ignored_without_content_logging(
     caplog,
 ) -> None:

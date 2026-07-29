@@ -1,0 +1,10 @@
+[Unit]
+Description=Generate daily production versus candidate comparison
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 UTC
+Persistent=true
+Unit=crypto-paper-comparison.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check isolated paper candidate health
+After=crypto-paper-candidate.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/paper-candidate.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/check_candidate_health.py
+StandardOutput=journal
+StandardError=journal
