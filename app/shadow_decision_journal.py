@@ -42,6 +42,14 @@ class ShadowDecisionRecord:
     shadow_block_reason: str | None = None
     baseline_trade_executed: bool = False
     journal_sequence: int | None = None
+    strategy_id: str = "production"
+    signal: str | None = None
+    action: str | None = None
+    position_before: str | None = None
+    position_after: str | None = None
+    reason: str | None = None
+    decision_status: str = "produced"
+    status_reason: str | None = None
 
     @property
     def deduplication_key(self) -> str:

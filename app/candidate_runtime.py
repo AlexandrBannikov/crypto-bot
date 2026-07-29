@@ -192,6 +192,9 @@ def process_candidate_candles(
     runtime = TradingRuntime(ExecutionRunner(PaperExecutor(), allow_live=False))
     decision_journal = CandidateDecisionJournal(decision_journal_path)
     for candle in new_candles:
+        position_before = (
+            "LONG" if state.controller.has_open_position else "FLAT"
+        )
         causal = tuple(c for c in ordered if c.timestamp <= candle.timestamp)
         frame = _features(causal, config)
         row = frame.iloc[-1]
@@ -296,6 +299,10 @@ def process_candidate_candles(
         state.active_halt = None
         record = {
             "candle_timestamp": candle.timestamp,
+            "strategy_id": "candidate_adx_hybrid",
+            "signal": decision,
+            "action": action.value,
+            "position_before": position_before,
             "close": candle.close,
             "ema20": fast,
             "ema50": slow,
@@ -313,6 +320,9 @@ def process_candidate_candles(
             "decision": decision,
             "reason": reason,
             "position_after": "LONG" if state.controller.has_open_position else "FLAT",
+            "price": candle.close,
+            "decision_status": "produced",
+            "status_reason": None,
             "balance_after": str(state.controller.virtual_balance),
         }
         decision_journal.append(record)

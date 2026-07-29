@@ -1059,38 +1059,43 @@ def format_daily_comparison(
     now: datetime | None = None,
     timezone_name: str = "Asia/Yekaterinburg",
 ) -> str:
-    from app.paper_comparator import compare_paper_runtimes
+    from app.strategy_lab import (
+        LaboratoryConfig,
+        RankingThresholds,
+        StrategySpec,
+        build_report,
+        render_report,
+    )
 
-    current = now or datetime.now(timezone.utc)
-    kwargs = {
-        "production_state": paths.controller_state,
-        "production_trades": paths.trade_journal,
-        "production_decisions": paths.decision_journal,
-        "production_runtime_summary": paths.runtime_state,
-        "candidate_state": paths.candidate_state,
-        "candidate_trades": paths.candidate_trade_journal,
-        "candidate_decisions": paths.candidate_decision_journal,
-        "candidate_runtime_summary": paths.candidate_runtime_summary,
-        "now": current,
-        "timezone_name": timezone_name,
-    }
+    config = LaboratoryConfig(
+        initial_balance=Decimal("1000"),
+        fee_rate=Decimal("0.001"),
+        ranking=RankingThresholds(),
+        strategies=(
+            StrategySpec(
+                "production", "Production", True, "production",
+                paths.controller_state, paths.trade_journal,
+                paths.decision_journal, paths.runtime_state,
+            ),
+            StrategySpec(
+                "candidate_adx_hybrid", "ADX + HYBRID Pullback", True,
+                "candidate", paths.candidate_state,
+                paths.candidate_trade_journal,
+                paths.candidate_decision_journal,
+                paths.candidate_runtime_summary,
+            ),
+        ),
+    )
     try:
-        daily = compare_paper_runtimes(**kwargs, period="last_24h")
-        cumulative = compare_paper_runtimes(
-            **kwargs, period="since_candidate_start"
+        report = build_report(
+            config,
+            period="24h",
+            now=now or datetime.now(timezone.utc),
+            timezone_name=timezone_name,
         )
     except (OSError, ValueError) as exc:
         return f"Production vs Candidate\nComparison unavailable: {type(exc).__name__}"
-    text = _format_comparison_report(
-        daily, title="Production vs Candidate — прошедшие 24 часа"
-    )
-    return (
-        text
-        + "\nCumulative since candidate start: "
-        + f"PnL {cumulative['production']['cumulative_pnl']} / "
-        + f"{cumulative['candidate']['cumulative_pnl']}; "
-        + f"agreement {cumulative['decisions']['agreement_rate_percent']}%"
-    )
+    return render_report(report).rstrip()
 
 
 def _format_comparison_report(report: dict[str, Any], *, title: str) -> str:

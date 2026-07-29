@@ -743,6 +743,26 @@ def build_shadow_record(
         ),
         baseline_trade_executed=baseline_trade_executed,
         journal_sequence=journal_sequence,
+        strategy_id="production",
+        signal=decision.baseline_signal.action.value,
+        action=decision.execution_signal.action.value,
+        position_before=position,
+        position_after=(
+            "long"
+            if state_after is not None and state_after.has_open_position
+            else "flat"
+        ),
+        reason=(
+            decision.blocked_reason
+            or decision.detector_diagnostics.error_type
+            or "strategy decision produced"
+        ),
+        decision_status=(
+            "error"
+            if decision.detector_diagnostics.error_type
+            else "produced"
+        ),
+        status_reason=decision.detector_diagnostics.error_type,
     )
 
 

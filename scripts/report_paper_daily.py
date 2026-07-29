@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.paper_runtime_reports import load_period_data, shadow_summary, trade_summary, write_report
+from app.account_snapshot import calculate_account_snapshot, market_from_decisions
 from app.config import PaperStrategyConfig
 from app.regime_runtime import RegimeRuntimeStateStore
 from app.runtime_health import overall_status, run_health_checks
@@ -39,8 +40,22 @@ def create_report(args: argparse.Namespace) -> dict:
     operational_path = args.state_path.parent / "regime_runtime.json"
     operational = RegimeRuntimeStateStore(operational_path).load()
     strategy = PaperStrategyConfig.from_env()
-    ending = trades[-1].virtual_balance_after if trades else state.virtual_balance
-    beginning = ending - Decimal(summary["realised_pnl"])
+    market = market_from_decisions(shadows)
+    account = calculate_account_snapshot(
+        initial_balance="1000",
+        cash_balance=state.virtual_balance,
+        position_side="LONG" if state.has_open_position else "FLAT",
+        position_quantity=state.position_quantity,
+        entry_price=state.entry_price,
+        current_price=market["price"],
+        realized_pnl=state.realized_pnl,
+        opened_at=state.opened_at,
+        stop_loss_price=state.stop_loss,
+        now=end,
+    )
+    ending = account.equity
+    beginning = Decimal(operational.daily_starting_balance)
+    equity_change = ending - beginning if ending is not None else None
     checks, _ = run_health_checks(
         state_path=args.state_path, candle_path=args.state_path.parent / "trading_controller_last_candle.txt",
         journal_path=args.journal_path, shadow_path=args.shadow_path,
@@ -51,18 +66,33 @@ def create_report(args: argparse.Namespace) -> dict:
         "report_type": "daily", "timezone": args.timezone,
         "filter_mode": strategy.mode.value,
         "period_start": start.isoformat(), "period_end": end.isoformat(),
-        "beginning_balance": str(beginning), "ending_balance": str(ending),
+        "beginning_balance": str(beginning),
+        "ending_balance": str(ending) if ending is not None else "N/A",
+        "beginning_equity": str(beginning),
+        "ending_equity": str(ending) if ending is not None else "N/A",
+        "cash_balance": str(account.cash_balance),
+        "position_market_value": (
+            str(account.position_market_value)
+            if account.position_market_value is not None else "N/A"
+        ),
         "pnl": summary["realised_pnl"],
+        "realized_pnl": summary["realised_pnl"],
+        "unrealized_pnl": (
+            str(account.unrealized_pnl)
+            if account.unrealized_pnl is not None else "N/A"
+        ),
+        "unrealised_pnl": (
+            str(account.unrealized_pnl)
+            if account.unrealized_pnl is not None else "N/A"
+        ),
+        "total_pnl": str(equity_change) if equity_change is not None else "N/A",
         "daily_return_percent": (
-            str(
-                (ending - beginning) / beginning * Decimal("100")
-            )
-            if beginning
-            else "0"
+            str(equity_change / beginning * Decimal("100"))
+            if beginning and equity_change is not None else "N/A"
         ),
         "current_drawdown_percent": operational.current_drawdown_percent,
         "maximum_drawdown_percent": operational.maximum_drawdown_percent,
-        **summary, "unrealised_pnl": None,
+        **summary,
         "open_position_at_end": {
             "side": "long" if state.has_open_position else "flat",
             "quantity": str(state.position_quantity), "entry_price": str(state.entry_price) if state.entry_price else None,

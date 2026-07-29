@@ -1,0 +1,31 @@
+{
+  "initial_balance": "1000",
+  "fee_rate": "0.001",
+  "ranking": {
+    "minimum_comparable_candles": 20,
+    "minimum_closed_trades": 5,
+    "minimum_calendar_days": 7
+  },
+  "strategies": [
+    {
+      "strategy_id": "production",
+      "display_name": "Production",
+      "enabled": true,
+      "kind": "production",
+      "state": "state/trading_controller.json",
+      "trades": "state/controller_trade_journal.jsonl",
+      "decisions": "state/shadow_decisions.jsonl",
+      "runtime_summary": "state/regime_runtime.json"
+    },
+    {
+      "strategy_id": "candidate_adx_hybrid",
+      "display_name": "ADX + HYBRID Pullback",
+      "enabled": true,
+      "kind": "candidate",
+      "state": "state/bybit_candidate_controller.json",
+      "trades": "state/bybit_candidate_trades.jsonl",
+      "decisions": "state/bybit_candidate_decisions.jsonl",
+      "runtime_summary": "state/bybit_candidate_runtime.json"
+    }
+  ]
+}
