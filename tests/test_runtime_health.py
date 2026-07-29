@@ -1,8 +1,13 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app.runtime_health import HealthStatus, overall_status, run_health_checks
+from app.runtime_health import (
+    HealthStatus,
+    candle_timing_diagnostics,
+    overall_status,
+    run_health_checks,
+)
 
 
 NOW = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
@@ -43,6 +48,49 @@ def test_stale_candle_and_aggregation(tmp_path):
     paths = make_runtime(tmp_path, candle=int(NOW.timestamp()) - 200 * 60)
     checks, _ = run_health_checks(**paths, now=NOW, no_network=True, max_candle_age_minutes=90)
     assert overall_status(checks) == HealthStatus.CRITICAL
+
+
+def test_open_age_over_90_minutes_can_have_fresh_close_and_zero_lag(tmp_path):
+    now = datetime(2026, 1, 1, 12, 59, tzinfo=timezone.utc)
+    latest_open = int(datetime(2026, 1, 1, 11, tzinfo=timezone.utc).timestamp())
+    checks, context = run_health_checks(
+        **make_runtime(tmp_path, candle=latest_open), now=now,
+        market_fetcher=lambda: latest_open,
+    )
+    timing = next(item for item in checks if item.name == "last_candle")
+    lag = next(item for item in checks if item.name == "market_lag")
+    assert timing.status == HealthStatus.OK
+    assert timing.details["candle_open_age_seconds"] == 119 * 60
+    assert timing.details["candle_close_age_seconds"] == 59 * 60
+    assert lag.details["lag_candles"] == 0
+    assert context["market_candle"] == latest_open
+
+
+def test_real_lag_and_exact_hour_boundary():
+    boundary = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    expected = int(datetime(2026, 1, 1, 11, tzinfo=timezone.utc).timestamp())
+    exact = candle_timing_diagnostics(
+        expected, timeframe_minutes=60, now=boundary
+    )
+    stale = candle_timing_diagnostics(
+        expected - 3600, timeframe_minutes=60, now=boundary
+    )
+    assert exact["candle_close_age_seconds"] == 0
+    assert exact["expected_latest_closed_candle"] == expected
+    assert exact["stale_state"] is False
+    assert stale["market_lag_candles"] == 1
+    assert stale["stale_state"] is True
+
+
+def test_timezone_does_not_change_epoch_diagnostics():
+    utc = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+    plus_five = utc.astimezone(timezone(timedelta(hours=5)))
+    timestamp = int(datetime(2026, 1, 1, 11, tzinfo=timezone.utc).timestamp())
+    assert candle_timing_diagnostics(
+        timestamp, timeframe_minutes=60, now=utc
+    ) == candle_timing_diagnostics(
+        timestamp, timeframe_minutes=60, now=plus_five
+    )
 
 
 def test_bybit_unavailable_is_captured(tmp_path):

@@ -426,8 +426,12 @@ def collect_snapshot(
 
     checks, context = runtime_checks(current)
     last_candle = context.get("last_candle")
-    age = (
+    open_age = (
         max(0.0, current.timestamp() - last_candle)
+        if last_candle is not None else None
+    )
+    age = (
+        max(0.0, current.timestamp() - last_candle - 3600)
         if last_candle is not None
         else None
     )
@@ -448,8 +452,12 @@ def collect_snapshot(
             current = rechecked_at
             checks, context = runtime_checks(current)
             last_candle = context.get("last_candle")
-            age = (
+            open_age = (
                 max(0.0, current.timestamp() - last_candle)
+                if last_candle is not None else None
+            )
+            age = (
+                max(0.0, current.timestamp() - last_candle - 3600)
                 if last_candle is not None
                 else None
             )
@@ -461,10 +469,10 @@ def collect_snapshot(
                     item.name,
                     HealthStatus.CRITICAL if stale else HealthStatus.OK,
                     (
-                        "last candle exceeds maximum age plus grace "
+                        "last candle close exceeds maximum age plus grace "
                         f"({age / 60:.1f} minutes)"
                         if stale
-                        else f"last candle age is {age / 60:.1f} minutes"
+                        else f"last candle close age is {age / 60:.1f} minutes"
                     ),
                     {
                         **item.details,
@@ -576,7 +584,7 @@ def collect_snapshot(
         position=position,
         position_quantity=str(controller.position_quantity),
         last_candle=last_candle,
-        candle_age_seconds=age,
+        candle_age_seconds=open_age,
         market_lag_candles=(
             float(lag.details["lag_candles"]) if lag else None
         ),
@@ -1063,8 +1071,11 @@ def format_daily_comparison(
         LaboratoryConfig,
         RankingThresholds,
         StrategySpec,
-        build_report,
-        render_report,
+    )
+    from app.strategy_confidence import (
+        build_promotion_review,
+        load_promotion_config,
+        render_promotion_review,
     )
 
     config = LaboratoryConfig(
@@ -1087,15 +1098,31 @@ def format_daily_comparison(
         ),
     )
     try:
-        report = build_report(
+        promotion_path = Path(__file__).resolve().parents[1] / "config/strategy_lab.json"
+        operational = {}
+        for strategy_id, unit in (
+            ("production", "crypto-paper.timer"),
+            ("candidate_adx_hybrid", "crypto-paper-candidate.timer"),
+        ):
+            unit_status = _systemd_unit_status(unit)
+            operational[strategy_id] = {
+                "timer_status": unit_status.active_state,
+                "timer_active": (
+                    unit_status.active_state == "active"
+                    if unit_status.available else None
+                ),
+            }
+        report = build_promotion_review(
             config,
+            load_promotion_config(promotion_path),
             period="24h",
             now=now or datetime.now(timezone.utc),
             timezone_name=timezone_name,
+            operational=operational,
         )
     except (OSError, ValueError) as exc:
         return f"Production vs Candidate\nComparison unavailable: {type(exc).__name__}"
-    return render_report(report).rstrip()
+    return render_promotion_review(report, explain=True).rstrip()
 
 
 def _format_comparison_report(report: dict[str, Any], *, title: str) -> str:

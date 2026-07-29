@@ -6,6 +6,38 @@
     "minimum_closed_trades": 5,
     "minimum_calendar_days": 7
   },
+  "promotion_review": {
+    "confidence_weights": {
+      "sample": 0.25,
+      "data_quality": 0.20,
+      "performance": 0.10,
+      "risk": 0.15,
+      "stability": 0.20,
+      "operational": 0.10
+    },
+    "confidence_levels": [
+      {"name": "VERY_LOW", "minimum": 0, "maximum": 19},
+      {"name": "LOW", "minimum": 20, "maximum": 39},
+      {"name": "MODERATE", "minimum": 40, "maximum": 59},
+      {"name": "GOOD", "minimum": 60, "maximum": 79},
+      {"name": "HIGH", "minimum": 80, "maximum": 100}
+    ],
+    "minimum_days": 7,
+    "minimum_closed_trades": 5,
+    "minimum_comparable_candles": 20,
+    "minimum_decisions": 50,
+    "maximum_error_rate": 0.05,
+    "minimum_profit_factor": 1.0,
+    "maximum_drawdown_percent": 10.0,
+    "ready_confidence": 65,
+    "strong_confidence": 80,
+    "strong_return_advantage_percent": 2.0,
+    "rolling_periods": ["24h", "7d", "14d", "30d", "all"],
+    "block_on_active_halt": true,
+    "block_on_inactive_timer": true,
+    "block_on_stale_data": true,
+    "block_on_incompatible_config": true
+  },
   "strategies": [
     {
       "strategy_id": "production",

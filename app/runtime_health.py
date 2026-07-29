@@ -115,6 +115,46 @@ def _result(name: str, status: HealthStatus, message: str, details: dict[str, An
     return HealthCheckResult(name, status, message, details, now.isoformat())
 
 
+def candle_timing_diagnostics(
+    candle_open_timestamp: int,
+    *,
+    timeframe_minutes: int,
+    now: datetime,
+    max_cycle_delay_minutes: int = 30,
+) -> dict[str, Any]:
+    """Describe freshness for exchanges whose kline timestamp is open time."""
+    if timeframe_minutes <= 0:
+        raise ValueError("timeframe_minutes must be positive")
+    interval = timeframe_minutes * 60
+    current = int(now.timestamp())
+    candle_close = candle_open_timestamp + interval
+    expected_open = current // interval * interval - interval
+    lag_seconds = max(0, expected_open - candle_open_timestamp)
+    lag_candles = lag_seconds / interval
+    close_age = current - candle_close
+    cycle_delay = max(0, close_age)
+    # A matching expected candle is fresh even late in the hour: its close
+    # age naturally approaches one full timeframe. Cycle execution delay is
+    # reported separately and must come from service timestamps, not kline
+    # open time.
+    stale = lag_candles > 0
+    if lag_candles > 0:
+        reason = f"local state is {lag_candles:.1f} closed candles behind"
+    else:
+        reason = "latest expected closed candle is processed"
+    return {
+        "candle_open_timestamp": candle_open_timestamp,
+        "candle_close_timestamp": candle_close,
+        "candle_open_age_seconds": current - candle_open_timestamp,
+        "candle_close_age_seconds": close_age,
+        "expected_latest_closed_candle": expected_open,
+        "market_lag_candles": lag_candles,
+        "cycle_delay_seconds": cycle_delay,
+        "stale_state": stale,
+        "warning_reason": reason,
+    }
+
+
 def run_health_checks(
     *,
     state_path: Path,
@@ -154,13 +194,31 @@ def run_health_checks(
     try:
         timestamp = read_timestamp(candle_path)
         context["last_candle"] = timestamp
-        age = current.timestamp() - timestamp
-        status = HealthStatus.OK
-        if age > max_candle_age_minutes * 120:
-            status = HealthStatus.CRITICAL
-        elif age > max_candle_age_minutes * 60:
-            status = HealthStatus.WARNING
-        checks.append(_result("last_candle", status, f"last candle age is {max(0, age) / 60:.1f} minutes", {"path": str(candle_path), "timestamp": timestamp, "age_seconds": age}, current))
+        timing = candle_timing_diagnostics(
+            timestamp,
+            timeframe_minutes=int(timeframe),
+            now=current,
+            max_cycle_delay_minutes=max(
+                1, max_candle_age_minutes - int(timeframe)
+            ),
+        )
+        lag = float(timing["market_lag_candles"])
+        status = (
+            HealthStatus.CRITICAL
+            if lag > max_market_lag_candles * 2
+            else HealthStatus.WARNING
+            if timing["stale_state"]
+            else HealthStatus.OK
+        )
+        checks.append(
+            _result(
+                "last_candle",
+                status,
+                str(timing["warning_reason"]),
+                {"path": str(candle_path), **timing},
+                current,
+            )
+        )
     except (OSError, ValueError) as exc:
         checks.append(_result("last_candle", HealthStatus.CRITICAL, f"last candle timestamp unavailable: {exc}", {"path": str(candle_path)}, current))
 
@@ -202,7 +260,7 @@ def run_health_checks(
                 lag = max(0, market_timestamp - local)
                 lag_candles = lag / (int(timeframe) * 60)
                 status = HealthStatus.CRITICAL if lag_candles > max_market_lag_candles * 2 else HealthStatus.WARNING if lag_candles > max_market_lag_candles else HealthStatus.OK
-                checks.append(_result("market_lag", status, f"local state lags market by {lag_candles:.1f} candles", {"lag_seconds": lag, "lag_candles": lag_candles}, current))
+                checks.append(_result("market_lag", status, f"local state lags market by {lag_candles:.1f} candles", {"lag_seconds": lag, "lag_candles": lag_candles, "local_candle_open": local, "market_candle_open": market_timestamp}, current))
         except Exception as exc:
             checks.append(_result("bybit_api", HealthStatus.CRITICAL, f"Bybit public API unavailable: {type(exc).__name__}: {exc}", {}, current))
     return checks, context

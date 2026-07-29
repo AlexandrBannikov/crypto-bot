@@ -19,7 +19,7 @@ from app.trading_controller_store import TradingControllerStateStore
 
 NA = "N/A"
 VALID_STATUSES = {"produced", "missing", "error", "skipped"}
-PERIODS = ("today", "24h", "7d", "since_start", "all")
+PERIODS = ("today", "24h", "7d", "14d", "30d", "since_start", "all")
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +241,10 @@ def _period_bounds(
         return int((now - timedelta(hours=24)).timestamp()), end
     if period == "7d":
         return int((now - timedelta(days=7)).timestamp()), end
+    if period == "14d":
+        return int((now - timedelta(days=14)).timestamp()), end
+    if period == "30d":
+        return int((now - timedelta(days=30)).timestamp()), end
     local = now.astimezone(zone)
     return int(local.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()), end
 
@@ -326,6 +330,16 @@ def strategy_metrics(
         if total_pnl is not None else None
     )
     pnl_values = [trade.net_pnl for trade in period_trades]
+    daily_pnl: dict[str, Decimal] = {}
+    for trade in period_trades:
+        day = datetime.fromtimestamp(
+            _trade_time(trade), timezone.utc
+        ).date().isoformat()
+        daily_pnl[day] = daily_pnl.get(day, Decimal("0")) + trade.net_pnl
+    daily_returns = [
+        float(value / initial_balance * Decimal("100"))
+        for value in daily_pnl.values()
+    ]
     wins = [value for value in pnl_values if value > 0]
     losses = [value for value in pnl_values if value < 0]
     gross_profit = sum(wins, Decimal("0"))
@@ -379,6 +393,7 @@ def strategy_metrics(
         "fees": str(fees),
         "closed_trades_count": closed,
         "open_position_status": "OPEN" if snapshot.is_open else "FLAT",
+        "opened_at": snapshot.opened_at,
         "trades": closed,
         "wins": len(wins),
         "losses": len(losses),
@@ -400,6 +415,12 @@ def strategy_metrics(
         "number_of_errors": sum(
             item.decision_status == "error" for item in period_decisions
         ),
+        "number_of_missing": sum(
+            item.decision_status in {"missing", "skipped"}
+            for item in period_decisions
+        ),
+        "period_realized_pnl": str(sum(pnl_values, Decimal("0"))),
+        "daily_returns": daily_returns,
         "equity_curve": [str(value) for value in curve],
         "observation_start": (
             datetime.fromtimestamp(all_decisions[0].candle_timestamp, timezone.utc).isoformat()
