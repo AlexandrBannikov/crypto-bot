@@ -31,6 +31,9 @@ from app.trading_controller_store import TradingControllerStateStore
 
 
 LOGGER = logging.getLogger(__name__)
+SYSTEMCTL = "/usr/bin/systemctl"
+STALE_GRACE_SECONDS = 300
+STALE_RECHECK_SECONDS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +108,18 @@ class RuntimeSnapshot:
     health_status: str
     active_halt_reason: str | None
     counters: dict[str, int]
+    systemd_monitoring_detail: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SystemdUnitStatus:
+    unit: str
+    available: bool
+    active_state: str
+    sub_state: str | None = None
+    result: str | None = None
+    exec_main_status: int | None = None
+    detail: str | None = None
 
 
 @dataclass(slots=True)
@@ -211,39 +226,105 @@ class TelegramClient:
         )
 
 
-def _systemd_state(unit: str) -> str:
+def _systemd_unit_status(unit: str) -> SystemdUnitStatus:
+    properties = [
+        "ActiveState",
+        "SubState",
+        "Result",
+        "LastTriggerUSec",
+        "NextElapseUSecRealtime",
+    ]
+    if unit.endswith(".service"):
+        properties.append("ExecMainStatus")
     try:
-        result = subprocess.run(
-            ["systemctl", "is-active", unit],
+        active = subprocess.run(
+            [SYSTEMCTL, "is-active", unit],
             check=False,
             capture_output=True,
             text=True,
             timeout=5,
         )
-        value = result.stdout.strip()
-        return value or f"unknown (exit {result.returncode})"
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-
-
-def _cycle_failed() -> bool:
-    try:
-        result = subprocess.run(
+        shown = subprocess.run(
             [
-                "systemctl",
+                SYSTEMCTL,
                 "show",
-                "crypto-paper.service",
-                "--property=ExecMainStatus",
-                "--value",
+                unit,
+                f"--property={','.join(properties)}",
             ],
             check=False,
             capture_output=True,
             text=True,
             timeout=5,
         )
-        return result.returncode != 0 or result.stdout.strip() not in {"", "0"}
-    except (OSError, subprocess.SubprocessError):
-        return True
+    except (OSError, subprocess.SubprocessError) as exc:
+        return SystemdUnitStatus(
+            unit,
+            False,
+            "status unavailable",
+            detail=f"{type(exc).__name__}: {exc}",
+        )
+
+    if shown.returncode != 0:
+        detail = shown.stderr.strip() or active.stderr.strip()
+        return SystemdUnitStatus(
+            unit,
+            False,
+            "status unavailable",
+            detail=(
+                f"systemctl show exit {shown.returncode}: "
+                f"{detail or 'no diagnostic output'}"
+            ),
+        )
+
+    values = {}
+    for line in shown.stdout.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            values[key] = value
+    state = values.get("ActiveState") or active.stdout.strip()
+    if not state:
+        return SystemdUnitStatus(
+            unit,
+            False,
+            "status unavailable",
+            detail=(
+                f"systemctl is-active exit {active.returncode}; "
+                "systemctl show returned no ActiveState"
+            ),
+        )
+    raw_status = values.get("ExecMainStatus")
+    try:
+        exec_main_status = int(raw_status) if raw_status else None
+    except ValueError:
+        exec_main_status = None
+    return SystemdUnitStatus(
+        unit,
+        True,
+        state,
+        sub_state=values.get("SubState") or None,
+        result=values.get("Result") or None,
+        exec_main_status=exec_main_status,
+    )
+
+
+def _cycle_failed() -> bool:
+    status = _systemd_unit_status("crypto-paper.service")
+    if not status.available:
+        return False
+    return (
+        status.result not in {None, "", "success"}
+        or status.exec_main_status not in {None, 0}
+    )
+
+
+def _compat_systemd_status(unit: str, value: str) -> SystemdUnitStatus:
+    unavailable = value.startswith(("unknown", "status unavailable"))
+    return SystemdUnitStatus(
+        unit,
+        not unavailable,
+        "status unavailable" if unavailable else value,
+        detail=value if unavailable else None,
+    )
 
 
 def collect_snapshot(
@@ -251,8 +332,12 @@ def collect_snapshot(
     *,
     no_network: bool = False,
     now: datetime | None = None,
-    systemd_state: Callable[[str], str] = _systemd_state,
+    systemd_state: Callable[[str], str] | None = None,
+    systemd_probe: Callable[[str], SystemdUnitStatus] = _systemd_unit_status,
     market_fetcher: Callable[[], int] | None = None,
+    stale_grace_seconds: int = STALE_GRACE_SECONDS,
+    stale_recheck_seconds: int = STALE_RECHECK_SECONDS,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> tuple[RuntimeSnapshot, list[HealthCheckResult]]:
     current = now or datetime.now(timezone.utc)
     strategy = PaperStrategyConfig.from_env()
@@ -282,37 +367,76 @@ def collect_snapshot(
         )
     controller = TradingControllerStateStore(paths.controller_state).load()
     runtime = RegimeRuntimeStateStore(paths.runtime_state).load()
-    checks, context = run_health_checks(
-        state_path=paths.controller_state,
-        candle_path=paths.last_candle,
-        journal_path=paths.trade_journal,
-        shadow_path=paths.decision_journal,
-        # The Telegram contour does not need controller lock metadata.
-        # Avoid granting its DynamicUser access to this writable lock.
-        lock_path=None,
-        inspect_lock=False,
-        max_candle_age_minutes=max(1, max_data_age_seconds // 60),
-        no_network=no_network,
-        now=current,
-        market_fetcher=market_fetcher,
-    )
+    if stale_grace_seconds < 0 or stale_recheck_seconds < 0:
+        raise ValueError("stale grace and recheck must not be negative")
+
+    def runtime_checks(
+        checked_at: datetime,
+    ) -> tuple[list[HealthCheckResult], dict[str, Any]]:
+        return run_health_checks(
+            state_path=paths.controller_state,
+            candle_path=paths.last_candle,
+            journal_path=paths.trade_journal,
+            shadow_path=paths.decision_journal,
+            # The Telegram contour does not need controller lock metadata.
+            # Avoid granting its DynamicUser access to this writable lock.
+            lock_path=None,
+            inspect_lock=False,
+            # Telegram applies the paper-specific threshold and grace below.
+            max_candle_age_minutes=1_000_000,
+            no_network=no_network,
+            now=checked_at,
+            market_fetcher=market_fetcher,
+        )
+
+    checks, context = runtime_checks(current)
     last_candle = context.get("last_candle")
     age = (
         max(0.0, current.timestamp() - last_candle)
         if last_candle is not None
         else None
     )
-    if age is not None and age > max_data_age_seconds:
+    stale_after = max_data_age_seconds + stale_grace_seconds
+    if (
+        age is not None
+        and age > stale_after
+        and stale_recheck_seconds
+    ):
+        sleeper(stale_recheck_seconds)
+        rechecked_at = (
+            current + timedelta(seconds=stale_recheck_seconds)
+            if now is not None
+            else datetime.now(timezone.utc)
+        )
+        rechecked_timestamp = read_timestamp(paths.last_candle)
+        if rechecked_timestamp != last_candle:
+            current = rechecked_at
+            checks, context = runtime_checks(current)
+            last_candle = context.get("last_candle")
+            age = (
+                max(0.0, current.timestamp() - last_candle)
+                if last_candle is not None
+                else None
+            )
+    if age is not None:
+        stale = age > stale_after
         checks = [
             (
                 HealthCheckResult(
                     item.name,
-                    HealthStatus.CRITICAL,
+                    HealthStatus.CRITICAL if stale else HealthStatus.OK,
                     (
-                        "last candle exceeds configured maximum age "
+                        "last candle exceeds maximum age plus grace "
                         f"({age / 60:.1f} minutes)"
+                        if stale
+                        else f"last candle age is {age / 60:.1f} minutes"
                     ),
-                    {**item.details, "age_seconds": age},
+                    {
+                        **item.details,
+                        "age_seconds": age,
+                        "max_age_seconds": max_data_age_seconds,
+                        "grace_seconds": stale_grace_seconds,
+                    },
                     item.checked_at,
                 )
                 if item.name == "last_candle"
@@ -320,14 +444,96 @@ def collect_snapshot(
             )
             for item in checks
         ]
+
+    if systemd_state is None:
+        timer_status = systemd_probe("crypto-paper.timer")
+        service_status = systemd_probe("crypto-paper.service")
+    else:
+        timer_status = _compat_systemd_status(
+            "crypto-paper.timer",
+            systemd_state("crypto-paper.timer"),
+        )
+        service_status = _compat_systemd_status(
+            "crypto-paper.service",
+            systemd_state("crypto-paper.service"),
+        )
+
+    systemd_details = [
+        f"{status.unit}: {status.detail}"
+        for status in (timer_status, service_status)
+        if not status.available
+    ]
+    checked = current.isoformat()
+    if systemd_details:
+        checks.append(
+            HealthCheckResult(
+                "systemd_monitoring",
+                HealthStatus.WARNING,
+                "systemd status unavailable; runtime heartbeat is authoritative",
+                {"diagnostics": systemd_details},
+                checked,
+            )
+        )
+    elif timer_status.active_state != "active":
+        checks.append(
+            HealthCheckResult(
+                "paper_timer",
+                HealthStatus.CRITICAL,
+                f"paper timer is {timer_status.active_state}",
+                {"unit": timer_status.unit},
+                checked,
+            )
+        )
+    else:
+        checks.append(
+            HealthCheckResult(
+                "paper_timer",
+                HealthStatus.OK,
+                "paper timer is active",
+                {"unit": timer_status.unit},
+                checked,
+            )
+        )
+    if service_status.available:
+        failed_service = (
+            service_status.result not in {None, "", "success"}
+            or service_status.exec_main_status not in {None, 0}
+        )
+        checks.append(
+            HealthCheckResult(
+                "paper_service",
+                HealthStatus.CRITICAL if failed_service else HealthStatus.OK,
+                (
+                    "paper service has a confirmed failed result"
+                    if failed_service
+                    else f"paper service is {service_status.active_state}"
+                ),
+                {
+                    "unit": service_status.unit,
+                    "result": service_status.result,
+                    "exec_main_status": service_status.exec_main_status,
+                },
+                checked,
+            )
+        )
+    if runtime.active_halt_reason:
+        checks.append(
+            HealthCheckResult(
+                "active_halt",
+                HealthStatus.CRITICAL,
+                f"runtime halt is active: {runtime.active_halt_reason}",
+                {"reason": runtime.active_halt_reason},
+                checked,
+            )
+        )
     check_map = {item.name: item for item in checks}
     lag = check_map.get("market_lag")
     api = check_map.get("bybit_api")
     position = "LONG" if controller.has_open_position else "FLAT"
     snapshot = RuntimeSnapshot(
         checked_at=current.isoformat(),
-        timer_state=systemd_state("crypto-paper.timer"),
-        service_state=systemd_state("crypto-paper.service"),
+        timer_state=timer_status.active_state,
+        service_state=service_status.active_state,
         execution_mode="PAPER",
         filter_mode=strategy.mode.value,
         live_trading_enabled=live_enabled,
@@ -343,6 +549,9 @@ def collect_snapshot(
         health_status=overall_status(checks).name,
         active_halt_reason=runtime.active_halt_reason,
         counters=asdict(runtime.counters),
+        systemd_monitoring_detail=(
+            "; ".join(systemd_details) if systemd_details else None
+        ),
     )
     return snapshot, checks
 

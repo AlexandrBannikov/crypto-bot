@@ -16,6 +16,7 @@ from app.telegram_notifications import (
     NotificationState,
     NotificationStateStore,
     RuntimeSnapshot,
+    SystemdUnitStatus,
     TelegramClient,
     TelegramPaths,
     collect_snapshot,
@@ -353,6 +354,106 @@ def test_unexpected_live_enabled_is_visible_for_critical_alert(
     assert observed.live_trading_enabled is True
     assert all(item.name != "controller_lock" for item in checks)
     assert any("LIVE_TRADING_ENABLED" in item for item in sent)
+
+
+def test_collect_snapshot_allows_candle_staleness_grace(
+    tmp_path, monkeypatch
+) -> None:
+    runtime_paths = paths(tmp_path)
+    runtime_paths.controller_state.write_text(
+        json.dumps({"virtual_balance": "1000"}), encoding="utf-8"
+    )
+    runtime_paths.runtime_state.write_text(
+        json.dumps({"counters": {}}), encoding="utf-8"
+    )
+    current = datetime(2026, 7, 28, 4, 0, tzinfo=timezone.utc)
+    runtime_paths.last_candle.write_text(
+        str(int(current.timestamp()) - 1950), encoding="utf-8"
+    )
+    monkeypatch.setenv("MAX_DATA_AGE_SECONDS", "1800")
+
+    observed, checks = collect_snapshot(
+        runtime_paths,
+        no_network=True,
+        now=current,
+        systemd_state=lambda _: "active",
+        stale_grace_seconds=300,
+        stale_recheck_seconds=0,
+    )
+
+    candle = next(item for item in checks if item.name == "last_candle")
+    assert candle.status is HealthStatus.OK
+    assert observed.candle_age_seconds == 1950
+
+
+def test_collect_snapshot_treats_unavailable_systemd_as_warning(
+    tmp_path,
+) -> None:
+    runtime_paths = paths(tmp_path)
+    current = datetime(2026, 7, 28, 4, 0, tzinfo=timezone.utc)
+    runtime_paths.controller_state.write_text(
+        json.dumps({"virtual_balance": "1000"}), encoding="utf-8"
+    )
+    runtime_paths.last_candle.write_text(
+        str(int(current.timestamp())), encoding="utf-8"
+    )
+
+    observed, checks = collect_snapshot(
+        runtime_paths,
+        no_network=True,
+        now=current,
+        systemd_probe=lambda unit: SystemdUnitStatus(
+            unit,
+            False,
+            "status unavailable",
+            detail="permission denied",
+        ),
+        stale_recheck_seconds=0,
+    )
+
+    monitoring = next(
+        item for item in checks if item.name == "systemd_monitoring"
+    )
+    assert monitoring.status is HealthStatus.WARNING
+    assert observed.health_status == HealthStatus.WARNING.name
+    assert observed.systemd_monitoring_detail is not None
+    assert all(item.name != "paper_timer" for item in checks)
+
+
+def test_collect_snapshot_reports_confirmed_service_failure(
+    tmp_path,
+) -> None:
+    runtime_paths = paths(tmp_path)
+    current = datetime(2026, 7, 28, 4, 0, tzinfo=timezone.utc)
+    runtime_paths.controller_state.write_text(
+        json.dumps({"virtual_balance": "1000"}), encoding="utf-8"
+    )
+    runtime_paths.last_candle.write_text(
+        str(int(current.timestamp())), encoding="utf-8"
+    )
+
+    def probe(unit: str) -> SystemdUnitStatus:
+        if unit.endswith(".timer"):
+            return SystemdUnitStatus(unit, True, "active")
+        return SystemdUnitStatus(
+            unit,
+            True,
+            "failed",
+            result="exit-code",
+            exec_main_status=1,
+        )
+
+    observed, checks = collect_snapshot(
+        runtime_paths,
+        no_network=True,
+        now=current,
+        systemd_probe=probe,
+        stale_recheck_seconds=0,
+    )
+
+    service = next(item for item in checks if item.name == "paper_service")
+    assert service.status is HealthStatus.CRITICAL
+    assert observed.health_status == HealthStatus.CRITICAL.name
 
 
 def test_telegram_paths_follow_isolated_environment(tmp_path, monkeypatch):
