@@ -836,7 +836,47 @@ def format_evening_report(
         + _candidate_report_block(paths)
         + "\n\n"
         + format_daily_comparison(paths, now=now, timezone_name=timezone_name)
+        + "\n\n"
+        + _equity_history_block(now=now)
     )
+
+
+def _equity_history_block(*, now: datetime | None = None) -> str:
+    from app.equity_history import (
+        SnapshotMetrics,
+        SnapshotStorage,
+        load_equity_history_config,
+    )
+
+    root = Path(__file__).resolve().parents[1]
+    config = load_equity_history_config(
+        root / "config/equity_history.json", root=root
+    )
+    if not config.database_path.exists():
+        return "История капитала\nProduction: N/A — insufficient history\nCandidate: N/A — insufficient history"
+    metrics = SnapshotMetrics(SnapshotStorage(config.database_path), config)
+    current = now or datetime.now(timezone.utc)
+    lines = ["История капитала"]
+    for environment, label in (
+        ("production", "Production"), ("candidate", "Candidate")
+    ):
+        seven = metrics.rolling(environment, "7d", now=current)
+        thirty = metrics.rolling(environment, "30d", now=current)
+        aggregate = metrics.aggregate(environment)
+        reason = seven.get("insufficient_reason") or "none"
+        lines.extend(
+            [
+                f"{label}:",
+                f"  Equity {aggregate.get('latest_equity', 'N/A')}",
+                f"  7d / 30d return "
+                f"{seven.get('return_percent', 'N/A')} / "
+                f"{thirty.get('return_percent', 'N/A')}",
+                f"  Max DD {aggregate.get('max_drawdown_percent', 'N/A')}",
+                f"  Completeness {seven.get('completeness_pct', 'N/A')}",
+                f"  History note {reason}",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def _money(value: Decimal | None) -> str:

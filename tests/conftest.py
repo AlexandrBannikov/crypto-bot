@@ -75,6 +75,7 @@ def isolated_runtime_artifacts(tmp_path: Path, monkeypatch):
         ),
         "RUNTIME_REPORT_DIR": reports / "runtime",
         "PAPER_TRADE_LOG_PATH": logs / "paper_trades.csv",
+        "EQUITY_HISTORY_DB_PATH": state / "equity_history.db",
         "TELEGRAM_NOTIFICATION_STATE_PATH": (
             state / "telegram_notifications.json"
         ),

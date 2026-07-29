@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal
 import os
 from pathlib import Path
 import sys
+from zoneinfo import ZoneInfo
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -14,7 +17,19 @@ from app.execution import ExecutionMode
 from app.process_lock import ProcessLock
 from app.regime_runtime import RegimeRuntimeStateStore
 from app.runtime import Runtime, build_runtime
-from app.runtime_health import HealthStatus, run_health_checks
+from app.runtime_health import (
+    HealthStatus,
+    read_jsonl_safely,
+    read_timestamp,
+    run_health_checks,
+)
+from app.equity_history import (
+    SCHEMA_VERSION,
+    SnapshotStorage,
+    load_equity_history_config,
+)
+from app.account_snapshot import market_from_decisions
+from app.trading_controller_store import TradingControllerStateStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +204,125 @@ def run_checks(*, no_network: bool = False) -> int:
         ):
             label = "FAIL"
         checks.append((label, item.name, item.message))
+
+    history_config = load_equity_history_config(
+        PROJECT_ROOT / "config/equity_history.json", root=PROJECT_ROOT
+    )
+    try:
+        history_storage = SnapshotStorage(history_config.database_path)
+        version = history_storage.schema_version()
+        checks.append(
+            (
+                "PASS" if version == SCHEMA_VERSION else "WARN"
+                if version == 0 else "FAIL",
+                "equity_history_db",
+                (
+                    f"schema version {version}; production/candidate separated"
+                    if version else "database not initialized yet"
+                ),
+            )
+        )
+        latest_snapshot = history_storage.latest("production")
+        if latest_snapshot is None:
+            checks.extend(
+                [
+                    ("WARN", "equity_reconciliation", "no production snapshot yet; statistical history is immature"),
+                    ("WARN", "snapshot_freshness", "no production snapshot yet"),
+                    ("WARN", "snapshot_market_lag", "no production snapshot yet"),
+                ]
+            )
+        else:
+            controller = TradingControllerStateStore(state_path).load()
+            decision_rows = (
+                read_jsonl_safely(decision_path)[0]
+                if decision_path.exists() else []
+            )
+            market = market_from_decisions(decision_rows)
+            price = (
+                Decimal(str(market["price"]))
+                if market["price"] is not None else None
+            )
+            expected = controller.virtual_balance + (
+                controller.position_quantity * price
+                if controller.has_open_position and price is not None
+                else Decimal("0")
+            )
+            difference = abs(expected - latest_snapshot.equity)
+            reconciled = difference <= history_config.reconciliation_tolerance
+            checks.append(
+                (
+                    "PASS" if reconciled else "FAIL",
+                    "equity_reconciliation",
+                    f"difference={difference}",
+                )
+            )
+            local_candle = read_timestamp(candle_path)
+            expected_close = local_candle + 3600
+            snapshot_close = latest_snapshot.candle_close_timestamp
+            lag_seconds = (
+                max(0, expected_close - snapshot_close)
+                if snapshot_close is not None else None
+            )
+            fresh = lag_seconds == 0
+            checks.append(
+                (
+                    "PASS" if fresh else "WARN",
+                    "snapshot_freshness",
+                    (
+                        "latest snapshot matches paper state candle"
+                        if fresh else f"snapshot lag seconds={lag_seconds}"
+                    ),
+                )
+            )
+            checks.append(
+                (
+                    "PASS" if fresh else "WARN",
+                    "snapshot_market_lag",
+                    f"lag_candles={lag_seconds / 3600 if lag_seconds is not None else 'N/A'}",
+                )
+            )
+            history_rows = history_storage.query(environment="production")
+            invalid_recent = sum(
+                item.data_quality_status == "INVALID"
+                for item in history_rows[-20:]
+            )
+            checks.append(
+                (
+                    "PASS" if invalid_recent == 0 else "FAIL",
+                    "equity_history_quality",
+                    f"invalid_recent_snapshots={invalid_recent}",
+                )
+            )
+            zone = ZoneInfo(history_config.timezone)
+            local_now = datetime.now(timezone.utc).astimezone(zone)
+            today = local_now.date().isoformat()
+            daily_exists = any(
+                item.snapshot_reason == "daily_close"
+                and item.source_cycle_id == f"daily:{today}"
+                for item in history_rows
+            )
+            due = (
+                local_now.hour,
+                local_now.minute,
+            ) >= (
+                history_config.daily_snapshot_hour,
+                history_config.daily_snapshot_minute,
+            )
+            checks.append(
+                (
+                    "PASS" if daily_exists or not due else "WARN",
+                    "daily_snapshot_status",
+                    (
+                        f"daily snapshot exists for {today}"
+                        if daily_exists
+                        else f"daily snapshot not due or unavailable for {today}"
+                    ),
+                )
+            )
+    except Exception as exc:
+        checks.append(
+            ("FAIL", "equity_history_db", f"{type(exc).__name__}: {exc}")
+        )
 
     # Acquiring and releasing the real lock is a read-safe operational test;
     # a held lock is reported by run_health_checks and is not disturbed.

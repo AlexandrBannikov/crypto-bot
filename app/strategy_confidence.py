@@ -11,6 +11,11 @@ from typing import Any
 
 from app.strategy_lab import LaboratoryConfig, NA, build_report
 from app.runtime_health import candle_timing_diagnostics, read_jsonl_safely
+from app.equity_history import (
+    SnapshotMetrics,
+    SnapshotStorage,
+    load_equity_history_config,
+)
 
 
 RECOMMENDATIONS = {
@@ -183,6 +188,7 @@ def stability_from_windows(
             "score": 0,
             "status": "UNAVAILABLE",
             "reason": "fewer than two independent rolling windows",
+            "source": "UNAVAILABLE",
         }
     returns = [float(_number(item["return_percent"])) for item in usable]
     drawdowns = [
@@ -216,6 +222,11 @@ def stability_from_windows(
         "return_dispersion": dispersion,
         "recent_deterioration": recent_worse,
         "usable_windows": len(usable),
+        "source": (
+            "SNAPSHOT_HISTORY"
+            if all(item.get("source") == "SNAPSHOT_HISTORY" for item in usable)
+            else "LEGACY_RECONSTRUCTION"
+        ),
     }
 
 
@@ -227,6 +238,14 @@ def rolling_metrics(
     timezone_name: str,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     output: dict[str, dict[str, dict[str, Any]]] = {}
+    history_config = load_equity_history_config(
+        Path(__file__).resolve().parents[1] / "config/equity_history.json",
+        root=Path(__file__).resolve().parents[1],
+    )
+    history_metrics = (
+        SnapshotMetrics(SnapshotStorage(history_config.database_path), history_config)
+        if history_config.database_path.exists() else None
+    )
     for period in promotion.rolling_periods:
         report = build_report(
             laboratory, period=period, now=now, timezone_name=timezone_name
@@ -293,7 +312,43 @@ def rolling_metrics(
                     "available" if history_available
                     else "insufficient history"
                 ),
+                "source": (
+                    "LEGACY_RECONSTRUCTION" if history_available
+                    else "UNAVAILABLE"
+                ),
             }
+            if history_metrics is not None:
+                environment = (
+                    "production" if strategy_id == "production" else "candidate"
+                )
+                historical = history_metrics.rolling(
+                    environment, period, now=now
+                )
+                if historical["status"] == "AVAILABLE":
+                    target = output[strategy_id][period]
+                    target.update(
+                        {
+                            "start_equity": historical["start_equity"],
+                            "end_equity": historical["end_equity"],
+                            "pnl": historical["pnl"],
+                            "return_percent": historical["return_percent"],
+                            "max_drawdown_percent": historical[
+                                "max_drawdown_percent"
+                            ],
+                            "closed_trades": historical["closed_trades"],
+                            "win_rate": historical["win_rate"],
+                            "profit_factor": historical["profit_factor"],
+                            "fees": historical["fees"],
+                            "exposure_percent": historical["exposure_percent"],
+                            "daily_return_volatility": historical[
+                                "daily_volatility"
+                            ],
+                            "history_status": "available",
+                            "source": "SNAPSHOT_HISTORY",
+                            "completeness_pct": historical["completeness_pct"],
+                            "missing_days": historical["missing_days"],
+                        }
+                    )
     return output
 
 

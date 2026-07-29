@@ -266,7 +266,35 @@ def test_rolling_periods_and_insufficient_open_history(monkeypatch):
     )
     assert calls == ["24h", "7d", "14d", "30d", "all"]
     assert result["production"]["24h"]["history_status"] == "available"
+    assert result["production"]["24h"]["source"] == "LEGACY_RECONSTRUCTION"
     assert result["production"]["24h"]["daily_return_volatility"] == .5
     assert result["candidate"]["7d"]["history_status"] == "insufficient history"
+    assert result["candidate"]["7d"]["source"] == "UNAVAILABLE"
     assert result["candidate"]["7d"]["pnl"] == "N/A"
     assert result["candidate"]["all"]["unrealized_pnl"] == "2"
+
+
+def test_stability_reports_snapshot_source_when_all_windows_are_historical():
+    source_windows = windows("1", "2", "3")
+    for item in source_windows.values():
+        item["source"] = "SNAPSHOT_HISTORY"
+    result = stability_from_windows(source_windows)
+    assert result["source"] == "SNAPSHOT_HISTORY"
+
+
+def test_history_source_label_does_not_artificially_raise_confidence():
+    legacy = windows("1", "2", "3")
+    snapshot_windows = windows("1", "2", "3")
+    for item in legacy.values():
+        item["source"] = "LEGACY_RECONSTRUCTION"
+    for item in snapshot_windows.values():
+        item["source"] = "SNAPSHOT_HISTORY"
+    first = calculate_confidence(
+        metrics(), comparable_candles=100, windows=legacy,
+        operational={}, config=config(), now=NOW,
+    )
+    second = calculate_confidence(
+        metrics(), comparable_candles=100, windows=snapshot_windows,
+        operational={}, config=config(), now=NOW,
+    )
+    assert first["confidence_score"] == second["confidence_score"]

@@ -25,6 +25,12 @@ from app.config import (
     RuntimeSafetyConfig,
 )
 from app.execution_runner import ExecutionRunner
+from app.equity_history import (
+    SnapshotService,
+    SnapshotStorage,
+    load_equity_history_config,
+    read_trades as read_equity_trades,
+)
 from app.indicators import ema
 from app.paper_executor import PaperExecutor
 from app.paper_strategy_router import (
@@ -401,6 +407,44 @@ def run_controller(args: argparse.Namespace) -> int:
         and latest_candle.timestamp
         <= last_processed_timestamp
     ):
+        try:
+            history_config = load_equity_history_config(
+                PROJECT_ROOT / "config/equity_history.json",
+                root=PROJECT_ROOT,
+            )
+            history_storage = SnapshotStorage(history_config.database_path)
+            candle_close = latest_candle.timestamp + int(INTERVAL) * 60
+            history_service = SnapshotService(
+                history_storage, history_config
+            )
+            if not history_storage.has_candle(
+                "production", "production", candle_close
+            ):
+                recovery_state = TradingControllerStateStore(STATE_PATH).load()
+                recovered, _ = history_service.capture(
+                    environment="production", strategy_name="production",
+                    state=recovery_state,
+                    trades=read_equity_trades(JOURNAL_PATH),
+                    market_price=Decimal(str(latest_candle.close)),
+                    candle_open_timestamp=latest_candle.timestamp,
+                    timeframe_minutes=int(INTERVAL), symbol=SYMBOL,
+                    reason="startup_recovery",
+                    source_cycle_id=(
+                        f"production:{latest_candle.timestamp}:recovery"
+                    ),
+                )
+                if recovered is not None:
+                    history_service.maybe_daily_close(recovered, now=now)
+            else:
+                existing = history_storage.latest("production")
+                if existing is not None:
+                    history_service.maybe_daily_close(existing, now=now)
+        except Exception as exc:
+            print(
+                "Equity history observer warning: "
+                f"{type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
         print()
         print("===== BYBIT CONTROLLER PAPER =====")
         print(f"Инструмент: {SYMBOL}")
@@ -569,6 +613,47 @@ def run_controller(args: argparse.Namespace) -> int:
     save_last_candle_timestamp(
         latest_candle.timestamp
     )
+    try:
+        history_config = load_equity_history_config(
+            PROJECT_ROOT / "config/equity_history.json",
+            root=PROJECT_ROOT,
+        )
+        history = SnapshotService(
+            SnapshotStorage(history_config.database_path), history_config
+        )
+        cycle_snapshot, _ = history.capture(
+            environment="production", strategy_name="production",
+            state=result.state, trades=read_equity_trades(JOURNAL_PATH),
+            market_price=current_price,
+            candle_open_timestamp=latest_candle.timestamp,
+            timeframe_minutes=int(INTERVAL), symbol=SYMBOL,
+            reason="cycle",
+            source_cycle_id=f"production:{latest_candle.timestamp}",
+            snapshot_at=now,
+        )
+        if cycle_snapshot is not None:
+            history.maybe_daily_close(cycle_snapshot, now=now)
+        if before_state.has_open_position != result.state.has_open_position:
+            history.capture(
+                environment="production", strategy_name="production",
+                state=result.state, trades=read_equity_trades(JOURNAL_PATH),
+                market_price=current_price,
+                candle_open_timestamp=latest_candle.timestamp,
+                timeframe_minutes=int(INTERVAL), symbol=SYMBOL,
+                reason=(
+                    "trade_open" if result.state.has_open_position
+                    else "trade_close"
+                ),
+                source_cycle_id=(
+                    f"production:{latest_candle.timestamp}:trade"
+                ),
+                snapshot_at=now,
+            )
+    except Exception as exc:
+        print(
+            f"Equity history observer warning: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
 
     print()
     print("===== BYBIT CONTROLLER PAPER =====")

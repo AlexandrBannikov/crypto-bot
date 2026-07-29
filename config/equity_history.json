@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "database_path": "state/equity_history.db",
+  "timezone": "Asia/Yekaterinburg",
+  "create_cycle_snapshots": true,
+  "create_trade_snapshots": true,
+  "create_daily_snapshots": true,
+  "daily_snapshot_hour": 23,
+  "daily_snapshot_minute": 55,
+  "reconciliation_tolerance": 0.000001,
+  "max_boundary_age_seconds": 7200,
+  "minimum_window_completeness_pct": 80,
+  "snapshot_retention_days": null,
+  "allow_partial_snapshots": true
+}
