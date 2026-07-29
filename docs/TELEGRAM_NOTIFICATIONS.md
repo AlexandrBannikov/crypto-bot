@@ -40,7 +40,7 @@ stays private (`0600`) and is neither configured nor inspected by Telegram.
 ## Components
 
 - `telegram_bot.py` long-polls commands `/start`, `/status`, `/trades`,
-  `/decision`, `/mode`, and `/help`.
+  `/decision`, `/mode`, `/candidate`, `/comparison`, and `/help`.
 - `telegram_report.py morning|evening` builds a report first and sends it
   afterwards.
 - `telegram_health.py` checks health every five minutes and sends only state
@@ -83,3 +83,76 @@ only the relevant Telegram unit fail; it does not call or mutate the trading
 controller. Production controller state, trade journal, decision journal, and
 last-candle marker are opened read-only. Notification state uses atomic file
 replacement and is kept outside trading state.
+`/comparison` формирует компактное read-only сравнение production и candidate
+с момента запуска candidate. Оно показывает метрики обоих контуров, deltas,
+agreement rate и до трёх последних расхождений. Длинный ответ разбивается не
+более чем на четыре Telegram-сообщения. Команда использует тот же allowlisted
+chat id и ничего не записывает в trading state или журналы.
+
+## Cash balance, equity и открытая позиция
+
+Вечерний отчёт разделяет денежные средства и результат стратегии:
+
+- `cash balance` — свободные USDT после покупки;
+- `position market value` — количество ETH, умноженное на последнюю уже
+  полученную runtime-цену;
+- `equity` — `cash balance + position market value`;
+- `realized PnL` — результат только закрытых сделок;
+- `unrealized PnL` — результат текущей открытой позиции;
+- `total PnL` — `realized PnL + unrealized PnL`;
+- `total return` — `total PnL / initial balance * 100`.
+
+Cash balance падает при покупке ETH, потому что часть USDT превращается в ETH.
+Само это снижение не является убытком. Результат открытой позиции показывает
+unrealized PnL, а общий текущий результат — equity и total PnL.
+
+Для LONG используются формулы:
+
+```text
+position market value = quantity * current price
+unrealized PnL = quantity * (current price - entry price)
+unrealized return = (current price - entry price) / entry price * 100
+distance to stop = current price - stop price
+distance to stop % = distance to stop / current price * 100
+```
+
+Controller является LONG spot-моделью. Чистый snapshot-калькулятор умеет
+показывать SHORT из исследовательских абстракций: unrealized PnL равен
+`quantity * (entry price - current price)`, а equity равна initial balance плюс
+realized и unrealized PnL. LONG spot-формула к SHORT collateral не применяется.
+
+Пример при открытой позиции:
+
+```text
+Production account:
+cash balance 980.74 USDT
+position market value 19.12 USDT
+equity 999.86 USDT
+realized PnL 0.00 USDT
+unrealized PnL -0.38 USDT
+total return -0.038%
+
+Production open position:
+side LONG
+quantity 0.01 ETH
+entry price 1950.00 USDT
+current price 1912.45 USDT
+position age 9h 0m
+stop-loss 1885.00 USDT
+distance to stop 27.45 USDT / 1.435%
+```
+
+Пример при FLAT:
+
+```text
+Production account:
+cash balance 1000.00 USDT
+position market value 0.00 USDT
+equity 1000.00 USDT
+Production open position: FLAT
+```
+
+Цена берётся из последней уже записанной runtime/decision-свечи. Генерация
+отчёта не делает отдельный запрос к Bybit; при отсутствии цены выводится `N/A`.
+JSON comparison report содержит `generated_at`, `period`, `market`,
+`production`, `candidate`, `comparison`, `health` и `decision_agreement`.

@@ -28,6 +28,7 @@ from app.telegram_notifications import (
     format_trades,
     process_update,
     send_transition_alerts,
+    telegram_chunks,
 )
 
 
@@ -151,9 +152,59 @@ def test_format_evening_report(tmp_path) -> None:
     )
 
     assert "Вечерний отчёт" in report
-    assert "Beginning/ending balance: 1000/1010" in report
-    assert "Доходность: 1.00%" in report
-    assert "Открытая позиция: FLAT" in report
+    assert "Beginning equity 1000.00 USDT" in report
+    assert "Ending equity 1000.00 USDT" in report
+    assert "Day total return 0.000%" in report
+    assert "Production open position: FLAT" in report
+    assert "Beginning/ending balance" not in report
+
+
+def test_evening_open_position_separates_cash_equity_and_realized(tmp_path) -> None:
+    runtime_paths = paths(tmp_path)
+    runtime_paths.runtime_state.write_text(
+        json.dumps({"daily_starting_balance": "1000", "counters": {}})
+    )
+    runtime_paths.controller_state.write_text(
+        json.dumps(
+            {
+                "position_quantity": "0.01",
+                "entry_price": "1950",
+                "stop_loss": "1885",
+                "virtual_balance": "980.7351544",
+                "total_fees": "0.0195",
+                "realized_pnl": "0",
+                "closed_trades": 0,
+                "entry_fee": "0.0195",
+                "opened_at": "2026-07-29T07:00:00+00:00",
+            }
+        )
+    )
+    runtime_paths.decision_journal.write_text(
+        json.dumps(
+            {
+                "candle_timestamp": 1785337200,
+                "price": "1912.45",
+                "effective_action": "hold",
+            }
+        )
+        + "\n"
+    )
+    report = format_evening_report(
+        snapshot(
+            balance="980.7351544",
+            position="LONG",
+            position_quantity="0.01",
+        ),
+        runtime_paths,
+        now=datetime(2026, 7, 29, 16, tzinfo=timezone.utc),
+    )
+    assert "cash balance 980.74 USDT" in report
+    assert "equity 999.86 USDT" in report
+    assert "realized PnL 0.00 USDT" in report
+    assert "total return -0.038%" in report
+    assert "зафиксированным убытком" in report
+    assert "realized return 0.000%" in report
+    assert "realized PnL -1.926" not in report
 
 
 def test_status_contains_safe_runtime_state() -> None:
@@ -227,8 +278,96 @@ def test_candidate_and_comparison_commands(tmp_path, monkeypatch) -> None:
         "/candidate", snapshot(), runtime_paths
     )
     comparison = command_response("/comparison", snapshot(), runtime_paths)
-    assert "Production vs candidate" in comparison
-    assert "не рекомендация" in comparison
+    assert "Production vs Candidate" in comparison
+    assert "Недостаточно данных для оценки." in comparison
+
+
+def test_comparison_shows_only_last_three_differences(
+    tmp_path, monkeypatch
+) -> None:
+    runtime_paths = paths(tmp_path)
+    candidate_state = tmp_path / "candidate.json"
+    candidate_trades = tmp_path / "candidate-trades.jsonl"
+    candidate_decisions = tmp_path / "candidate-decisions.jsonl"
+    runtime_paths = runtime_paths.__class__(
+        runtime_paths.controller_state,
+        runtime_paths.runtime_state,
+        runtime_paths.last_candle,
+        runtime_paths.trade_journal,
+        runtime_paths.decision_journal,
+        runtime_paths.notification_state,
+        candidate_state,
+        candidate_trades,
+        candidate_decisions,
+        tmp_path / "candidate-runtime.json",
+    )
+    from app.candidate_runtime import CandidateStateStore
+    from app.trading_controller_store import TradingControllerStateStore
+
+    TradingControllerStateStore(runtime_paths.controller_state).save(
+        TradingControllerStateStore(runtime_paths.controller_state).load()
+    )
+    CandidateStateStore(candidate_state).save(
+        CandidateStateStore(candidate_state).load()
+    )
+    runtime_paths.trade_journal.write_text("", encoding="utf-8")
+    candidate_trades.write_text("", encoding="utf-8")
+    production_rows = []
+    candidate_rows = []
+    for index in range(5):
+        timestamp = 1785300000 + index * 3600
+        production_rows.append(
+            {"candle_timestamp": timestamp, "effective_action": "open_long"}
+        )
+        candidate_rows.append(
+            {
+                "candle_timestamp": timestamp,
+                "decision": "WAIT_PULLBACK",
+                "reason": f"wait-{index}",
+            }
+        )
+    runtime_paths.decision_journal.write_text(
+        "".join(json.dumps(row) + "\n" for row in production_rows),
+        encoding="utf-8",
+    )
+    candidate_decisions.write_text(
+        "".join(json.dumps(row) + "\n" for row in candidate_rows),
+        encoding="utf-8",
+    )
+    text = command_response("/comparison", snapshot(), runtime_paths)
+    assert "wait-4" in text
+    assert "wait-2" in text
+    assert "wait-1" not in text
+
+
+def test_telegram_message_chunking_sends_at_most_four_messages() -> None:
+    text = "\n".join(f"line-{index}-" + "x" * 100 for index in range(200))
+    chunks = telegram_chunks(text, limit=300, maximum=4)
+    assert len(chunks) == 4
+    assert all(len(chunk) <= 300 for chunk in chunks)
+
+
+def test_candidate_unavailable_comparison_is_diagnostic(tmp_path) -> None:
+    runtime_paths = paths(tmp_path)
+    runtime_paths = runtime_paths.__class__(
+        runtime_paths.controller_state,
+        runtime_paths.runtime_state,
+        runtime_paths.last_candle,
+        runtime_paths.trade_journal,
+        runtime_paths.decision_journal,
+        runtime_paths.notification_state,
+        tmp_path / "missing-candidate.json",
+        tmp_path / "missing-candidate-trades.jsonl",
+        tmp_path / "missing-candidate-decisions.jsonl",
+        tmp_path / "missing-candidate-runtime.json",
+    )
+    from app.trading_controller_store import TradingControllerStateStore
+
+    TradingControllerStateStore(runtime_paths.controller_state).save(
+        TradingControllerStateStore(runtime_paths.controller_state).load()
+    )
+    text = command_response("/comparison", snapshot(), runtime_paths)
+    assert "Candidate data unavailable" in text
 
 
 def test_foreign_chat_id_is_ignored_without_content_logging(

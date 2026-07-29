@@ -16,6 +16,12 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+from app.account_snapshot import (
+    AccountSnapshot,
+    calculate_account_snapshot,
+    format_position_age,
+    market_from_decisions,
+)
 from app.config import PaperStrategyConfig, RuntimeSafetyConfig
 from app.regime_runtime import RegimeRuntimeStateStore
 from app.runtime_health import (
@@ -47,6 +53,7 @@ class TelegramPaths:
     candidate_state: Path = Path("state/bybit_candidate_controller.json")
     candidate_trade_journal: Path = Path("state/bybit_candidate_trades.jsonl")
     candidate_decision_journal: Path = Path("state/bybit_candidate_decisions.jsonl")
+    candidate_runtime_summary: Path = Path("state/bybit_candidate_runtime.json")
 
     @classmethod
     def from_env(
@@ -106,6 +113,12 @@ class TelegramPaths:
                 os.environ.get(
                     "CANDIDATE_DECISION_JOURNAL_PATH",
                     "state/bybit_candidate_decisions.jsonl",
+                )
+            ),
+            candidate_runtime_summary=Path(
+                os.environ.get(
+                    "CANDIDATE_RUNTIME_SUMMARY_PATH",
+                    "state/bybit_candidate_runtime.json",
                 )
             ),
         )
@@ -237,14 +250,15 @@ class TelegramClient:
                 time.sleep(min(0.5 * (attempt + 1), 1.0))
 
     def send_message(self, chat_id: str, text: str) -> None:
-        self.call(
-            "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": text[:4096],
-                "disable_web_page_preview": "true",
-            },
-        )
+        for chunk in telegram_chunks(text):
+            self.call(
+                "sendMessage",
+                {
+                    "chat_id": chat_id,
+                    "text": chunk,
+                    "disable_web_page_preview": "true",
+                },
+            )
 
 
 def _systemd_unit_status(unit: str) -> SystemdUnitStatus:
@@ -725,36 +739,168 @@ def format_evening_report(
     period = _report_period(paths, start, current)
     runtime = RegimeRuntimeStateStore(paths.runtime_state).load()
     beginning = Decimal(runtime.daily_starting_balance)
-    ending = Decimal(snapshot.balance)
-    return_percent = (
-        (ending - beginning) / beginning * Decimal("100")
-        if beginning
-        else Decimal("0")
+    production_state = TradingControllerStateStore(paths.controller_state).load()
+    production_rows = (
+        read_jsonl_safely(paths.decision_journal)[0]
+        if paths.decision_journal.exists() else []
+    )
+    market = market_from_decisions(production_rows)
+    production_snapshot = calculate_account_snapshot(
+        initial_balance="1000",
+        cash_balance=production_state.virtual_balance,
+        position_side="LONG" if production_state.has_open_position else "FLAT",
+        position_quantity=production_state.position_quantity,
+        entry_price=production_state.entry_price,
+        current_price=market["price"],
+        realized_pnl=production_state.realized_pnl,
+        opened_at=production_state.opened_at,
+        now=current,
+        stop_loss_price=production_state.stop_loss,
+    )
+    day_realized = Decimal(str(period["pnl"]))
+    day_unrealized = production_snapshot.unrealized_pnl
+    day_total = (
+        day_realized + day_unrealized
+        if day_unrealized is not None else None
+    )
+    day_return = (
+        day_total / beginning * Decimal("100")
+        if beginning and day_total is not None else None
     )
     errors = (
         snapshot.counters.get("api_error_halts", 0)
         + snapshot.counters.get("stale_data_rejections", 0)
         + snapshot.counters.get("risk_limit_halts", 0)
     )
+    health_detail = (
+        snapshot.systemd_monitoring_detail
+        or ("systemd status unavailable or permission denied"
+            if "unavailable" in snapshot.timer_state.lower() else "none")
+    )
     production = "\n".join(
         [
-            "Вечерний отчёт crypto-bot",
-            f"Период: {start.isoformat()} — {current.isoformat()}",
-            f"Результат дня: PnL {period['pnl']}",
-            f"Beginning/ending balance: {beginning}/{ending}",
-            f"Доходность: {return_percent}%",
+            "Вечерний отчёт crypto-bot / Evening report",
+            f"Period: {start.isoformat()} — {current.isoformat()}",
+            "",
+            "System health:",
+            f"overall {snapshot.health_status}",
+            f"API {snapshot.api_status}",
+            f"timer {_health_state(snapshot.timer_state)}",
+            f"service {_health_state(snapshot.service_state)}",
+            f"last successful cycle {snapshot.last_candle or 'N/A'}",
+            f"last candle age {_age(snapshot.candle_age_seconds)}",
+            f"report generated at {current.isoformat()}",
+            f"systemd detail {health_detail}",
+            "",
+            "Market:",
+            f"symbol {market['symbol']}",
+            f"current price {market['price'] or 'N/A'}",
+            f"price timestamp {_local_iso(market['price_timestamp'], zone)}",
+            f"source {market['source'] or 'N/A'}",
+            "",
+            "Production account:",
+            *_account_lines(production_snapshot),
+            f"Beginning equity {_money(beginning)}",
+            f"Ending equity {_money(production_snapshot.equity)}",
+            f"Day realized PnL {_money(day_realized)}",
+            f"Day unrealized PnL {_money(day_unrealized)}",
+            f"Day total PnL {_money(day_total)}",
+            f"Day total return {_pct(day_return)}",
+            "",
+            *_position_lines(production_snapshot, market["symbol"], zone),
+            *(
+                ["Изменение cash balance связано с открытой позицией и не является само по себе зафиксированным убытком."]
+                if production_snapshot.is_open else []
+            ),
+            "",
             f"Сигналы: {period['signals']}",
             f"Входы/выходы: {period['entries']}/{period['exits']}",
             f"Закрытые сделки: {period['trades']}",
             f"Комиссии: {period['fees']}",
             f"Shadow would block: {period['shadow_would_block']}",
             f"Ошибки и halts: {errors}",
-            f"Система: {snapshot.health_status}; timer {snapshot.timer_state}; API {snapshot.api_status}",
-            f"Открытая позиция: {snapshot.position} ({snapshot.position_quantity})",
             f"Active halt: {snapshot.active_halt_reason or 'none'}",
         ]
     )
-    return production + "\n\n" + _candidate_report_block(paths)
+    return (
+        production
+        + "\n\n"
+        + _candidate_report_block(paths)
+        + "\n\n"
+        + format_daily_comparison(paths, now=now, timezone_name=timezone_name)
+    )
+
+
+def _money(value: Decimal | None) -> str:
+    return "N/A" if value is None else f"{value:.2f} USDT"
+
+
+def _pct(value: Decimal | None) -> str:
+    return "N/A" if value is None else f"{value:.3f}%"
+
+
+def _health_state(value: str) -> str:
+    normalized = value.lower()
+    if normalized in {"active", "inactive", "ok"}:
+        return "OK" if normalized in {"active", "ok"} else "UNKNOWN"
+    return "UNKNOWN"
+
+
+def _local_iso(value: str | None, zone: ZoneInfo) -> str:
+    if value is None:
+        return "N/A"
+    try:
+        return datetime.fromisoformat(value).astimezone(zone).isoformat()
+    except ValueError:
+        return "N/A"
+
+
+def _account_lines(item: AccountSnapshot) -> list[str]:
+    return [
+        f"initial balance {_money(item.initial_balance)}",
+        f"cash balance {_money(item.cash_balance)}",
+        f"position market value {_money(item.position_market_value)}",
+        f"equity {_money(item.equity)}",
+        f"realized PnL {_money(item.realized_pnl)}",
+        f"unrealized PnL {_money(item.unrealized_pnl)}",
+        f"total PnL {_money(item.total_pnl)}",
+        f"realized return {_pct(item.realized_return_pct)}",
+        f"total return {_pct(item.total_return_pct)}",
+    ]
+
+
+def _position_lines(
+    item: AccountSnapshot, symbol: str, zone: ZoneInfo
+) -> list[str]:
+    if not item.is_open:
+        return ["Production open position: FLAT"]
+    asset = symbol.removesuffix("USDT")
+    distance_stop = (
+        f"{_money(item.distance_to_stop_value)} / {_pct(item.distance_to_stop_pct)}"
+    )
+    distance_take = (
+        f"{_money(item.distance_to_take_profit_value)} / "
+        f"{_pct(item.distance_to_take_profit_pct)}"
+    )
+    return [
+        "Production open position:",
+        f"side {item.position_side}",
+        f"quantity {item.position_quantity} {asset}",
+        f"entry price {_money(item.entry_price)}",
+        f"current price {_money(item.current_price)}",
+        f"position notional {_money(item.position_quantity * item.entry_price if item.entry_price is not None else None)}",
+        f"market value {_money(item.position_market_value)}",
+        f"unrealized PnL {_money(item.unrealized_pnl)}",
+        f"unrealized return {_pct(item.unrealized_return_pct)}",
+        f"opened at {_local_iso(item.opened_at, zone)}",
+        f"position age {format_position_age(item.position_age_seconds)}",
+        f"stop-loss {_money(item.stop_loss_price)}",
+        f"distance to stop {distance_stop}",
+        f"take-profit {_money(item.take_profit_price)}",
+        f"distance to take-profit {distance_take}",
+        f"break-even {'active' if item.break_even_active else 'inactive'}",
+        f"trailing-stop {'active' if item.trailing_stop_active else 'inactive'}",
+    ]
 
 
 def _candidate_report_block(paths: TelegramPaths) -> str:
@@ -890,8 +1036,6 @@ def format_candidate(paths: TelegramPaths) -> str:
 def format_comparison(paths: TelegramPaths) -> str:
     from app.paper_comparator import compare_paper_runtimes
 
-    if not paths.candidate_state.exists():
-        return "Comparison unavailable: candidate paper not initialized."
     try:
         report = compare_paper_runtimes(
             production_state=paths.controller_state,
@@ -900,20 +1044,151 @@ def format_comparison(paths: TelegramPaths) -> str:
             candidate_state=paths.candidate_state,
             candidate_trades=paths.candidate_trade_journal,
             candidate_decisions=paths.candidate_decision_journal,
+            production_runtime_summary=paths.runtime_state,
+            candidate_runtime_summary=paths.candidate_runtime_summary,
+            period="since_candidate_start",
         )
     except (OSError, ValueError) as exc:
         return f"Comparison unavailable: {type(exc).__name__}"
-    return "\n".join(
-        [
-            "Production vs candidate paper",
-            f"Balance: {report['production']['balance']} / {report['candidate']['balance']}",
-            f"Balance difference (candidate-prod): {report['balance_difference']}",
-            f"PnL: {report['production']['pnl']} / {report['candidate']['pnl']}",
-            f"PnL difference: {report['pnl_difference']}",
-            f"Decision divergences: {report['decision_divergences']}",
-            "Наблюдение paper-контуров; не рекомендация реальной торговли.",
-        ]
+    return _format_comparison_report(report, title="Production vs Candidate")
+
+
+def format_daily_comparison(
+    paths: TelegramPaths,
+    *,
+    now: datetime | None = None,
+    timezone_name: str = "Asia/Yekaterinburg",
+) -> str:
+    from app.paper_comparator import compare_paper_runtimes
+
+    current = now or datetime.now(timezone.utc)
+    kwargs = {
+        "production_state": paths.controller_state,
+        "production_trades": paths.trade_journal,
+        "production_decisions": paths.decision_journal,
+        "production_runtime_summary": paths.runtime_state,
+        "candidate_state": paths.candidate_state,
+        "candidate_trades": paths.candidate_trade_journal,
+        "candidate_decisions": paths.candidate_decision_journal,
+        "candidate_runtime_summary": paths.candidate_runtime_summary,
+        "now": current,
+        "timezone_name": timezone_name,
+    }
+    try:
+        daily = compare_paper_runtimes(**kwargs, period="last_24h")
+        cumulative = compare_paper_runtimes(
+            **kwargs, period="since_candidate_start"
+        )
+    except (OSError, ValueError) as exc:
+        return f"Production vs Candidate\nComparison unavailable: {type(exc).__name__}"
+    text = _format_comparison_report(
+        daily, title="Production vs Candidate — прошедшие 24 часа"
     )
+    return (
+        text
+        + "\nCumulative since candidate start: "
+        + f"PnL {cumulative['production']['cumulative_pnl']} / "
+        + f"{cumulative['candidate']['cumulative_pnl']}; "
+        + f"agreement {cumulative['decisions']['agreement_rate_percent']}%"
+    )
+
+
+def _format_comparison_report(report: dict[str, Any], *, title: str) -> str:
+    prod, cand = report["production"], report["candidate"]
+    delta, decisions = report["deltas"], report["decisions"]
+    categories = decisions["categories"]
+    lines = [
+        title,
+        f"Status: {report['status']}",
+        "Production:",
+        f"cash {prod['cash_balance']}; equity {prod['equity']}",
+        f"realized {prod['realized_pnl']}; unrealized {prod['unrealized_pnl']}; total {prod['total_pnl']}",
+        f"total return {prod['total_return_pct']}%; position {_position_text(prod)}",
+        f"entry {prod['entry_price']}; current {prod['current_price']}; age {_metric_age(prod)}",
+        f"distance to stop {prod['distance_to_stop_value']} / {prod['distance_to_stop_pct']}%; trades {prod['closed_trades']}; fees {prod['fees']}",
+        f"drawdown {prod['max_drawdown_percent']}%; PF {prod['profit_factor']}",
+        "Candidate:",
+        f"cash {cand['cash_balance']}; equity {cand['equity']}",
+        f"realized {cand['realized_pnl']}; unrealized {cand['unrealized_pnl']}; total {cand['total_pnl']}",
+        f"total return {cand['total_return_pct']}%; position {_position_text(cand)}",
+        f"entry {cand['entry_price']}; current {cand['current_price']}; age {_metric_age(cand)}",
+        f"distance to stop {cand['distance_to_stop_value']} / {cand['distance_to_stop_pct']}%; trades {cand['closed_trades']}; fees {cand['fees']}",
+        f"drawdown {cand['max_drawdown_percent']}%; PF {cand['profit_factor']}",
+        "Delta candidate-production:",
+        f"equity {delta['equity']}; total PnL {delta['total_pnl']}; total return {delta['total_return_pct']}%",
+        f"unrealized PnL {delta['unrealized_pnl']}; realized PnL {delta['realized_pnl']}",
+        f"fees {delta['fees']}; drawdown {delta['drawdown_percent']}; trades {delta['trade_count']}",
+        "Decisions:",
+        f"matched {decisions['matched_candles']}; agreement {decisions['agreement_rate_percent']}%; differences {decisions['difference_count']}",
+        "Prod ENTER / Cand WAIT-HOLD: "
+        + str(
+            categories["PRODUCTION_ENTER_CANDIDATE_WAIT"]
+            + categories["PRODUCTION_ENTER_CANDIDATE_HOLD"]
+        ),
+        f"Cand ENTER / Prod HOLD: {categories['CANDIDATE_ENTER_PRODUCTION_HOLD']}",
+        f"Different EXIT: {categories['DIFFERENT_EXIT_REASON']}; missing: {decisions['unmatched_records']}",
+    ]
+    if report["warnings"]:
+        candidate_warning = next(
+            (item for item in report["warnings"] if "Candidate data unavailable" in item),
+            None,
+        )
+        if candidate_warning:
+            lines.append("Diagnostic: Candidate data unavailable")
+    if report["recent_differences"]:
+        lines.append("Последние расхождения:")
+        for item in report["recent_differences"][-3:]:
+            lines.append(
+                f"{item['time']}: {item['production_decision']}/{item['candidate_decision']}; "
+                f"{item['production_reason']} / {item['candidate_reason']}"
+            )
+    lines.append(report["conclusion"])
+    return "\n".join(lines)
+
+
+def _position_text(metrics: dict[str, Any]) -> str:
+    if metrics["open_position"] == "N/A":
+        return "N/A"
+    side = "LONG" if metrics["open_position"] else "FLAT"
+    return f"{side} ({metrics['position_size']})"
+
+
+def _metric_age(metrics: dict[str, Any]) -> str:
+    value = metrics.get("position_age_seconds")
+    return "N/A" if value == "N/A" else format_position_age(int(value))
+
+
+def telegram_chunks(text: str, *, limit: int = 4096, maximum: int = 4) -> list[str]:
+    if len(text) <= limit:
+        return [text]
+    blocks = text.split("\n\n")
+    chunks: list[str] = []
+    current = ""
+    # Reserve room for "Part 00/00\n".
+    content_limit = max(1, limit - 16)
+    for block in blocks:
+        pieces = [block]
+        if len(block) > content_limit:
+            pieces = []
+            remainder = block
+            while remainder:
+                split = remainder.rfind("\n", 0, content_limit + 1)
+                if split <= 0:
+                    split = content_limit
+                pieces.append(remainder[:split])
+                remainder = remainder[split:].lstrip("\n")
+        for piece in pieces:
+            candidate = f"{current}\n\n{piece}" if current else piece
+            if len(candidate) <= content_limit:
+                current = candidate
+            else:
+                chunks.append(current)
+                current = piece
+    if current:
+        chunks.append(current)
+    chunks = chunks[:maximum]
+    total = len(chunks)
+    return [f"Part {index}/{total}\n{chunk}" for index, chunk in enumerate(chunks, 1)]
 
 
 HELP_TEXT = "\n".join(
@@ -971,7 +1246,8 @@ def process_update(
     text = message.get("text")
     if not isinstance(text, str) or not text.startswith("/"):
         return False
-    sender(chat_id, responder(text))
+    for chunk in telegram_chunks(responder(text)):
+        sender(chat_id, chunk)
     return True
 
 

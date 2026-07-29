@@ -9,6 +9,5 @@ Type=oneshot
 WorkingDirectory=/opt/crypto-bot
 EnvironmentFile=/etc/crypto-bot/paper-candidate.env
 ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/run_paper_candidate.py --state /opt/crypto-bot/state/bybit_candidate_controller.json --trades /opt/crypto-bot/state/bybit_candidate_trades.jsonl --decisions /opt/crypto-bot/state/bybit_candidate_decisions.jsonl --lock-file /opt/crypto-bot/state/bybit_candidate.lock --summary /opt/crypto-bot/state/bybit_candidate_runtime.json
-ExecStartPost=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/report_paper_comparison.py
 StandardOutput=journal
 StandardError=journal
