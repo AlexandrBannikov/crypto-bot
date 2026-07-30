@@ -42,6 +42,61 @@ class PaperStrategyMode(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class PaperDiagnosticsConfig:
+    enabled: bool = False
+    path: Path = Path("state/strategy_diagnostics.jsonl")
+    save_all_candles: bool = True
+    retention_days: int = 30
+    symbol: str = "ETHUSDT"
+    timeframe: str = "60"
+    session_id: str = "paper"
+
+    def __post_init__(self) -> None:
+        if self.enabled and not str(self.path).strip():
+            raise ValueError(
+                "PAPER_DIAGNOSTICS_PATH must not be empty when enabled"
+            )
+        if self.retention_days < 0:
+            raise ValueError(
+                "PAPER_DIAGNOSTICS_RETENTION_DAYS must not be negative"
+            )
+        for name, value in (
+            ("PAPER_DIAGNOSTICS_SYMBOL", self.symbol),
+            ("PAPER_DIAGNOSTICS_TIMEFRAME", self.timeframe),
+            ("PAPER_DIAGNOSTICS_SESSION_ID", self.session_id),
+        ):
+            if not value.strip():
+                raise ValueError(f"{name} must not be empty")
+
+    @classmethod
+    def from_env(cls) -> "PaperDiagnosticsConfig":
+        return cls(
+            enabled=_env_bool("PAPER_DIAGNOSTICS_ENABLED", False),
+            path=Path(
+                os.environ.get(
+                    "PAPER_DIAGNOSTICS_PATH",
+                    "state/strategy_diagnostics.jsonl",
+                )
+            ),
+            save_all_candles=_env_bool(
+                "PAPER_DIAGNOSTICS_SAVE_ALL_CANDLES", True
+            ),
+            retention_days=_env_int(
+                "PAPER_DIAGNOSTICS_RETENTION_DAYS", 30
+            ),
+            symbol=os.environ.get(
+                "PAPER_DIAGNOSTICS_SYMBOL", "ETHUSDT"
+            ),
+            timeframe=os.environ.get(
+                "PAPER_DIAGNOSTICS_TIMEFRAME", "60"
+            ),
+            session_id=os.environ.get(
+                "PAPER_DIAGNOSTICS_SESSION_ID", "paper"
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class PaperStrategyConfig:
     mode: PaperStrategyMode = PaperStrategyMode.BASELINE
     adx_period: int = 14

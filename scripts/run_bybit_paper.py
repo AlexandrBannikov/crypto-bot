@@ -5,6 +5,7 @@ from app.bybit_market_data import (
     BybitMarketDataConfig,
     BybitMarketDataFeed,
 )
+from app.config import PaperDiagnosticsConfig
 from app.ema_cross_stop_strategy import (
     EMACrossStopStrategy,
 )
@@ -21,6 +22,7 @@ from app.paper_trader import (
     PaperTraderConfig,
 )
 from app.risk import RiskConfig
+from app.strategy_diagnostics import DiagnosticJournal
 
 
 INITIAL_BALANCE = 1000.0
@@ -54,6 +56,7 @@ def run_once(
     initial_balance: float = INITIAL_BALANCE,
     commission_rate: float = COMMISSION_RATE,
     risk_config: RiskConfig | None = None,
+    diagnostics_config: PaperDiagnosticsConfig | None = None,
 ) -> PaperRunResult:
     candles = tuple(feed.get_candles())
 
@@ -93,9 +96,26 @@ def run_once(
         risk_config=risk_config,
     )
 
+    diagnostics = diagnostics_config or PaperDiagnosticsConfig()
+    journal = (
+        DiagnosticJournal(
+            diagnostics.path,
+            retention_days=diagnostics.retention_days,
+        )
+        if diagnostics.enabled
+        else None
+    )
+    if journal is not None:
+        journal.prune()
+
     engine = PaperTradingEngine(
         session=session,
         strategy=strategy,
+        diagnostic_journal=journal,
+        diagnostic_symbol=diagnostics.symbol,
+        diagnostic_timeframe=diagnostics.timeframe,
+        diagnostic_session_id=diagnostics.session_id,
+        save_all_diagnostics=diagnostics.save_all_candles,
     )
 
     trades = engine.run_iteration(candles)
@@ -166,6 +186,7 @@ def main() -> None:
             max_position_fraction=1.0,
             leverage=1.0,
         ),
+        diagnostics_config=PaperDiagnosticsConfig.from_env(),
     )
 
     print(

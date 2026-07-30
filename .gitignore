@@ -18,3 +18,5 @@ logs/
 backups/
 reports/*.txt
 reports/runtime/
+reports/strategy_diagnostics*.json
+reports/paper_diagnostic_summary*.json

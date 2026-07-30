@@ -11,6 +11,8 @@ from app.trading_types import (
     PositionSide,
     TradeAction,
 )
+from app.ema_cross_stop_strategy import EMACrossStopStrategy
+from app.strategy_diagnostics import DiagnosticJournal
 
 
 class BuyThenSellStrategy:
@@ -230,3 +232,29 @@ def test_updates_trailing_stop_during_iteration() -> None:
         session.snapshot.last_candle_timestamp
         == 2
     )
+
+
+def test_optional_diagnostics_can_be_enabled_and_disabled(tmp_path) -> None:
+    values = tuple(
+        Candle(index, price, price, price, price, 1)
+        for index, price in enumerate((100, 99, 98, 97, 110))
+    )
+    path = tmp_path / "diagnostics.jsonl"
+
+    PaperTradingEngine(
+        session=PaperTradingSession(commission_rate=0),
+        strategy=EMACrossStopStrategy(2, 3, 2),
+    ).run_iteration(values)
+    assert not path.exists()
+
+    journal = DiagnosticJournal(path)
+    PaperTradingEngine(
+        session=PaperTradingSession(commission_rate=0),
+        strategy=EMACrossStopStrategy(2, 3, 2),
+        diagnostic_journal=journal,
+        diagnostic_session_id="test",
+    ).run_iteration(values)
+
+    records = journal.read_all()
+    assert len(records) == len(values)
+    assert records[-1].decision == "buy"

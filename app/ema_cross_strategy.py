@@ -2,6 +2,12 @@ from collections.abc import Sequence
 
 from app.engine import Candle
 from app.strategies import Signal
+from app.strategy_diagnostics import (
+    Decision,
+    PositionState,
+    ReasonCode,
+    StrategyDecision,
+)
 
 
 class EMACrossStrategy:
@@ -84,6 +90,150 @@ class EMACrossStrategy:
 
         return Signal.HOLD
 
+    def evaluate_with_diagnostics(
+        self,
+        candles: Sequence[Candle],
+        index: int,
+        *,
+        position_state: PositionState = PositionState.FLAT,
+        price_confirmation_percent: float = 0.0,
+        minimum_trend_spread_percent: float = 0.0,
+    ) -> StrategyDecision:
+        if price_confirmation_percent < 0:
+            raise ValueError(
+                "price_confirmation_percent must not be negative"
+            )
+        if minimum_trend_spread_percent < 0:
+            raise ValueError(
+                "minimum_trend_spread_percent must not be negative"
+            )
+        signal = self.generate_signal(candles, index)
+        candle = candles[index]
+        indicators = {
+            "fast_ema": self._short_ema,
+            "slow_ema": self._long_ema,
+            "previous_fast_ema": self._previous_short_ema,
+            "previous_slow_ema": self._previous_long_ema,
+        }
+        if (
+            index < self.long_period
+            or self._previous_short_ema is None
+            or self._previous_long_ema is None
+            or self._short_ema is None
+            or self._long_ema is None
+        ):
+            return StrategyDecision(
+                timestamp=candle.timestamp,
+                close_price=float(candle.close),
+                indicators=indicators,
+                position_state=position_state,
+                decision=Decision.HOLD,
+                passed_conditions=(),
+                failed_conditions=(ReasonCode.INSUFFICIENT_HISTORY,),
+                primary_reason=ReasonCode.INSUFFICIENT_HISTORY,
+            )
+
+        spread_percent = (
+            abs(self._short_ema - self._long_ema)
+            / self._long_ema
+            * 100
+        )
+        indicators["ema_spread_percent"] = spread_percent
+        bullish = self._short_ema > self._long_ema
+        bearish = self._short_ema < self._long_ema
+        bullish_price = float(candle.close) >= self._long_ema * (
+            1 + price_confirmation_percent / 100
+        )
+        bearish_price = float(candle.close) <= self._long_ema * (
+            1 - price_confirmation_percent / 100
+        )
+        strong_enough = spread_percent >= minimum_trend_spread_percent
+
+        if signal == Signal.BUY:
+            failed: list[ReasonCode] = []
+            if position_state != PositionState.FLAT:
+                failed.append(ReasonCode.POSITION_ALREADY_OPEN)
+            if not bullish_price:
+                failed.append(ReasonCode.PRICE_TREND_NOT_CONFIRMED)
+            if not strong_enough:
+                failed.append(ReasonCode.TREND_STRENGTH_TOO_LOW)
+            if failed:
+                return StrategyDecision(
+                    candle.timestamp,
+                    float(candle.close),
+                    indicators,
+                    position_state,
+                    Decision.HOLD,
+                    (ReasonCode.BUY_SIGNAL,),
+                    tuple(failed),
+                    failed[0],
+                )
+            return StrategyDecision(
+                candle.timestamp,
+                float(candle.close),
+                indicators,
+                position_state,
+                Decision.BUY,
+                (ReasonCode.BUY_SIGNAL,),
+                (),
+                ReasonCode.BUY_SIGNAL,
+            )
+
+        if signal == Signal.SELL:
+            if position_state == PositionState.FLAT:
+                return StrategyDecision(
+                    candle.timestamp,
+                    float(candle.close),
+                    indicators,
+                    position_state,
+                    Decision.HOLD,
+                    (ReasonCode.SELL_SIGNAL,),
+                    (ReasonCode.POSITION_ABSENT,),
+                    ReasonCode.POSITION_ABSENT,
+                )
+            return StrategyDecision(
+                candle.timestamp,
+                float(candle.close),
+                indicators,
+                position_state,
+                Decision.SELL,
+                (ReasonCode.SELL_SIGNAL,),
+                (),
+                ReasonCode.SELL_SIGNAL,
+            )
+
+        failed = [
+            (
+                ReasonCode.FAST_EMA_NOT_ABOVE_SLOW
+                if not bullish
+                else ReasonCode.NO_BULLISH_EMA_CROSS
+            )
+        ]
+        if position_state == PositionState.FLAT:
+            if not bullish_price:
+                failed.append(ReasonCode.PRICE_TREND_NOT_CONFIRMED)
+            if not strong_enough:
+                failed.append(ReasonCode.TREND_STRENGTH_TOO_LOW)
+            primary = ReasonCode.NO_ENTRY_SIGNAL
+        else:
+            failed.append(
+                ReasonCode.NO_BEARISH_EMA_CROSS
+                if not bearish
+                else ReasonCode.FAST_EMA_NOT_BELOW_SLOW
+            )
+            failed.append(ReasonCode.STOP_LOSS_NOT_REACHED)
+            primary = ReasonCode.NO_EXIT_SIGNAL
+        return StrategyDecision(
+            candle.timestamp,
+            float(candle.close),
+            indicators,
+            position_state,
+            Decision.HOLD,
+            (),
+            tuple(failed),
+            primary,
+        )
+
     def _update_ema(self, close: float) -> None:
         if self._short_ema is None or self._long_ema is None:
             self._short_ema = close
@@ -128,4 +278,3 @@ class EMACrossStrategy:
             )
 
         return ema
-

@@ -5,6 +5,7 @@ from app.config import (
     DEFAULT_CONFIG,
     PaperStrategyConfig,
     PaperStrategyMode,
+    PaperDiagnosticsConfig,
 )
 
 
@@ -121,3 +122,27 @@ def test_shadow_path_required_when_enabled(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="must not be empty"):
         PaperStrategyConfig.from_env()
+
+
+def test_paper_diagnostics_are_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("PAPER_DIAGNOSTICS_ENABLED", raising=False)
+
+    config = PaperDiagnosticsConfig.from_env()
+
+    assert config.enabled is False
+    assert config.retention_days == 30
+
+
+def test_paper_diagnostics_can_be_enabled(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("PAPER_DIAGNOSTICS_ENABLED", "true")
+    monkeypatch.setenv(
+        "PAPER_DIAGNOSTICS_PATH", str(tmp_path / "decisions.jsonl")
+    )
+    monkeypatch.setenv("PAPER_DIAGNOSTICS_SAVE_ALL_CANDLES", "false")
+    monkeypatch.setenv("PAPER_DIAGNOSTICS_RETENTION_DAYS", "7")
+
+    config = PaperDiagnosticsConfig.from_env()
+
+    assert config.enabled is True
+    assert config.save_all_candles is False
+    assert config.retention_days == 7
