@@ -216,6 +216,7 @@ def process_candidate_candles(
         )
         decision = "HOLD"
         reason = "no new EMA event"
+        reason_code = "no_signal"
         action = TradeAction.HOLD
         allowed = False
         blocked = False
@@ -226,10 +227,12 @@ def process_candidate_candles(
                 state.cancelled += 1
                 decision = "CANCEL_PULLBACK"
                 reason = "EMA20 crossed below EMA50; pending pullback cancelled"
+                reason_code = "trend_not_confirmed"
                 _clear_pending(state)
             if state.controller.has_open_position:
                 decision = "EXIT"
                 reason = "EMA cross down; exits are not filtered"
+                reason_code = "exit_signal"
                 action = TradeAction.CLOSE_LONG
                 allowed = True
                 state.exits += 1
@@ -240,6 +243,7 @@ def process_candidate_candles(
             state.bars_waited = 0
             decision = "WAIT_PULLBACK"
             reason = "EMA cross up detected; waiting for HYBRID pullback"
+            reason_code = "pullback_not_detected"
         elif state.pending_cross_timestamp is not None:
             state.bars_waited += 1
             decision_bars_waited = state.bars_waited
@@ -254,6 +258,7 @@ def process_candidate_candles(
                 state.cancelled += 1
                 decision = "CANCEL_PULLBACK"
                 reason = "bullish EMA structure no longer valid"
+                reason_code = "trend_not_confirmed"
                 _clear_pending(state)
             elif confirmed:
                 state.pullback_confirmations += 1
@@ -261,6 +266,7 @@ def process_candidate_candles(
                 if adx_value >= config.adx_minimum:
                     decision = "ENTER"
                     reason = "HYBRID pullback confirmed and ADX threshold passed"
+                    reason_code = "entry_allowed"
                     action = TradeAction.OPEN_LONG
                     allowed = True
                     state.entries += 1
@@ -270,16 +276,19 @@ def process_candidate_candles(
                         f"HYBRID pullback confirmed but ADX {adx_value:.2f} "
                         f"is below {config.adx_minimum:.2f}"
                     )
+                    reason_code = "adx_below_threshold"
                     blocked = True
                 _clear_pending(state)
             elif state.bars_waited >= config.max_wait_bars:
                 state.timed_out += 1
                 decision = "CANCEL_PULLBACK"
                 reason = f"pullback timed out after {state.bars_waited} bars"
+                reason_code = "pullback_not_detected"
                 _clear_pending(state)
             else:
                 decision = "WAIT_PULLBACK"
                 reason = "pending HYBRID pullback has not confirmed"
+                reason_code = "pullback_not_detected"
 
         controller = TradingController(
             runtime,
@@ -319,6 +328,7 @@ def process_candidate_candles(
             "entry_blocked": blocked,
             "decision": decision,
             "reason": reason,
+            "reason_code": reason_code,
             "position_after": "LONG" if state.controller.has_open_position else "FLAT",
             "price": candle.close,
             "decision_status": "produced",
