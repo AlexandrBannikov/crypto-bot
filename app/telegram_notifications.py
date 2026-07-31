@@ -790,7 +790,7 @@ def format_morning_report(
             "",
             "⚙️ Сервисы",
             f"Timer: {_health_state(snapshot.timer_state)}",
-            f"Service: {_health_state(snapshot.service_state)}",
+            f"Service: {_service_report_label(snapshot.service_state)}",
             f"API: {snapshot.component_statuses.get('API', snapshot.api_status)}",
             f"Market data: {snapshot.component_statuses.get('Market data', 'UNKNOWN')}",
             f"Последняя свеча: {snapshot.last_candle}; age after close {_age(snapshot.candle_close_age_seconds if snapshot.candle_close_age_seconds is not None else snapshot.candle_age_seconds)}",
@@ -974,6 +974,13 @@ def _health_state(value: str) -> str:
     if normalized in {"active", "inactive", "ok"}:
         return "OK" if normalized in {"active", "ok"} else "UNKNOWN"
     return "UNKNOWN"
+
+
+def _service_report_label(value: str) -> str:
+    normalized = value.lower()
+    if normalized == "inactive":
+        return "inactive — ожидаемо между запусками"
+    return _health_state(value)
 
 
 def _local_iso(value: str | None, zone: ZoneInfo) -> str:
