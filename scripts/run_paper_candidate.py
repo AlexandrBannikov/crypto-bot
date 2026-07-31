@@ -31,11 +31,11 @@ from app.equity_history import (
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Run isolated Strategy V2 paper candidate")
-    result.add_argument("--state", type=Path, default=PROJECT_ROOT / "state/bybit_candidate_controller.json")
-    result.add_argument("--trades", type=Path, default=PROJECT_ROOT / "state/bybit_candidate_trades.jsonl")
-    result.add_argument("--decisions", type=Path, default=PROJECT_ROOT / "state/bybit_candidate_decisions.jsonl")
-    result.add_argument("--lock-file", type=Path, default=PROJECT_ROOT / "state/bybit_candidate.lock")
-    result.add_argument("--summary", type=Path, default=PROJECT_ROOT / "state/bybit_candidate_runtime.json")
+    result.add_argument("--state", type=Path, default=Path(os.environ.get("CANDIDATE_STATE_PATH", PROJECT_ROOT / "state/bybit_candidate_controller.json")))
+    result.add_argument("--trades", type=Path, default=Path(os.environ.get("CANDIDATE_TRADE_JOURNAL_PATH", PROJECT_ROOT / "state/bybit_candidate_trades.jsonl")))
+    result.add_argument("--decisions", type=Path, default=Path(os.environ.get("CANDIDATE_DECISION_JOURNAL_PATH", PROJECT_ROOT / "state/bybit_candidate_decisions.jsonl")))
+    result.add_argument("--lock-file", type=Path, default=Path(os.environ.get("CANDIDATE_LOCK_PATH", PROJECT_ROOT / "state/bybit_candidate.lock")))
+    result.add_argument("--summary", type=Path, default=Path(os.environ.get("CANDIDATE_RUNTIME_SUMMARY_PATH", PROJECT_ROOT / "state/bybit_candidate_runtime.json")))
     return result
 
 

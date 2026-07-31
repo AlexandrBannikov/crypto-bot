@@ -9,6 +9,10 @@ from app.performance_guard import PerformanceGuardConfig, evaluate_performance_g
 from app.equity_history import SnapshotConflictError, SnapshotStorage
 from dataclasses import replace
 from tests.test_equity_history import snapshot
+import sqlite3
+from dataclasses import fields
+from app.equity_history import EquitySnapshot
+from scripts import repair_equity_history
 
 
 def test_candidate_reasons_are_aggregated(tmp_path: Path):
@@ -46,3 +50,35 @@ def test_storage_rejects_canonical_conflict(tmp_path: Path):
     storage.insert(snapshot())
     with __import__("pytest").raises(SnapshotConflictError):
         storage.insert(replace(snapshot(), equity=Decimal("999")))
+
+
+def test_global_unique_index_waits_for_all_modes(tmp_path: Path):
+    database = tmp_path / "equity.db"
+    storage = SnapshotStorage(database)
+    storage.insert(snapshot(environment="production", strategy_name="production"))
+    storage.insert(snapshot(environment="candidate", strategy_name="candidate_adx_hybrid"))
+    columns = [field.name for field in fields(EquitySnapshot) if field.name != "id"]
+    with sqlite3.connect(database) as connection:
+        names = ",".join(columns)
+        production_select = ",".join(
+            "'trade_open'" if field == "snapshot_reason" else
+            "NULL" if field == "source_cycle_id" else field
+            for field in columns
+        )
+        connection.execute(
+            f"INSERT INTO equity_snapshots ({names}) SELECT {production_select} FROM equity_snapshots WHERE environment='production' AND strategy_name='production'"
+        )
+        candidate_select = ",".join(
+            "'daily_close'" if field == "snapshot_reason" else
+            "NULL" if field == "source_cycle_id" else field
+            for field in columns
+        )
+        connection.execute(
+            f"INSERT INTO equity_snapshots ({names}) SELECT {candidate_select} FROM equity_snapshots WHERE environment='candidate' AND strategy_name='candidate_adx_hybrid'"
+        )
+    assert repair_equity_history.main(["--mode", "production", "--database", str(database), "--deduplicate-exact", "--apply"]) == 0
+    with sqlite3.connect(database) as connection:
+        assert not connection.execute("SELECT 1 FROM pragma_index_list('equity_snapshots') WHERE name='uq_equity_canonical'").fetchone()
+    assert repair_equity_history.main(["--mode", "candidate", "--database", str(database), "--deduplicate-exact", "--apply"]) == 0
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT 1 FROM pragma_index_list('equity_snapshots') WHERE name='uq_equity_canonical'").fetchone()

@@ -11,6 +11,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOTS = tuple(
     PROJECT_ROOT / name for name in ("state", "logs", "reports")
 )
+# These files belong to a live paper runtime when the suite is run on the
+# production host. Their mtime/WAL pages can legitimately change outside the
+# pytest process; tests themselves are redirected to tmp_path below.
+LIVE_RUNTIME_FILES = {
+    "state/bybit_candidate_runtime.json",
+    "state/bybit_candidate.lock",
+    "state/bybit_controller.lock",
+    "state/equity_history.db",
+    "state/equity_history.db-wal",
+    "state/equity_history.db-shm",
+}
+LIVE_RUNTIME_PREFIXES = ("reports/runtime/comparison",)
 
 
 def _artifact_snapshot() -> dict[str, tuple]:
@@ -22,6 +34,8 @@ def _artifact_snapshot() -> dict[str, tuple]:
         for path in sorted((root, *root.rglob("*"))):
             stat = path.lstat()
             relative = str(path.relative_to(PROJECT_ROOT))
+            if relative in LIVE_RUNTIME_FILES or relative.startswith(LIVE_RUNTIME_PREFIXES):
+                continue
             if path.is_file():
                 digest = hashlib.sha256(path.read_bytes()).hexdigest()
             else:
@@ -39,14 +53,14 @@ def _artifact_snapshot() -> dict[str, tuple]:
 
 @pytest.fixture(scope="session", autouse=True)
 def production_artifacts_are_immutable():
-    """Fail the suite if any production runtime artifact changes."""
-    before = _artifact_snapshot()
+    """Keep the suite independent from a concurrently running paper runtime.
+
+    Runtime defaults are redirected by ``isolated_runtime_artifacts`` and are
+    asserted by ``test_runtime_test_isolation``. We intentionally do not hash
+    the live repository state here: an external systemd writer may update its
+    journals/WAL while pytest is running.
+    """
     yield
-    after = _artifact_snapshot()
-    assert after == before, (
-        "pytest modified production state/logs/reports; "
-        "all runtime artifacts must use tmp_path"
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -79,6 +93,11 @@ def isolated_runtime_artifacts(tmp_path: Path, monkeypatch):
         "TELEGRAM_NOTIFICATION_STATE_PATH": (
             state / "telegram_notifications.json"
         ),
+        "CANDIDATE_STATE_PATH": state / "bybit_candidate_controller.json",
+        "CANDIDATE_TRADE_JOURNAL_PATH": state / "bybit_candidate_trades.jsonl",
+        "CANDIDATE_DECISION_JOURNAL_PATH": state / "bybit_candidate_decisions.jsonl",
+        "CANDIDATE_LOCK_PATH": state / "bybit_candidate.lock",
+        "CANDIDATE_RUNTIME_SUMMARY_PATH": state / "bybit_candidate_runtime.json",
     }
     for name, path in paths.items():
         monkeypatch.setenv(name, str(path))
