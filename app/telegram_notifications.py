@@ -146,6 +146,14 @@ class RuntimeSnapshot:
     health_reasons: tuple[str, ...] = ()
     component_statuses: dict[str, str] = field(default_factory=dict)
     candle_close_age_seconds: float | None = None
+    scored_candidate_enabled: bool = False
+    scored_candidate_mode: str = "shadow"
+    score_model_version: str | None = None
+    risk_model_version: str | None = None
+    last_scored_candle: int | None = None
+    last_signal_score: float | None = None
+    last_scored_decision: str | None = None
+    scored_hard_block_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -627,6 +635,7 @@ def collect_snapshot(
         health_reasons=reasons,
         component_statuses=component_statuses,
         candle_close_age_seconds=age,
+        scored_candidate_enabled=Path(os.environ.get("SCORED_CANDIDATE_DECISION_PATH", "state/scored_candidate_v1_decisions.jsonl")).exists(),
     )
     return snapshot, checks
 
@@ -811,7 +820,7 @@ def format_morning_report(
             f"Active halt: {snapshot.active_halt_reason or 'none'}",
         ]
     )
-    return production + "\n\n" + _candidate_report_block(paths)
+    return production + "\n\n" + _candidate_report_block(paths) + "\n\n" + _scored_candidate_report_block()
 
 
 def format_evening_report(
@@ -1086,6 +1095,25 @@ def _candidate_report_block(paths: TelegramPaths) -> str:
             *( ["Основные причины:"] + reason_lines[:5] if reason_lines else [] ),
         ]
     )
+
+
+def _scored_candidate_report_block() -> str:
+    """Compact read-only scored-candidate section; absent journal is harmless."""
+    path = Path(os.environ.get("SCORED_CANDIDATE_DECISION_PATH", "state/scored_candidate_v1_decisions.jsonl"))
+    if not path.exists():
+        return "Scored Candidate — shadow\nStatus: not initialized"
+    try:
+        rows = read_jsonl_safely(path)[0]
+        last = rows[-1] if rows else {}
+        return "\n".join([
+            "Scored Candidate — shadow",
+            f"Decision: {last.get('action', 'N/A')}",
+            f"Score: {last.get('signal_score', 'N/A')} / 100",
+            f"Risk allocation: {float(last.get('risk_fraction', 0)) * 100:.1f}%" if last else "Risk allocation: N/A",
+            f"Hard blocks: {', '.join(last.get('hard_blocks', [])) or 'none'}" if last else "Hard blocks: N/A",
+        ])
+    except (OSError, ValueError, TypeError):
+        return "Scored Candidate — shadow\nStatus: diagnostic unavailable"
 
 
 def format_trades(paths: TelegramPaths, limit: int = 5) -> str:
