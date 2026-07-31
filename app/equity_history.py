@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -20,6 +21,8 @@ from app.trade_journal import TradeJournalEntry
 from app.trading_controller_store import TradingControllerStateStore
 
 
+# Keep the public schema version stable for existing readers; the canonical
+# index is additive and created idempotently by the migration script.
 SCHEMA_VERSION = 1
 ENVIRONMENTS = {"production", "candidate"}
 SNAPSHOT_REASONS = {
@@ -30,6 +33,31 @@ QUALITY_STATUSES = {"VALID", "PARTIAL", "INVALID"}
 WINDOWS = {"24h": timedelta(hours=24), "7d": timedelta(days=7),
            "14d": timedelta(days=14), "30d": timedelta(days=30)}
 NA = "N/A"
+LOGGER = logging.getLogger(__name__)
+
+
+class SnapshotConflictError(ValueError):
+    """A canonical candle already has materially different equity state."""
+
+
+def _snapshots_equivalent(left: "EquitySnapshot", right: "EquitySnapshot") -> bool:
+    fields_to_compare = (
+        "cash_balance", "asset_quantity", "position_value", "equity",
+        "realized_pnl", "unrealized_pnl", "total_pnl", "return_pct",
+        "position_side", "entry_price", "closed_trades", "cumulative_fees",
+    )
+    tolerance = Decimal("0.000001")
+    for name in fields_to_compare:
+        a, b = getattr(left, name), getattr(right, name)
+        if isinstance(a, Decimal) or isinstance(b, Decimal):
+            if a is None or b is None:
+                if a != b:
+                    return False
+            elif abs(a - b) > tolerance:
+                return False
+        elif a != b:
+            return False
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +269,7 @@ CREATE INDEX IF NOT EXISTS idx_equity_cycle ON equity_snapshots(source_cycle_id)
 CREATE INDEX IF NOT EXISTS idx_equity_state_hash ON equity_snapshots(state_hash);
 CREATE INDEX IF NOT EXISTS idx_equity_env_snapshot ON equity_snapshots(environment, snapshot_at_utc);
 CREATE INDEX IF NOT EXISTS idx_equity_env_candle ON equity_snapshots(environment, candle_close_timestamp);
+CREATE INDEX IF NOT EXISTS idx_equity_canonical ON equity_snapshots(environment, strategy_name, candle_close_timestamp);
 """
 
 
@@ -316,6 +345,39 @@ class SnapshotStorage:
         ]
         placeholders = ",".join("?" for _ in columns)
         with self.connect() as connection:
+            # One canonical snapshot is allowed per environment/strategy and
+            # processed closed candle. Legacy databases may contain multiple
+            # rows from different snapshot reasons; keep the oldest row and
+            # report equivalent repeats as ignored until repair is run.
+            existing_rows = connection.execute(
+                "SELECT * FROM equity_snapshots WHERE environment=? "
+                "AND strategy_name=? AND candle_close_timestamp=? "
+                "ORDER BY id ASC",
+                (
+                    validated.environment,
+                    validated.strategy_name,
+                    validated.candle_close_timestamp,
+                ),
+            ).fetchall()
+            if existing_rows:
+                existing = self._from_row(existing_rows[0])
+                if not _snapshots_equivalent(existing, validated):
+                    raise SnapshotConflictError(
+                        "equity snapshot canonical timestamp conflict: "
+                        f"environment={validated.environment}, "
+                        f"strategy={validated.strategy_name}, "
+                        f"candle_close={validated.candle_close_timestamp}"
+                    )
+                connection.execute(
+                    "UPDATE equity_history_stats SET value=value+1 "
+                    "WHERE key='duplicates_prevented'"
+                )
+                LOGGER.info(
+                    "equity_snapshot_duplicate_ignored mode=%s strategy=%s timestamp=%s",
+                    validated.environment, validated.strategy_name,
+                    validated.candle_close_timestamp,
+                )
+                return existing, False
             cursor = connection.execute(
                 f"INSERT OR IGNORE INTO equity_snapshots "
                 f"({','.join(columns)}) VALUES ({placeholders})",
@@ -348,7 +410,7 @@ class SnapshotStorage:
         self, *, environment: str | None = None,
         strategy_name: str | None = None,
         start: datetime | None = None, end: datetime | None = None,
-        valid_only: bool = False,
+        valid_only: bool = False, canonical_only: bool = False,
     ) -> list[EquitySnapshot]:
         if not self.path.exists():
             return []
@@ -373,10 +435,17 @@ class SnapshotStorage:
                 "SELECT * FROM equity_snapshots" + where
                 + " ORDER BY snapshot_at_utc,id", values
             ).fetchall()
-        return [self._from_row(row) for row in rows]
+        result = [self._from_row(row) for row in rows]
+        if canonical_only:
+            seen: set[tuple[str, str, int | None]] = set()
+            result = [
+                item for item in result
+                if not ((_key := (item.environment, item.strategy_name, item.candle_close_timestamp)) in seen or seen.add(_key))
+            ]
+        return result
 
     def latest(self, environment: str, *, valid_only: bool = True) -> EquitySnapshot | None:
-        rows = self.query(environment=environment, valid_only=valid_only)
+        rows = self.query(environment=environment, valid_only=valid_only, canonical_only=True)
         return rows[-1] if rows else None
 
     def boundary(self, environment: str, at: datetime) -> EquitySnapshot | None:
@@ -652,7 +721,7 @@ class SnapshotMetrics:
         if end is None:
             return self._insufficient(window, "no valid snapshots")
         if window == "all":
-            rows = self.storage.query(environment=environment, valid_only=True)
+            rows = self.storage.query(environment=environment, valid_only=True, canonical_only=True)
             start = rows[0] if rows else None
             boundary_exact = True
             boundary_age = 0
@@ -720,7 +789,7 @@ class SnapshotMetrics:
         }
 
     def aggregate(self, environment: str) -> dict[str, Any]:
-        rows = self.storage.query(environment=environment, valid_only=True)
+        rows = self.storage.query(environment=environment, valid_only=True, canonical_only=True)
         if not rows:
             return {"environment": environment, "status": "INSUFFICIENT_HISTORY"}
         days = self._daily(rows)
@@ -756,7 +825,7 @@ class SnapshotMetrics:
         }
 
     def quality(self, environment: str | None = None) -> dict[str, Any]:
-        rows = self.storage.query(environment=environment)
+        rows = self.storage.query(environment=environment, canonical_only=True)
         counts = {status: sum(item.data_quality_status == status for item in rows)
                   for status in QUALITY_STATUSES}
         valid = [item for item in rows if item.data_quality_status == "VALID"]
@@ -788,8 +857,8 @@ class SnapshotMetrics:
             return NA
 
     def compare(self, production: str = "production", candidate: str = "candidate") -> dict[str, Any]:
-        left = self.storage.query(environment=production, valid_only=True)
-        right = self.storage.query(environment=candidate, valid_only=True)
+        left = self.storage.query(environment=production, valid_only=True, canonical_only=True)
+        right = self.storage.query(environment=candidate, valid_only=True, canonical_only=True)
         left_map = {item.candle_close_timestamp: item for item in left if item.candle_close_timestamp}
         right_map = {item.candle_close_timestamp: item for item in right if item.candle_close_timestamp}
         common = sorted(left_map.keys() & right_map.keys())
@@ -865,7 +934,7 @@ class SnapshotMetrics:
     ) -> list[dict[str, Any]]:
         if frequency not in {"daily", "weekly", "monthly"}:
             raise ValueError("unsupported return aggregation")
-        rows = self.storage.query(environment=environment, valid_only=True)
+        rows = self.storage.query(environment=environment, valid_only=True, canonical_only=True)
         zone = ZoneInfo(self.config.timezone)
         closes: dict[str, EquitySnapshot] = {}
         for item in rows:
