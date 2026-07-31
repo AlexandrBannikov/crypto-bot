@@ -143,6 +143,9 @@ class RuntimeSnapshot:
     active_halt_reason: str | None
     counters: dict[str, int]
     systemd_monitoring_detail: str | None = None
+    health_reasons: tuple[str, ...] = ()
+    component_statuses: dict[str, str] = field(default_factory=dict)
+    candle_close_age_seconds: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,6 +294,8 @@ def _systemd_unit_status(unit: str) -> SystemdUnitStatus:
             text=True,
             timeout=5,
         )
+    except subprocess.TimeoutExpired as exc:
+        return SystemdUnitStatus(unit, False, "status unavailable", detail="timeout while querying systemd")
     except (OSError, subprocess.SubprocessError) as exc:
         return SystemdUnitStatus(
             unit,
@@ -301,13 +306,19 @@ def _systemd_unit_status(unit: str) -> SystemdUnitStatus:
 
     if shown.returncode != 0:
         detail = shown.stderr.strip() or active.stderr.strip()
+        lowered = detail.lower()
+        if "not found" in lowered or "could not be found" in lowered:
+            diagnostic = "unit not found"
+        elif "permission" in lowered or "operation not permitted" in lowered or "failed to connect to bus" in lowered:
+            diagnostic = "no access to systemd"
+        else:
+            diagnostic = f"systemctl command failed (exit {shown.returncode})"
         return SystemdUnitStatus(
             unit,
             False,
             "status unavailable",
             detail=(
-                f"systemctl show exit {shown.returncode}: "
-                f"{detail or 'no diagnostic output'}"
+                f"{diagnostic}: {detail or 'no diagnostic output'}"
             ),
         )
 
@@ -435,7 +446,13 @@ def collect_snapshot(
         if last_candle is not None
         else None
     )
-    stale_after = max_data_age_seconds + stale_grace_seconds
+    warning_age_minutes = int(os.environ.get(
+        "MARKET_DATA_WARNING_AGE_MINUTES", str(max_data_age_seconds // 60)
+    ))
+    critical_age_minutes = int(os.environ.get(
+        "MARKET_DATA_CRITICAL_AGE_MINUTES", str(max(2, max_data_age_seconds // 60 * 2))
+    ))
+    stale_after = warning_age_minutes * 60 + stale_grace_seconds
     if (
         age is not None
         and age > stale_after
@@ -477,7 +494,8 @@ def collect_snapshot(
                     {
                         **item.details,
                         "age_seconds": age,
-                        "max_age_seconds": max_data_age_seconds,
+                        "max_age_seconds": warning_age_minutes * 60,
+                        "critical_age_seconds": critical_age_minutes * 60,
                         "grace_seconds": stale_grace_seconds,
                     },
                     item.checked_at,
@@ -573,6 +591,17 @@ def collect_snapshot(
     lag = check_map.get("market_lag")
     api = check_map.get("bybit_api")
     position = "LONG" if controller.has_open_position else "FLAT"
+    component_statuses = {
+        "API": api.status.name if api else "UNKNOWN",
+        "Market data": check_map.get("last_candle", HealthCheckResult("x", HealthStatus.WARNING, "", {}, checked)).status.name,
+        "Paper state": check_map.get("controller_state", HealthCheckResult("x", HealthStatus.ERROR if hasattr(HealthStatus, "ERROR") else HealthStatus.CRITICAL, "", {}, checked)).status.name,
+        "Risk control": check_map.get("active_halt", HealthCheckResult("x", HealthStatus.OK, "", {}, checked)).status.name,
+        "Timer": "UNKNOWN" if not timer_status.available else ("OK" if timer_status.active_state == "active" else timer_status.active_state.upper()),
+        "Service": "UNKNOWN" if not service_status.available else ("OK" if service_status.active_state in {"active", "inactive"} else service_status.active_state.upper()),
+        "Equity history": "OK",
+        "Candidate": "OK",
+    }
+    reasons = tuple(item.message for item in checks if item.status != HealthStatus.OK)
     snapshot = RuntimeSnapshot(
         checked_at=current.isoformat(),
         timer_state=timer_status.active_state,
@@ -595,6 +624,9 @@ def collect_snapshot(
         systemd_monitoring_detail=(
             "; ".join(systemd_details) if systemd_details else None
         ),
+        health_reasons=reasons,
+        component_statuses=component_statuses,
+        candle_close_age_seconds=age,
     )
     return snapshot, checks
 
@@ -669,6 +701,21 @@ def _report_period(
         record.get("baseline_signal") in {"close_long", "close_short"}
         for record in decisions
     )
+    from collections import Counter
+    reason_counts = Counter()
+    for record in decisions:
+        action = str(record.get("baseline_signal") or record.get("execution_signal") or "").lower()
+        if record.get("position_before") in {"LONG", "SHORT"} and action in {"open_long", "open_short"}:
+            key = "hold_existing_position"
+        elif record.get("blocked") or record.get("shadow_would_block"):
+            key = "regime_filter_block"
+        elif action in {"close_long", "close_short"}:
+            key = "exit_signal"
+        elif action in {"open_long", "open_short"}:
+            key = "entry_signal"
+        else:
+            key = "no_entry_signal"
+        reason_counts[key] += 1
     return {
         "signals": len(decisions),
         "entries": entries,
@@ -689,6 +736,7 @@ def _report_period(
         "shadow_would_block": sum(
             bool(record.get("shadow_would_block")) for record in decisions
         ),
+        "decision_reasons": dict(reason_counts),
     }
 
 
@@ -706,11 +754,32 @@ def format_morning_report(
         start -= timedelta(days=1)
     period = _report_period(paths, start, current)
     c = snapshot.counters
+    reasons = list(snapshot.health_reasons)
+    try:
+        production_state = TradingControllerStateStore(paths.controller_state).load()
+        rows = read_jsonl_safely(paths.decision_journal)[0] if paths.decision_journal.exists() else []
+        market = market_from_decisions(rows)
+        account = calculate_account_snapshot(
+            initial_balance="1000", cash_balance=production_state.virtual_balance,
+            position_side="LONG" if production_state.has_open_position else "FLAT",
+            position_quantity=production_state.position_quantity,
+            entry_price=production_state.entry_price, current_price=market["price"],
+            realized_pnl=production_state.realized_pnl,
+            opened_at=production_state.opened_at, now=current,
+            stop_loss_price=production_state.stop_loss,
+        )
+        pnl_lines = [
+            f"Equity: {_money(account.equity)}",
+            f"Realised PnL: {_money(account.realized_pnl)}",
+            f"Unrealised PnL: {_money(account.unrealized_pnl)}",
+            f"Total PnL: {_money(account.total_pnl)} ({_pct(account.total_return_pct)})",
+        ]
+    except (OSError, ValueError):
+        pnl_lines = ["Equity: N/A", "Realised PnL: N/A", "Unrealised PnL: N/A", "Total PnL: N/A"]
     production = "\n".join(
         [
-            "Утренний отчёт crypto-bot",
+            "🌅 Утренний отчёт crypto-bot",
             f"Период: {start.isoformat()} — {current.isoformat()}",
-            f"Timer/service: {snapshot.timer_state}/{snapshot.service_state}",
             f"Режим: {snapshot.execution_mode}",
             f"REGIME_FILTER_MODE: {snapshot.filter_mode}",
             (
@@ -718,17 +787,28 @@ def format_morning_report(
                 if snapshot.live_trading_enabled
                 else "Реальная торговля: выключена"
             ),
-            f"Баланс: {snapshot.balance}",
+            "",
+            "⚙️ Сервисы",
+            f"Timer: {_health_state(snapshot.timer_state)}",
+            f"Service: {_health_state(snapshot.service_state)}",
+            f"API: {snapshot.component_statuses.get('API', snapshot.api_status)}",
+            f"Market data: {snapshot.component_statuses.get('Market data', 'UNKNOWN')}",
+            f"Последняя свеча: {snapshot.last_candle}; age after close {_age(snapshot.candle_close_age_seconds if snapshot.candle_close_age_seconds is not None else snapshot.candle_age_seconds)}",
+            f"Health: {snapshot.health_status}",
+            *( ["Причины:"] + [f"- {item}" for item in reasons[:4]] if reasons else [] ),
+            "",
+            "📊 Production",
+            f"Cash balance: {snapshot.balance}",
+            *pnl_lines,
             f"Позиция: {snapshot.position} ({snapshot.position_quantity})",
-            f"Сигналы за ночь: {period['signals']}",
+            f"Решения стратегии за ночь: {period['signals']}",
             f"Paper-сделки за ночь: {period['trades']}",
+            f"Разбивка решений: {period.get('decision_reasons') or 'нет данных'}",
             f"Shadow would block: {period['shadow_would_block']}",
             f"API errors: {c.get('api_error_halts', 0)}",
             f"Stale-data events: {c.get('stale_data_rejections', 0)}",
             f"Risk halts: {c.get('risk_limit_halts', 0)}",
             f"Active halt: {snapshot.active_halt_reason or 'none'}",
-            f"Последняя свеча: {snapshot.last_candle}; age {_age(snapshot.candle_age_seconds)}",
-            f"Health: {snapshot.health_status}; API {snapshot.api_status}",
         ]
     )
     return production + "\n\n" + _candidate_report_block(paths)
@@ -973,14 +1053,19 @@ def _candidate_report_block(paths: TelegramPaths) -> str:
         )
     except (OSError, ValueError) as exc:
         return f"Candidate paper\nCandidate runtime problem: {type(exc).__name__}"
+    from app.candidate_diagnostics import summarize_candidate
+    diagnostic = summarize_candidate(paths.candidate_decision_journal, paths.candidate_trade_journal)
+    reason_lines = [f"  {key}: {value}" for key, value in diagnostic["rejection_reasons"].items() if key != "entry_allowed"]
     return "\n".join(
         [
-            "Candidate paper — ADX + HYBRID Pullback",
+            "🧪 Candidate — ADX + HYBRID Pullback",
+            f"Status: {'INSUFFICIENT_DATA' if not trades else 'OK'}",
             f"Balance: {state.controller.virtual_balance}",
             f"PnL: {state.controller.realized_pnl}",
             f"Position: {'LONG' if state.controller.has_open_position else 'FLAT'}",
-            f"Decisions/trades: {len(decisions)}/{len(trades)}",
+            f"Decisions: {len(decisions)}; Trades: {len(trades)}",
             f"Last candle: {state.last_processed_candle}",
+            *( ["Основные причины:"] + reason_lines[:5] if reason_lines else [] ),
         ]
     )
 

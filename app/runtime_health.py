@@ -17,6 +17,10 @@ class HealthStatus(IntEnum):
     OK = 0
     WARNING = 1
     CRITICAL = 2
+    # Public vocabulary aliases. CRITICAL is retained for compatibility with
+    # existing callers; new diagnostics may use ERROR/UNKNOWN explicitly.
+    ERROR = 2
+    UNKNOWN = 1
 
 
 @dataclass(frozen=True, slots=True)
