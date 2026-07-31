@@ -25,7 +25,22 @@ python scripts/diagnose_candidate.py --hours 12
 python scripts/diagnose_candidate.py --days 7 --json
 python scripts/check_equity_history.py --mode production
 python scripts/check_equity_history.py --mode candidate --json
+python scripts/repair_equity_history.py --mode production --dry-run --deduplicate-exact
 ```
+
+Канонический ключ equity snapshot — `environment + strategy_name +
+candle_close_timestamp`. `created_at_utc` и `snapshot_reason` сохраняются для
+аудита, но не создают второй snapshot того же закрытого периода. Repair CLI
+по умолчанию только строит план. Изменение базы требует `--apply`, создаёт
+SQLite-safe backup и блокируется при timestamp conflicts:
+
+```bash
+python scripts/repair_equity_history.py --mode production \
+  --deduplicate-exact --apply
+```
+
+Пропущенные периоды не интерполируются. Gap остаётся в истории и получает
+диагностическую классификацию.
 
 Performance Guard только сообщает статус (`HEALTHY`, `WARNING`, `DEGRADED`,
 `INSUFFICIENT_DATA`); он не останавливает торговлю, не меняет параметры и не

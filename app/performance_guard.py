@@ -30,10 +30,13 @@ class PerformanceGuardConfig:
 def evaluate_performance_guard(
     snapshots: Sequence[Any], *, config: PerformanceGuardConfig | None = None,
     now: datetime | None = None,
+    integrity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     cfg = config or PerformanceGuardConfig.from_env()
     if not cfg.enabled:
         return {"status": "INSUFFICIENT_DATA", "reason": "disabled"}
+    if integrity and integrity.get("status") == "ERROR":
+        return {"status": "DATA_QUALITY_ERROR", "reason": "equity history integrity error"}
     if not snapshots:
         return {"status": "INSUFFICIENT_DATA", "reason": "no snapshots"}
     latest = snapshots[-1]
@@ -53,4 +56,3 @@ def evaluate_performance_guard(
     else:
         status, reason = "HEALTHY", "within configured limits"
     return {"status": status, "reason": reason, "drawdown_pct": str(drawdown), "closed_trades": closed, "snapshot_age_hours": round(age_hours, 3), "realized_pnl": str(getattr(latest, "realized_pnl", "N/A")), "unrealized_pnl": str(getattr(latest, "unrealized_pnl", "N/A")), "total_pnl": str(getattr(latest, "total_pnl", "N/A"))}
-

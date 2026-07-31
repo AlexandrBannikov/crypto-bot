@@ -936,9 +936,20 @@ def _equity_history_block(*, now: datetime | None = None) -> str:
     )
     if not config.database_path.exists():
         return "История капитала\nProduction: N/A — insufficient history\nCandidate: N/A — insufficient history"
-    metrics = SnapshotMetrics(SnapshotStorage(config.database_path), config)
     current = now or datetime.now(timezone.utc)
-    lines = ["История капитала"]
+    metrics = SnapshotMetrics(SnapshotStorage(config.database_path), config)
+    from app.equity_integrity import check_equity_history
+    integrity = check_equity_history(config.database_path, now=current)
+    lines = [
+        "История капитала",
+        f"Integrity: {integrity['status']}",
+    ]
+    if integrity["status"] != "OK":
+        lines.append(
+            f"Duplicates: {integrity['timestamp_duplicates']}; "
+            f"Conflicts: {integrity['timestamp_conflicts']}; "
+            f"Gaps: {integrity['large_gaps']}"
+        )
     for environment, label in (
         ("production", "Production"), ("candidate", "Candidate")
     ):
