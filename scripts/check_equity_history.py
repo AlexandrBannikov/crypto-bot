@@ -24,9 +24,19 @@ def main() -> int:
     else:
         print(f"Equity history: {result['status']}")
         print(f"Snapshots: {result['snapshots']}")
-        print(f"Duplicates: {result['duplicates']}")
+        print(f"Exact duplicates: {result['exact_duplicates']}")
+        print(f"Timestamp duplicates: {result['timestamp_duplicates']}")
+        print(f"Timestamp conflicts: {result['timestamp_conflicts']}")
+        print(f"Cross-mode collisions: {result['cross_mode_collisions']}")
         print(f"Invalid values: {result['invalid_values'] + result['missing_fields'] + result['negative_equity']}")
-        print(f"Large gaps: {result['large_gaps']}")
+        print(f"Gaps: {result['large_gaps']}")
+        for gap in result["gaps"]:
+            print(
+                f"  {gap['mode']}/{gap['strategy']}: "
+                f"{gap['previous_timestamp']} -> {gap['next_timestamp']} "
+                f"({gap['duration_seconds']}s, expected {gap['expected_interval_seconds']}s, "
+                f"missing ~{gap['estimated_missing_snapshots']}, {gap['classification']})"
+            )
         print(f"Last snapshot age: {result['last_snapshot_age_minutes']} min")
     return 0 if result["status"] == "OK" else 1
 
