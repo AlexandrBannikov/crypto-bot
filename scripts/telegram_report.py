@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import traceback
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -50,9 +51,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except Exception as exc:
         print(
-            f"Telegram report failed: {type(exc).__name__}",
+            f"Telegram report failed: {type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
+        traceback.print_exc()
         return 1
 
 

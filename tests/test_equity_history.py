@@ -137,6 +137,34 @@ def test_storage_creates_db_schema_and_version(tmp_path):
     assert {"schema_version", "equity_snapshots"} <= tables
 
 
+def test_read_only_config_does_not_require_writable_database_parent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("EQUITY_HISTORY_DB_PATH", raising=False)
+    config_path = tmp_path / "config" / "equity_history.json"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        json.dumps({"database_path": "state/equity_history.db"}),
+        encoding="utf-8",
+    )
+    state_path = tmp_path / "state"
+    state_path.mkdir()
+    monkeypatch.setattr("app.equity_history.os.access", lambda *_: False)
+
+    with pytest.raises(
+        ValueError, match="database parent is not writable"
+    ):
+        load_equity_history_config(config_path, root=tmp_path)
+
+    loaded = load_equity_history_config(
+        config_path,
+        root=tmp_path,
+        require_writable_database_parent=False,
+    )
+
+    assert loaded.database_path == state_path / "equity_history.db"
+
+
 def test_migration_is_idempotent(tmp_path):
     storage = SnapshotStorage(tmp_path / "equity.db")
     storage.connect().close()

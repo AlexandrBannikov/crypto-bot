@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, fields, replace
+from dataclasses import InitVar, asdict, dataclass, fields, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
@@ -47,8 +47,9 @@ class EquityHistoryConfig:
     minimum_window_completeness_pct: float = 80.0
     snapshot_retention_days: int | None = None
     allow_partial_snapshots: bool = True
+    require_writable_database_parent: InitVar[bool] = True
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, require_writable_database_parent: bool) -> None:
         if not str(self.database_path).strip():
             raise ValueError("database_path must not be empty")
         database_path = Path(self.database_path)
@@ -56,7 +57,10 @@ class EquityHistoryConfig:
         ancestor = database_path.parent
         while not ancestor.exists() and ancestor != ancestor.parent:
             ancestor = ancestor.parent
-        if not ancestor.exists() or not os.access(ancestor, os.W_OK):
+        if (
+            require_writable_database_parent
+            and (not ancestor.exists() or not os.access(ancestor, os.W_OK))
+        ):
             raise ValueError("equity history database parent is not writable")
         try:
             ZoneInfo(self.timezone)
@@ -79,10 +83,16 @@ class EquityHistoryConfig:
             raise ValueError("snapshot_retention_days must be null or at least 30")
 
 
-def load_equity_history_config(path: Path, *, root: Path | None = None) -> EquityHistoryConfig:
+def load_equity_history_config(
+    path: Path,
+    *,
+    root: Path | None = None,
+    require_writable_database_parent: bool = True,
+) -> EquityHistoryConfig:
     if not path.exists():
         return EquityHistoryConfig(
-            database_path=(root or path.parent.parent) / "state/equity_history.db"
+            database_path=(root or path.parent.parent) / "state/equity_history.db",
+            require_writable_database_parent=require_writable_database_parent,
         )
     raw = json.loads(path.read_text(encoding="utf-8"))
     base = root or path.parent.parent
@@ -113,6 +123,7 @@ def load_equity_history_config(path: Path, *, root: Path | None = None) -> Equit
         ),
         snapshot_retention_days=raw.get("snapshot_retention_days"),
         allow_partial_snapshots=bool(raw.get("allow_partial_snapshots", True)),
+        require_writable_database_parent=require_writable_database_parent,
     )
 
 

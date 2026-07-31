@@ -850,7 +850,9 @@ def _equity_history_block(*, now: datetime | None = None) -> str:
 
     root = Path(__file__).resolve().parents[1]
     config = load_equity_history_config(
-        root / "config/equity_history.json", root=root
+        root / "config/equity_history.json",
+        root=root,
+        require_writable_database_parent=False,
     )
     if not config.database_path.exists():
         return "История капитала\nProduction: N/A — insufficient history\nCandidate: N/A — insufficient history"
