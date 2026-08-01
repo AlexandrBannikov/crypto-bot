@@ -1,0 +1,11 @@
+[Unit]
+Description=Run scored candidate shadow after each hourly candle close
+
+[Timer]
+OnCalendar=*-*-* *:01:45 UTC
+Persistent=true
+AccuracySec=1s
+Unit=crypto-scored-candidate-shadow.service
+
+[Install]
+WantedBy=timers.target

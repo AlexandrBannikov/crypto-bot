@@ -68,19 +68,42 @@ class ScoredDecisionJournal:
     def __init__(self, path: Path):
         self.path = path
 
-    def append(self, record: dict) -> None:
+    def keys(self) -> set[tuple[str, int]]:
+        if not self.path.exists():
+            return set()
+        keys = set()
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            keys.add((str(row.get("strategy_name")), int(row["candle_close_timestamp"])))
+        return keys
+
+    def append(self, record: dict) -> bool:
+        key = (str(record["strategy_name"]), int(record["candle_close_timestamp"]))
+        if key in self.keys():
+            return False
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as handle:
             json.dump(record, handle, ensure_ascii=False, separators=(",", ":"))
             handle.write("\n")
+            handle.flush()
+        return True
 
 
-def evaluate_shadow_candles(candles: Sequence[Candle], *, state_store: ScoredCandidateStateStore, decision_path: Path, config: ScoredCandidateConfig = ScoredCandidateConfig(), balance: float | None = None) -> ScoredCandidateState:
+def evaluate_shadow_candles(candles: Sequence[Candle], *, state_store: ScoredCandidateStateStore, decision_path: Path, config: ScoredCandidateConfig = ScoredCandidateConfig(), balance: float | None = None, timeframe_minutes: int = 60) -> ScoredCandidateState:
     ordered = tuple(sorted(candles, key=lambda item: item.timestamp))
     state = state_store.load()
     journal = ScoredDecisionJournal(decision_path)
+    existing = journal.keys()
     cash = float(config.initial_balance if balance is None else balance)
     for index, candle in enumerate(ordered):
+        candle_close = candle.timestamp + timeframe_minutes * 60
+        if (STRATEGY_NAME, candle_close) in existing:
+            if state.last_candle is None or candle.timestamp > state.last_candle:
+                state = ScoredCandidateState(candle.timestamp, state.hypothetical_position)
+                state_store.save(state)
+            continue
         if state.last_candle is not None and candle.timestamp <= state.last_candle:
             continue
         score = evaluate_signal(ordered[: index + 1], config.score)
@@ -94,7 +117,7 @@ def evaluate_shadow_candles(candles: Sequence[Candle], *, state_store: ScoredCan
             sized = size_for_score(score=score.total_score, balance=cash, entry_price=candle.close, stop_loss=stop, side=PositionSide.LONG, base_risk_per_trade=0.01, allocation=config.allocation)
             fraction = sized.risk_fraction
             blocks.extend(sized.hard_blocks)
-            action = "ENTER_LONG" if sized.position is not None else "SKIP"
+            action = "ENTER_LONG" if sized.position is not None else "HOLD"
             position = sized.position.position_value if sized.position else None
             if action == "ENTER_LONG":
                 state = ScoredCandidateState(candle.timestamp, True)
@@ -104,6 +127,11 @@ def evaluate_shadow_candles(candles: Sequence[Candle], *, state_store: ScoredCan
         else:
             action = "HOLD"
             state = ScoredCandidateState(candle.timestamp, state.hypothetical_position)
-        journal.append({"strategy_name": STRATEGY_NAME, "candle_close_timestamp": candle.timestamp + 3600, "candle_timestamp": candle.timestamp, "action": action, "signal_score": round(score.total_score, 6), "risk_fraction": round(fraction, 8), "final_risk_fraction": round(fraction, 8), "position_size": position, "stop_distance_pct": config.score.stop_distance_pct, "hard_blocks": list(dict.fromkeys(blocks)), "components": {item.name: round(item.value, 6) for item in score.contributions}, "score_version": score.version, "risk_model_version": config.allocation.version, "mode": config.mode, "evaluated_at": datetime.now(timezone.utc).isoformat()})
+        unique_blocks = list(dict.fromkeys(blocks))
+        components = {
+            f"{name}_score": round(getattr(score, f"{name}_score"), 6)
+            for name in ("trend", "ema_alignment", "adx", "pullback", "momentum", "volatility", "cost")
+        }
+        journal.append({"strategy_name": STRATEGY_NAME, "candle_close_timestamp": candle_close, "candle_timestamp": candle.timestamp, "decision": action, "action": action, "signal_score": round(score.total_score, 6), "score": round(score.total_score, 6), "risk_fraction": round(fraction, 8), "final_risk_fraction": round(fraction, 8), "potential_position_size": position, "components": components, "hard_blocks": unique_blocks, "blockers": unique_blocks, "reason_codes": unique_blocks or [action.lower()], "score_version": score.version, "risk_model_version": config.allocation.version, "mode": config.mode, "evaluated_at": datetime.now(timezone.utc).isoformat()})
         state_store.save(state)
     return state
