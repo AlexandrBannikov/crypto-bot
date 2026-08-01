@@ -1,0 +1,11 @@
+[Unit]
+Description=Run optional threshold-60 shadow experiment after threshold 65
+
+[Timer]
+OnCalendar=*-*-* *:02:15 UTC
+Persistent=true
+AccuracySec=1s
+Unit=crypto-scored-threshold60-shadow.service
+
+[Install]
+WantedBy=timers.target

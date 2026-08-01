@@ -1,0 +1,12 @@
+[Unit]
+Description=Optional scored candidate threshold-60 shadow experiment
+After=network-online.target crypto-scored-candidate-shadow.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/paper-shadow.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/run_scored_threshold60_shadow.py --state /opt/crypto-bot/state/scored_candidate_threshold60/runtime.json --decisions /opt/crypto-bot/state/scored_candidate_threshold60/decisions.jsonl --lock-file /opt/crypto-bot/state/scored_candidate_threshold60/runtime.lock
+StandardOutput=journal
+StandardError=journal
