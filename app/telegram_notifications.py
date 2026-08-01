@@ -635,7 +635,7 @@ def collect_snapshot(
         health_reasons=reasons,
         component_statuses=component_statuses,
         candle_close_age_seconds=age,
-        scored_candidate_enabled=Path(os.environ.get("SCORED_CANDIDATE_DECISION_PATH", "state/scored_candidate_v1_decisions.jsonl")).exists(),
+        scored_candidate_enabled=Path(os.environ.get("SCORED_CANDIDATE_DECISION_PATH", "state/scored_candidate_shadow/decisions.jsonl")).exists(),
     )
     return snapshot, checks
 
@@ -1099,18 +1099,20 @@ def _candidate_report_block(paths: TelegramPaths) -> str:
 
 def _scored_candidate_report_block() -> str:
     """Compact read-only scored-candidate section; absent journal is harmless."""
-    path = Path(os.environ.get("SCORED_CANDIDATE_DECISION_PATH", "state/scored_candidate_v1_decisions.jsonl"))
+    path = Path(os.environ.get("SCORED_CANDIDATE_DECISION_PATH", "state/scored_candidate_shadow/decisions.jsonl"))
     if not path.exists():
         return "Scored Candidate — shadow\nStatus: not initialized"
     try:
         rows = read_jsonl_safely(path)[0]
         last = rows[-1] if rows else {}
         return "\n".join([
-            "Scored Candidate — shadow",
-            f"Decision: {last.get('action', 'N/A')}",
+            "🧪 Scored Candidate — shadow",
+            "Status: initialized",
+            f"Decision: {last.get('decision', last.get('action', 'N/A'))}",
             f"Score: {last.get('signal_score', 'N/A')} / 100",
             f"Risk allocation: {float(last.get('risk_fraction', 0)) * 100:.1f}%" if last else "Risk allocation: N/A",
-            f"Hard blocks: {', '.join(last.get('hard_blocks', [])) or 'none'}" if last else "Hard blocks: N/A",
+            "Main limiters:",
+            *[f"- {name.removesuffix('_score').replace('_', ' ').title()}" for name, _ in sorted(last.get('components', {}).items(), key=lambda item: item[1])[:2]],
         ])
     except (OSError, ValueError, TypeError):
         return "Scored Candidate — shadow\nStatus: diagnostic unavailable"

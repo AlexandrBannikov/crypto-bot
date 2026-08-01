@@ -17,7 +17,7 @@ Run locally or in a controlled paper environment:
 
 ```bash
 python scripts/run_scored_candidate_shadow.py
-python scripts/diagnose_scored_candidate.py --json
+python scripts/diagnose_scored_candidate.py --days 7 --json
 ```
 
 Default allocation is the conservative power curve:
@@ -36,6 +36,10 @@ commission and minimum-order guards remain authoritative. Invalid indicators,
 stale/insufficient data, invalid stops and zero allocation are hard blocks.
 
 Configuration is intentionally separate and can be supplied through:
+
+Runtime files are isolated under `state/scored_candidate_shadow/`: `runtime.json`,
+`decisions.jsonl`, and `runtime.lock`. The systemd timer runs after every hourly
+candle close and the feed rejects the still-open candle.
 
 `SCORED_MINIMUM_ENTRY_SCORE`, `SCORED_FULL_RISK_SCORE`,
 `SCORED_MINIMUM_RISK_FRACTION`, `SCORED_MAXIMUM_RISK_FRACTION`,
