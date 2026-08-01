@@ -49,3 +49,48 @@ candle close and the feed rejects the still-open candle.
 Backtest and walk-forward approval are still required before any paper
 execution contour is considered. Real trading and automatic promotion are not
 part of this implementation.
+
+## Experiment A: threshold 60
+
+`scored_candidate_v1_score60` is an optional, journal-only shadow contour. It
+uses the same ETHUSDT spot 1h closed-candle feed, score configuration, power
+allocation curve, 1% base risk, 2% stop distance and 0.1% fee assumption as
+`scored_candidate_v1`. Its only configuration delta is:
+
+```text
+minimum_entry_score: 65 → 60
+```
+
+It never reads or writes Control, Candidate, paper execution, trades, equity or
+the threshold-65 runtime files. Its files are:
+
+```text
+state/scored_candidate_threshold60/runtime.json
+state/scored_candidate_threshold60/decisions.jsonl
+state/scored_candidate_threshold60/runtime.lock
+```
+
+On first start, the runner fetches enough closed candles to match the exact
+timestamp range already present in the threshold-65 journal. Later cycles use
+the same rolling 500-candle feed as threshold 65. The comparison reports any
+score/component mismatch, so results must not be interpreted unless that count
+is zero.
+
+```bash
+python scripts/run_scored_threshold60_shadow.py
+python scripts/diagnose_scored_threshold60.py --days 7 --json
+python scripts/compare_scored_thresholds.py --json
+python scripts/check_scored_threshold60_health.py
+```
+
+The comparison aligns both journals by candle close, reports decisions,
+allocation and economic diagnostics, isolates entries with `60 <= score < 65`,
+and calculates 3h/6h/12h/24h close returns plus 24h MFE and MAE from closed
+candles. `--minimum-order-value` defaults to 5 USDT and can be overridden for
+the current instrument rules. Estimated commission is round-trip notional at
+the unchanged 0.1% fee rate per side.
+
+The Telegram command `/score_compare` exposes the local read-only comparison
+to the single configured owner chat. It is deliberately absent from morning
+and evening reports. The experiment health command is optional: missing state
+reports `disabled` and exits successfully, so production health remains OK.

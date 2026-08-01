@@ -248,6 +248,40 @@ def test_command_status_is_read_only(tmp_path) -> None:
     assert after == before
 
 
+def test_score_compare_command_is_read_only_and_separate_from_daily_reports(tmp_path) -> None:
+    runtime_paths = paths(tmp_path)
+    baseline = tmp_path / "score65.jsonl"
+    experiment = tmp_path / "score60.jsonl"
+    baseline.write_text(json.dumps({
+        "candle_close_timestamp": 3600,
+        "decision": "HOLD",
+        "signal_score": 62,
+        "risk_fraction": 0,
+        "components": {"trend_score": 10},
+        "hard_blocks": ["score_below_entry_threshold"],
+    }) + "\n")
+    experiment.write_text(json.dumps({
+        "candle_close_timestamp": 3600,
+        "decision": "ENTER_LONG",
+        "signal_score": 62,
+        "risk_fraction": .1,
+        "potential_position_size": 50,
+        "components": {"trend_score": 10},
+        "hard_blocks": [],
+    }) + "\n")
+    runtime_paths = TelegramPaths(
+        **{
+            **asdict(runtime_paths),
+            "scored_candidate_decisions": baseline,
+            "scored_threshold60_decisions": experiment,
+        }
+    )
+    before = (baseline.read_text(), experiment.read_text())
+    response = command_response("/score_compare", snapshot(), runtime_paths)
+    assert "Additional entries: 1" in response
+    assert (baseline.read_text(), experiment.read_text()) == before
+
+
 def test_candidate_and_comparison_commands(tmp_path, monkeypatch) -> None:
     from app.candidate_runtime import CandidateStateStore
     from app.trading_controller_store import TradingControllerStateStore

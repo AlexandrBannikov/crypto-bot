@@ -13,6 +13,7 @@ from app.scored_threshold_experiment import (
     configuration_delta,
     experiment_config,
 )
+from app.scored_threshold60_diagnostics import summarize_threshold60
 
 
 def candles(count: int = 90) -> tuple[Candle, ...]:
@@ -65,7 +66,23 @@ def test_threshold60_systemd_runtime_is_optional_and_journal_only() -> None:
     assert "scored_candidate_threshold60/runtime.json" in service
     assert "scored_candidate_threshold60/decisions.jsonl" in service
     assert "scored_candidate_threshold60/runtime.lock" in service
+    assert "--threshold65-decisions /opt/crypto-bot/state/scored_candidate_shadow/decisions.jsonl" in service
     assert "After=network-online.target crypto-scored-candidate-shadow.service" in service
     assert "trade" not in service.lower()
     assert "equity" not in service.lower()
     assert "WantedBy=timers.target" in timer
+
+
+def test_threshold60_has_dedicated_diagnostics(tmp_path: Path) -> None:
+    decisions = tmp_path / "threshold60.jsonl"
+    decisions.write_text(json.dumps({
+        "candle_close_timestamp": 3600,
+        "decision": "HOLD",
+        "signal_score": 61,
+        "risk_fraction": 0,
+        "components": {},
+        "hard_blocks": [],
+    }) + "\n")
+    report = summarize_threshold60(decisions)
+    assert report["strategy_name"] == STRATEGY_NAME
+    assert report["minimum_entry_score"] == 60

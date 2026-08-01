@@ -12,6 +12,7 @@ from app.bybit_market_data import BybitMarketDataConfig, BybitMarketDataFeed
 from app.process_lock import ProcessAlreadyRunningError, ProcessLock
 from app.scored_candidate import ScoredCandidateStateStore, evaluate_shadow_candles
 from app.scored_threshold_experiment import STRATEGY_NAME, experiment_config
+from app.runtime_health import read_jsonl_safely
 
 
 def main() -> int:
@@ -20,15 +21,25 @@ def main() -> int:
     parser.add_argument("--state", type=Path, default=runtime / "runtime.json")
     parser.add_argument("--decisions", type=Path, default=runtime / "decisions.jsonl")
     parser.add_argument("--lock-file", type=Path, default=runtime / "runtime.lock")
+    parser.add_argument("--threshold65-decisions", type=Path, default=ROOT / "state/scored_candidate_shadow/decisions.jsonl")
     parser.add_argument("--symbol", default="ETHUSDT")
     parser.add_argument("--interval", default="60")
     args = parser.parse_args()
     try:
         with ProcessLock(args.lock_file):
+            bootstrap = not args.state.exists() and args.threshold65_decisions.exists()
             candles = BybitMarketDataFeed(BybitMarketDataConfig(
-                symbol=args.symbol, interval=args.interval, limit=500,
+                symbol=args.symbol, interval=args.interval, limit=1000 if bootstrap else 500,
                 category="spot", max_retries=1, closed_candles_only=True,
             )).get_candles()
+            if bootstrap:
+                baseline = read_jsonl_safely(args.threshold65_decisions)[0]
+                if baseline:
+                    first = int(baseline[0]["candle_timestamp"])
+                    last = int(baseline[-1]["candle_timestamp"])
+                    candles = tuple(candle for candle in candles if first <= candle.timestamp <= last)
+                    if not candles or candles[0].timestamp != first or candles[-1].timestamp != last:
+                        raise ValueError("Bybit history does not cover the threshold-65 bootstrap range")
             state = evaluate_shadow_candles(
                 candles,
                 state_store=ScoredCandidateStateStore(args.state),

@@ -54,6 +54,8 @@ class TelegramPaths:
     candidate_trade_journal: Path = Path("state/bybit_candidate_trades.jsonl")
     candidate_decision_journal: Path = Path("state/bybit_candidate_decisions.jsonl")
     candidate_runtime_summary: Path = Path("state/bybit_candidate_runtime.json")
+    scored_candidate_decisions: Path = Path("state/scored_candidate_shadow/decisions.jsonl")
+    scored_threshold60_decisions: Path = Path("state/scored_candidate_threshold60/decisions.jsonl")
 
     @classmethod
     def from_env(
@@ -119,6 +121,18 @@ class TelegramPaths:
                 os.environ.get(
                     "CANDIDATE_RUNTIME_SUMMARY_PATH",
                     "state/bybit_candidate_runtime.json",
+                )
+            ),
+            scored_candidate_decisions=Path(
+                os.environ.get(
+                    "SCORED_CANDIDATE_DECISION_PATH",
+                    "state/scored_candidate_shadow/decisions.jsonl",
+                )
+            ),
+            scored_threshold60_decisions=Path(
+                os.environ.get(
+                    "SCORED_THRESHOLD60_DECISION_PATH",
+                    "state/scored_candidate_threshold60/decisions.jsonl",
                 )
             ),
         )
@@ -1407,6 +1421,7 @@ HELP_TEXT = "\n".join(
         "/mode — режим исполнения",
         "/candidate — изолированный Strategy V2 candidate",
         "/comparison — production против candidate",
+        "/score_compare — owner-only research: Score 65 против Score 60",
         "/help — эта справка",
     ]
 )
@@ -1430,6 +1445,12 @@ def command_response(
         return format_candidate(paths)
     if normalized == "/comparison":
         return format_comparison(paths)
+    if normalized == "/score_compare":
+        from app.scored_threshold_comparison import compare, render_text
+        return render_text(compare(
+            paths.scored_candidate_decisions,
+            paths.scored_threshold60_decisions,
+        ))
     if normalized in {"/start", "/help"}:
         return HELP_TEXT
     return HELP_TEXT
