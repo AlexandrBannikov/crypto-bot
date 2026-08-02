@@ -31,6 +31,8 @@ class ScoreContribution:
     value: float
     maximum: float
     detail: str
+    raw_value: float | None = None
+    normalized_score: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +156,31 @@ def evaluate_signal(candles: Sequence[Candle], config: SignalScoreConfig = Signa
         "momentum": momentum * maxima["momentum"], "volatility": volatility * maxima["volatility"],
         "cost": cost * maxima["cost"],
     }
-    contributions = tuple(ScoreContribution(name, value, maxima[name], name) for name, value in components.items())
+    normalized = {
+        "trend": trend, "ema_alignment": alignment, "adx": adx_quality,
+        "pullback": pullback, "momentum": momentum,
+        "volatility": volatility, "cost": cost,
+    }
+    raw = {
+        "trend": trend_distance if trend_direction else 0.0,
+        "ema_alignment": trend_distance if trend_direction else 0.0,
+        "adx": adx_value, "pullback": current.close - ema,
+        "momentum": (current.close - current.open) / current.close,
+        "volatility": atr_relative, "cost": round_trip_cost,
+    }
+    details = {
+        "trend": "EMA trend direction and distance",
+        "ema_alignment": "fast EMA alignment above slow EMA",
+        "adx": "ADX trend strength",
+        "pullback": "distance and retrace around fast EMA",
+        "momentum": "current candle return",
+        "volatility": "ATR relative to price",
+        "cost": "round-trip fees relative to stop distance",
+    }
+    contributions = tuple(
+        ScoreContribution(name, value, maxima[name], details[name], raw[name], normalized[name])
+        for name, value in components.items()
+    )
     total = max(0.0, min(100.0, sum(components.values())))
     hard_blocks: list[str] = []
     if current.close <= 0:
@@ -163,4 +189,8 @@ def evaluate_signal(candles: Sequence[Candle], config: SignalScoreConfig = Signa
 
 
 def _blocked_score(config: SignalScoreConfig, reason: str) -> SignalScore:
-    return SignalScore(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, (reason,), tuple(), config.version, {})
+    contributions = tuple(
+        ScoreContribution(name, 0.0, maximum, reason, None, None)
+        for name, maximum in config.maxima.items()
+    )
+    return SignalScore(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, (reason,), contributions, config.version, {})

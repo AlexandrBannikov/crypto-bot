@@ -47,6 +47,7 @@ class LaboratoryConfig:
     fee_rate: Decimal
     ranking: RankingThresholds
     strategies: tuple[StrategySpec, ...]
+    scored_decisions: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +109,7 @@ def load_config(path: Path, *, root: Path | None = None) -> LaboratoryConfig:
         fee_rate=Decimal(str(payload.get("fee_rate", "0.001"))),
         ranking=ranking,
         strategies=tuple(specs),
+        scored_decisions=(base / payload["scored_candidate_observability"]["decisions"] if payload.get("scored_candidate_observability", {}).get("decisions") else None),
     )
 
 
@@ -667,6 +669,12 @@ def build_report(
                 )
                 comparisons[spec.strategy_id] = comparison
     ranking = rank_strategies(metrics, comparisons, config.ranking, current)
+    from app.scored_observability import aggregate as aggregate_entry_scores
+    diagnostic_hours = {"today": 24, "24h": 24, "7d": 168, "14d": 336, "30d": 720}.get(period)
+    entry_diagnostics = (
+        aggregate_entry_scores(config.scored_decisions, hours=diagnostic_hours)
+        if config.scored_decisions is not None else None
+    )
     return {
         "schema_version": 2,
         "generated_at": current.isoformat(),
@@ -689,6 +697,8 @@ def build_report(
         "strategies": metrics,
         "comparisons": comparisons,
         "ranking": ranking,
+        "entry_score_diagnostics": entry_diagnostics,
+        "entry_score_note": "Entry Score diagnoses one setup; Strategy Confidence measures historical maturity. Entry Score is not used directly for promotion review.",
         "warnings": warnings,
     }
 
@@ -742,6 +752,15 @@ def render_report(report: dict[str, Any]) -> str:
             )
         lines.append("")
     ranking = report["ranking"]
+    diagnostics = report.get("entry_score_diagnostics")
+    if diagnostics is not None:
+        lines.extend([
+            "Entry Score diagnostics (scored candidate; diagnostic only)",
+            "  Entry Score describes one potential entry; it is distinct from Strategy Confidence.",
+            "  Entry Score is not a promotion-review input.",
+            f"  decisions: {diagnostics['decisions_total']}; average score: {diagnostics['score']['average']}",
+            f"  frequent limiters: {diagnostics['frequent_limiters']}", "",
+        ])
     lines.extend(
         [
             "Ranking",

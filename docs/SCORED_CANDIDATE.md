@@ -4,6 +4,66 @@
 closed ETHUSDT 1h candle with a deterministic `signal_score` from 0 to 100;
 the score is a ranking of setup factors, not a win/profit probability.
 
+## Entry Score explainability
+
+Entry Score describes one concrete entry setup. It is distinct from Strategy
+Confidence, which describes historical sample adequacy, performance, risk,
+stability, data quality and operational maturity. Strategy Laboratory shows
+Entry Score only in a diagnostic section; it is not a direct promotion-review
+input.
+
+The unchanged thresholds are 65 (entry allowed with reduced risk) and 80 (the
+reporting label `strong`). Below 65, HOLD with zero allocation is expected. The
+existing sizing curve remains authoritative: it begins at 10% of base risk at
+65 and reaches 100% at 93. Therefore the 80 strong-entry label does not imply
+100% allocation.
+
+The seven real components and maxima are `trend` (25), `ema_alignment` (15),
+`adx` (20), `pullback` (20), `momentum` (10), `volatility` (5), and `cost` (5).
+Their weighted values come from `evaluate_signal`; reporting does not reproduce
+the scoring formula. Total is their sum. The sum is reconciled to total score
+with tolerance 0.000001. A mismatch creates a warning but cannot change the
+decision.
+
+A limiter is an available component whose deficit `(maximum - weighted score)`
+is at least 10% of its maximum. Limiters sort by absolute deficit and then by
+stable scoring order; the first three are reported. Positive factors are the
+first three non-zero components at least 60% complete, sorted by completion.
+Unavailable components are excluded from both rankings.
+
+```json
+{
+  "total_score": 34.373621,
+  "max_score": 100,
+  "entry_threshold": 65,
+  "strong_entry_threshold": 80,
+  "distance_to_entry": -30.626379,
+  "decision": "HOLD",
+  "risk_allocation_pct": 0.0,
+  "score_band": "below_entry",
+  "allocation_rule_id": "risk_curve_v1",
+  "score_consistent": true,
+  "calculation_version": "score_breakdown_v1"
+}
+```
+
+Read-only inspection:
+
+```bash
+python scripts/show_scored_candidate.py --latest
+python scripts/show_scored_candidate.py --components
+python scripts/show_scored_candidate.py --json
+python scripts/show_scored_candidate.py --aggregate 24h
+python scripts/show_scored_candidate.py --aggregate 7d
+python scripts/show_scored_candidate.py --aggregate all
+```
+
+Old JSONL records are never rewritten. Records without breakdowns, strong
+thresholds, allocation amounts or baseline amounts render as N/A. A score such
+as 34 correctly remains HOLD because it is below 65. This report is not a
+recommendation to tune thresholds: component observations should accumulate
+and be analysed statistically before any separate strategy-change proposal.
+
 The flow is:
 
 ```text

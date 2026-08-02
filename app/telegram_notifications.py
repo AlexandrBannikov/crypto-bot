@@ -838,7 +838,7 @@ def format_morning_report(
             f"Active halt: {snapshot.active_halt_reason or 'none'}",
         ]
     )
-    return production + "\n\n" + _candidate_report_block(paths) + "\n\n" + _scored_candidate_report_block()
+    return production + "\n\n" + _candidate_report_block(paths) + "\n\n" + _scored_candidate_report_block(paths)
 
 
 def format_evening_report(
@@ -941,6 +941,8 @@ def format_evening_report(
         production
         + "\n\n"
         + _candidate_report_block(paths)
+        + "\n\n"
+        + _scored_candidate_report_block(paths)
         + "\n\n"
         + format_daily_comparison(paths, now=now, timezone_name=timezone_name)
         + "\n\n"
@@ -1115,23 +1117,16 @@ def _candidate_report_block(paths: TelegramPaths) -> str:
     )
 
 
-def _scored_candidate_report_block() -> str:
+def _scored_candidate_report_block(paths: TelegramPaths | None = None) -> str:
     """Compact read-only scored-candidate section; absent journal is harmless."""
-    path = Path(os.environ.get("SCORED_CANDIDATE_DECISION_PATH", "state/scored_candidate_shadow/decisions.jsonl"))
+    from app.scored_observability import format_breakdown
+    path = paths.scored_candidate_decisions if paths is not None else Path(os.environ.get("SCORED_CANDIDATE_DECISION_PATH", "state/scored_candidate_shadow/decisions.jsonl"))
     if not path.exists():
         return "Scored Candidate — shadow\nStatus: not initialized"
     try:
         rows = read_jsonl_safely(path)[0]
         last = rows[-1] if rows else {}
-        return "\n".join([
-            "🧪 Scored Candidate — shadow",
-            "Status: initialized",
-            f"Decision: {last.get('decision', last.get('action', 'N/A'))}",
-            f"Score: {last.get('signal_score', 'N/A')} / 100",
-            f"Risk allocation: {float(last.get('risk_fraction', 0)) * 100:.1f}%" if last else "Risk allocation: N/A",
-            "Main limiters:",
-            *[f"- {name.removesuffix('_score').replace('_', ' ').title()}" for name, _ in sorted(last.get('components', {}).items(), key=lambda item: item[1])[:2]],
-        ])
+        return format_breakdown(last) if last else "Scored Candidate — shadow\nStatus: not initialized"
     except (OSError, ValueError, TypeError):
         return "Scored Candidate — shadow\nStatus: diagnostic unavailable"
 

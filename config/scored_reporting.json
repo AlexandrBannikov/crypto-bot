@@ -1,0 +1,8 @@
+{
+  "max_limiters": 3,
+  "limiter_min_deficit_pct": 10,
+  "score_reconciliation_tolerance": 0.000001,
+  "max_positive_factors": 3,
+  "positive_factor_min_pct": 60,
+  "strong_entry_threshold": 80
+}

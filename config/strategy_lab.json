@@ -38,6 +38,11 @@
     "block_on_stale_data": true,
     "block_on_incompatible_config": true
   },
+  "scored_candidate_observability": {
+    "decisions": "state/scored_candidate_shadow/decisions.jsonl",
+    "diagnostic_only": true,
+    "promotion_input": false
+  },
   "strategies": [
     {
       "strategy_id": "production",
