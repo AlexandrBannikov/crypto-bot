@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 import json
+import argparse
 import os
 from pathlib import Path
 import sys
@@ -62,10 +63,14 @@ def summarize_runtime(runtime: Runtime) -> RuntimeSummary:
 
 
 def main() -> None:
-    raise SystemExit(run_checks())
+    parser = argparse.ArgumentParser(description="Safe read-only runtime checks")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--no-network", action="store_true")
+    args = parser.parse_args()
+    raise SystemExit(run_checks(no_network=args.no_network, json_output=args.json))
 
 
-def run_checks(*, no_network: bool = False) -> int:
+def run_checks(*, no_network: bool = False, json_output: bool = False) -> int:
     checks: list[tuple[str, str, str]] = []
     try:
         strategy = PaperStrategyConfig.from_env()
@@ -340,9 +345,33 @@ def run_checks(*, no_network: bool = False) -> int:
         except Exception as exc:
             checks.append(("FAIL", "lock_operation", str(exc)))
 
-    for status, name, message in checks:
-        print(f"{status} {name}: {message}")
-    print("Ордера не отправлялись; API check uses public market data only.")
+    from app.telegram_notifications import _systemd_unit_status
+    timer = _systemd_unit_status("crypto-paper.timer")
+    service = _systemd_unit_status("crypto-paper.service")
+    systemd_visibility = "AVAILABLE" if timer.available and service.available else "UNKNOWN"
+    failures = {name for status, name, _ in checks if status == "FAIL"}
+    warnings = {name for status, name, _ in checks if status == "WARN"}
+    critical = failures - {"bybit_api"}
+    trading_health = "ERROR" if critical else "OK_WITH_WARNINGS" if failures or warnings else "OK"
+    last = next((item for item in health if item.name == "last_candle"), None)
+    payload = {
+        "checks": [{"status": status, "name": name, "message": message} for status, name, message in checks],
+        "trading_health": trading_health,
+        "systemd_visibility": systemd_visibility,
+        "systemd_detail": timer.detail or service.detail,
+        "authoritative_source": "runtime heartbeat",
+        "action_required": bool(critical),
+        "candle_freshness_status": last.status.name if last else "UNKNOWN",
+        "candle_timing": last.details if last else {},
+    }
+    if json_output:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        for status, name, message in checks:
+            print(f"{status} {name}: {message}")
+        print(f"Trading health: {trading_health}")
+        print(f"Systemd visibility: {systemd_visibility}")
+        print("Ордера не отправлялись; API check uses public market data only.")
     return 1 if any(status == "FAIL" for status, _, _ in checks) else 0
 
 

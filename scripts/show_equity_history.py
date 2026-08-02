@@ -14,6 +14,7 @@ from app.equity_history import (
     SnapshotStorage,
     load_equity_history_config,
 )
+from app.equity_integrity import check_equity_history
 
 
 def parser() -> argparse.ArgumentParser:
@@ -23,6 +24,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--daily", action="store_true")
     result.add_argument("--monthly", action="store_true")
     result.add_argument("--quality", action="store_true")
+    result.add_argument("--duplicates", action="store_true")
+    result.add_argument("--gaps", action="store_true")
     result.add_argument("--json", action="store_true")
     result.add_argument(
         "--config", type=Path, default=ROOT / "config/equity_history.json"
@@ -64,6 +67,13 @@ def build(args: argparse.Namespace) -> dict:
             )
     if not args.environment:
         result["comparison"] = metrics.compare()
+    if args.quality or args.duplicates or args.gaps:
+        integrity = check_equity_history(config.database_path, mode=args.environment)
+        if not args.duplicates:
+            integrity.pop("duplicate_groups", None)
+        if not args.gaps:
+            integrity.pop("gaps", None)
+        result["integrity"] = integrity
     return result
 
 

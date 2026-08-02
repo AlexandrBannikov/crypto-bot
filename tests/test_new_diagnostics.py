@@ -52,7 +52,7 @@ def test_storage_rejects_canonical_conflict(tmp_path: Path):
         storage.insert(replace(snapshot(), equity=Decimal("999")))
 
 
-def test_global_unique_index_waits_for_all_modes(tmp_path: Path):
+def test_expected_multi_reason_rows_are_not_repaired_as_duplicates(tmp_path: Path):
     database = tmp_path / "equity.db"
     storage = SnapshotStorage(database)
     storage.insert(snapshot(environment="production", strategy_name="production"))
@@ -76,9 +76,9 @@ def test_global_unique_index_waits_for_all_modes(tmp_path: Path):
         connection.execute(
             f"INSERT INTO equity_snapshots ({names}) SELECT {candidate_select} FROM equity_snapshots WHERE environment='candidate' AND strategy_name='candidate_adx_hybrid'"
         )
-    assert repair_equity_history.main(["--mode", "production", "--database", str(database), "--deduplicate-exact", "--apply"]) == 0
+    assert repair_equity_history.main(["--mode", "production", "--database", str(database), "--deduplicate-exact", "--dry-run"]) == 0
     with sqlite3.connect(database) as connection:
-        assert not connection.execute("SELECT 1 FROM pragma_index_list('equity_snapshots') WHERE name='uq_equity_canonical'").fetchone()
-    assert repair_equity_history.main(["--mode", "candidate", "--database", str(database), "--deduplicate-exact", "--apply"]) == 0
-    with sqlite3.connect(database) as connection:
-        assert connection.execute("SELECT 1 FROM pragma_index_list('equity_snapshots') WHERE name='uq_equity_canonical'").fetchone()
+        assert connection.execute("SELECT count(*) FROM equity_snapshots").fetchone()[0] == 4
+    result = check_equity_history(database)
+    assert result["exact_duplicates"] == 0
+    assert result["expected_multi_reason_snapshots"] == 2

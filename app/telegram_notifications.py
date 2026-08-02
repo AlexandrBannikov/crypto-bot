@@ -615,6 +615,7 @@ def collect_snapshot(
         )
     check_map = {item.name: item for item in checks}
     lag = check_map.get("market_lag")
+    candle_check = check_map.get("last_candle")
     api = check_map.get("bybit_api")
     position = "LONG" if controller.has_open_position else "FLAT"
     component_statuses = {
@@ -627,7 +628,8 @@ def collect_snapshot(
         "Equity history": "OK",
         "Candidate": "OK",
     }
-    reasons = tuple(item.message for item in checks if item.status != HealthStatus.OK)
+    trading_checks = [item for item in checks if item.name != "systemd_monitoring"]
+    reasons = tuple(item.message for item in trading_checks if item.status != HealthStatus.OK)
     snapshot = RuntimeSnapshot(
         checked_at=current.isoformat(),
         timer_state=timer_status.active_state,
@@ -641,10 +643,13 @@ def collect_snapshot(
         last_candle=last_candle,
         candle_age_seconds=open_age,
         market_lag_candles=(
-            float(lag.details["lag_candles"]) if lag else None
+            float(lag.details["lag_candles"]) if lag
+            else float(candle_check.details["market_lag_candles"])
+            if candle_check and candle_check.details.get("market_lag_candles") is not None
+            else None
         ),
         api_status=api.status.name if api else "UNKNOWN",
-        health_status=overall_status(checks).name,
+        health_status=overall_status(trading_checks).name,
         active_halt_reason=runtime.active_halt_reason,
         counters=asdict(runtime.counters),
         systemd_monitoring_detail=(
@@ -898,12 +903,18 @@ def format_evening_report(
             f"Period: {start.isoformat()} — {current.isoformat()}",
             "",
             "System health:",
-            f"overall {snapshot.health_status}",
+            f"Trading health: {snapshot.health_status}",
             f"API {snapshot.api_status}",
-            f"timer {_health_state(snapshot.timer_state)}",
-            f"service {_health_state(snapshot.service_state)}",
+            f"Market data: {snapshot.component_statuses.get('Market data', 'UNKNOWN')}",
+            f"Systemd visibility: {'UNKNOWN' if snapshot.systemd_monitoring_detail else 'AVAILABLE'}",
+            "Authoritative source: runtime heartbeat",
+            f"Action required: {'yes' if snapshot.health_status == 'CRITICAL' or snapshot.active_halt_reason else 'no'}",
             f"last successful cycle {snapshot.last_candle or 'N/A'}",
-            f"last candle age {_age(snapshot.candle_age_seconds)}",
+            f"candle open age {_age(snapshot.candle_age_seconds)}",
+            f"candle close age {_age(snapshot.candle_close_age_seconds)}",
+            f"expected latest closed candle {snapshot.last_candle or 'N/A'}",
+            f"market lag candles {snapshot.market_lag_candles if snapshot.market_lag_candles is not None else 'N/A'}",
+            f"stale status {'yes' if (snapshot.market_lag_candles or 0) > 0 else 'no'}",
             f"report generated at {current.isoformat()}",
             f"systemd detail {health_detail}",
             "",
@@ -972,13 +983,10 @@ def _equity_history_block(*, now: datetime | None = None) -> str:
     lines = [
         "История капитала",
         f"Integrity: {integrity['status']}",
+        f"Exact duplicates: {integrity['exact_duplicates']}",
+        f"Historical boundaries: {len(integrity['historical_boundaries'])}",
+        f"Runtime gaps: {len(integrity['runtime_gaps'])}",
     ]
-    if integrity["status"] != "OK":
-        lines.append(
-            f"Duplicates: {integrity['timestamp_duplicates']}; "
-            f"Conflicts: {integrity['timestamp_conflicts']}; "
-            f"Gaps: {integrity['large_gaps']}"
-        )
     for environment, label in (
         ("production", "Production"), ("candidate", "Candidate")
     ):
@@ -1308,8 +1316,19 @@ def format_daily_comparison(
             timezone_name=timezone_name,
             operational=operational,
         )
-    except (OSError, ValueError) as exc:
-        return f"Production vs Candidate\nComparison unavailable: {type(exc).__name__}"
+    except (OSError, ValueError, TypeError, ArithmeticError) as exc:
+        code = ("COMPARISON_NUMERIC_TYPE_ERROR"
+                if isinstance(exc, (TypeError, ArithmeticError))
+                else "COMPARISON_INPUT_INVALID")
+        LOGGER.exception("strategy comparison failed error_code=%s", code)
+        return f"Production vs Candidate\nStatus: ERROR\nError code: {code}"
+    reviews = report.get("promotion_reviews", {})
+    if not reviews or all(
+        item.get("recommendation") == "INSUFFICIENT_DATA"
+        for item in reviews.values()
+    ):
+        return ("Production vs Candidate\nStatus: INSUFFICIENT\n"
+                "Reason: недостаточно сопоставимой истории")
     return render_promotion_review(report, explain=True).rstrip()
 
 

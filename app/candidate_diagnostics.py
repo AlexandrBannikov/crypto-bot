@@ -64,16 +64,46 @@ def summarize_candidate(
     adx = [float(row["adx"]) for row in rows if row.get("adx") is not None]
     score = [float(row["hybrid_score"]) for row in rows if row.get("hybrid_score") is not None]
     entries = sum(_reason(row) == "entry_allowed" for row in rows)
+    no_signal = reasons.get("no_signal", 0)
+    factor_fields = {
+        "trend": ("trend", "trend_ok"),
+        "ema_alignment": ("ema_alignment", "ema_aligned"),
+        "adx": ("adx",), "pullback": ("pullback", "pullback_detected"),
+        "momentum": ("momentum",), "cost": ("cost", "cost_ok"),
+        "regime": ("regime", "market_regime"),
+    }
+    distributions: dict[str, dict[str, int]] = {}
+    for label, fields in factor_fields.items():
+        values = Counter()
+        for row in rows:
+            value = next((row.get(field) for field in fields if row.get(field) is not None), None)
+            if value is not None:
+                values[str(value)] += 1
+        distributions[label] = dict(values)
+    observable = any(distributions.values())
+    subreasons = Counter(
+        str(row["no_signal_subreason"]) for row in rows
+        if row.get("no_signal_subreason")
+    )
     return {
         "candidate": "ADX + HYBRID Pullback",
         "decisions": len(rows), "trades": len(trades),
         "entry_rate_percent": entries / len(rows) * 100 if rows else None,
         "rejection_reasons": dict(sorted(reasons.items())),
+        "no_signal_count": no_signal,
+        "no_signal_percentage": no_signal / len(rows) * 100 if rows else None,
+        "no_signal_subreasons": dict(subreasons) if subreasons else None,
+        "factor_distributions": distributions,
+        "observability_status": "AVAILABLE" if observable else "LEGACY_FIELDS_UNAVAILABLE",
+        "near_miss_conditions": None if not observable else {
+            key: sum(value for name, value in values.items() if name.lower() in {"false", "0", "failed"})
+            for key, values in distributions.items()
+        },
         "adx": {"min": min(adx) if adx else None, "avg": sum(adx) / len(adx) if adx else None, "max": max(adx) if adx else None},
         "hybrid_score": {"min": min(score) if score else None, "avg": sum(score) / len(score) if score else None, "max": max(score) if score else None},
         "warnings": warnings,
         "conclusion": (
-            "No entries because filters are strict." if rows and not trades
+            "No trades observed; diagnostics are read-only and do not infer strategy changes." if rows and not trades
             else "No candidate decisions available." if not rows
             else "Candidate has recorded entries."
         ),
@@ -92,4 +122,3 @@ def render_candidate_diagnostics(report: dict[str, Any]) -> str:
             lines.append(f"{label} min/avg/max: {values['min']:.3f}/{values['avg']:.3f}/{values['max']:.3f}")
     lines.extend(["", "Conclusion:", report["conclusion"]])
     return "\n".join(lines)
-
