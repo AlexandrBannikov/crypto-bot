@@ -1,0 +1,19 @@
+[Unit]
+Description=Isolated paper research experiments
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=crypto-bot
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/paper-experiments.env
+ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/run_paper_experiments.py
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/crypto-bot/state/experiments
+MemoryMax=512M
+CPUQuota=50%
+TimeoutStartSec=5min

@@ -56,6 +56,7 @@ class TelegramPaths:
     candidate_runtime_summary: Path = Path("state/bybit_candidate_runtime.json")
     scored_candidate_decisions: Path = Path("state/scored_candidate_shadow/decisions.jsonl")
     scored_threshold60_decisions: Path = Path("state/scored_candidate_threshold60/decisions.jsonl")
+    experiments_root: Path = Path("state/experiments")
 
     @classmethod
     def from_env(
@@ -134,6 +135,9 @@ class TelegramPaths:
                     "SCORED_THRESHOLD60_DECISION_PATH",
                     "state/scored_candidate_threshold60/decisions.jsonl",
                 )
+            ),
+            experiments_root=Path(
+                os.environ.get("EXPERIMENTS_STATE_DIR", "state/experiments")
             ),
         )
 
@@ -1422,6 +1426,8 @@ HELP_TEXT = "\n".join(
         "/candidate — изолированный Strategy V2 candidate",
         "/comparison — production против candidate",
         "/score_compare — owner-only research: Score 65 против Score 60",
+        "/experiments — owner-only paper research summary",
+        "/experiment <id> — owner-only experiment diagnostics",
         "/help — эта справка",
     ]
 )
@@ -1432,7 +1438,8 @@ def command_response(
     snapshot: RuntimeSnapshot,
     paths: TelegramPaths,
 ) -> str:
-    normalized = command.split()[0].split("@")[0].lower()
+    parts = command.split()
+    normalized = parts[0].split("@")[0].lower()
     if normalized == "/status":
         return format_status(snapshot)
     if normalized == "/trades":
@@ -1451,9 +1458,49 @@ def command_response(
             paths.scored_candidate_decisions,
             paths.scored_threshold60_decisions,
         ))
+    if normalized == "/experiments":
+        return format_experiments(paths)
+    if normalized == "/experiment":
+        return format_experiment(paths, parts[1] if len(parts) > 1 else "")
     if normalized in {"/start", "/help"}:
         return HELP_TEXT
     return HELP_TEXT
+
+
+def _experiment_registry_for_paths(paths: TelegramPaths):
+    from dataclasses import replace
+    from app.experiments.registry import ExperimentRegistry, build_registry
+    root = Path(__file__).resolve().parents[1]
+    base = build_registry(root, enabled_ids=("control_baseline_v1", "relaxed_signal_v1"))
+    return ExperimentRegistry([
+        replace(item, root_path=paths.experiments_root / item.experiment_id)
+        for item in base.all()
+    ])
+
+
+def format_experiments(paths: TelegramPaths) -> str:
+    from app.experiments.reporting import comparison
+    rows = comparison(_experiment_registry_for_paths(paths), include_disabled=True)
+    lines = ["Experiments — Paper Research"]
+    for row in rows:
+        lines += ["", row["display_name"], f"Equity: {row['current_equity']:.2f}",
+                  f"Return: {row['return_percent']:.2f}%", f"Trades: {row['closed_trades']}",
+                  f"DD: {row['max_drawdown']:.2f}%", f"Status: {row['status'] if row['status']=='disabled' else row['sample_adequacy']}"]
+    return "\n".join(lines)
+
+
+def format_experiment(paths: TelegramPaths, experiment_id: str) -> str:
+    from app.experiments.reporting import metrics
+    try:
+        spec = _experiment_registry_for_paths(paths).get(experiment_id)
+    except KeyError:
+        return "Experiment not found."
+    row = metrics(spec)
+    return "\n".join([f"Experiment — {row['display_name']}", f"ID: {row['experiment_id']}",
+        f"Status: {row['status']}", f"Decisions: {row['decisions']}", f"Closed trades: {row['closed_trades']}",
+        f"Equity: {row['current_equity']:.2f}", f"Return: {row['return_percent']:.2f}%",
+        f"Max DD: {row['max_drawdown']:.2f}%", f"Sample: {row['sample_adequacy']}",
+        f"Research: {row.get('research_status', 'INSUFFICIENT_DATA')}"])
 
 
 def process_update(
