@@ -113,6 +113,22 @@ def test_self_check_missing_and_invalid_inputs_are_safe(tmp_path):
     assert run_read_only_self_check([(invalid, "json")])["error_codes"] == ["INVALID_INPUT"]
 
 
+def test_self_check_permission_denied_is_structured(tmp_path, monkeypatch):
+    denied = tmp_path / "denied.json"
+    original_stat = Path.stat
+
+    def deny(path, *args, **kwargs):
+        if path == denied:
+            raise PermissionError("denied")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", deny)
+    result = run_read_only_self_check([(denied, "json")])
+    assert result["status"] == "error"
+    assert result["error_codes"] == ["PERMISSION_DENIED"]
+    assert result["write_operations"] == []
+
+
 def test_four_cli_self_checks_do_not_mutate_inputs(tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("EQUITY_HISTORY_DB_PATH", raising=False)
     state = tmp_path / "state.json"

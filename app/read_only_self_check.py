@@ -8,7 +8,18 @@ from typing import Iterable
 
 
 def _path_result(path: Path, kind: str) -> dict:
-    exists = path.exists()
+    try:
+        path.stat()
+        exists = True
+    except FileNotFoundError:
+        exists = False
+    except PermissionError:
+        return {
+            "path": str(path), "kind": kind, "exists": None,
+            "readable": False, "writable": False,
+            "parent_traversable": False,
+            "error_code": "PERMISSION_DENIED",
+        }
     optional = kind == "optional_file"
     readable = (exists and os.access(path, os.R_OK)) or (optional and not exists)
     error_code = None
@@ -44,8 +55,11 @@ def run_read_only_self_check(
     sqlite_error = None
     if sqlite_path is not None:
         sqlite_path = Path(sqlite_path)
-        wal_present = Path(f"{sqlite_path}-wal").exists()
-        shm_present = Path(f"{sqlite_path}-shm").exists()
+        try:
+            wal_present = Path(f"{sqlite_path}-wal").exists()
+            shm_present = Path(f"{sqlite_path}-shm").exists()
+        except PermissionError:
+            wal_present = shm_present = False
         immutable = not wal_present
         sqlite_mode = "ro" if wal_present else "ro+immutable"
         uri = f"file:{sqlite_path}?mode=ro" + ("&immutable=1" if immutable else "")
