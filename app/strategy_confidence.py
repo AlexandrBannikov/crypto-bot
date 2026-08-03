@@ -241,6 +241,7 @@ def rolling_metrics(
     history_config = load_equity_history_config(
         Path(__file__).resolve().parents[1] / "config/equity_history.json",
         root=Path(__file__).resolve().parents[1],
+        require_writable_database_parent=False,
     )
     history_metrics = (
         SnapshotMetrics(SnapshotStorage(history_config.database_path), history_config)

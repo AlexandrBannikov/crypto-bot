@@ -15,6 +15,7 @@ from app.strategy_confidence import (
     render_promotion_review,
 )
 from app.strategy_lab import PERIODS, load_config, render_report
+from app.read_only_self_check import run_read_only_self_check
 
 
 def parser() -> argparse.ArgumentParser:
@@ -27,6 +28,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--explain", action="store_true")
     result.add_argument("--diagnostics", action="store_true")
     result.add_argument("--json", action="store_true")
+    result.add_argument("--read-only-self-check", action="store_true")
     result.add_argument("--timezone", default="UTC")
     result.add_argument(
         "--config",
@@ -38,6 +40,16 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.read_only_self_check:
+        laboratory = load_config(args.config, root=ROOT)
+        paths = [(args.config, "json")]
+        for item in laboratory.strategies:
+            paths.extend(((item.state, "json"), (item.trades, "jsonl"), (item.decisions, "jsonl")))
+        if laboratory.scored_decisions:
+            paths.append((laboratory.scored_decisions, "jsonl"))
+        payload = run_read_only_self_check(paths)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload["status"] == "ok" else 3
     laboratory = load_config(args.config, root=ROOT)
     report = build_promotion_review(
         laboratory,

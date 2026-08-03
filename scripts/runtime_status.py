@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.runtime_health import HealthStatus, overall_status, run_health_checks
+from app.read_only_self_check import run_read_only_self_check
 
 DEFAULT_STATE = PROJECT_ROOT / "state/trading_controller.json"
 DEFAULT_JOURNAL = PROJECT_ROOT / "state/controller_trade_journal.jsonl"
@@ -21,6 +22,7 @@ DEFAULT_SHADOW = PROJECT_ROOT / "state/shadow_decisions.jsonl"
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Show paper controller runtime status")
     result.add_argument("--json", action="store_true")
+    result.add_argument("--read-only-self-check", action="store_true")
     result.add_argument("--no-network", action="store_true")
     result.add_argument("--state-path", type=Path, default=DEFAULT_STATE)
     result.add_argument("--journal-path", type=Path, default=DEFAULT_JOURNAL)
@@ -77,6 +79,14 @@ def build_status(args: argparse.Namespace) -> tuple[dict, HealthStatus]:
 def main(argv: list[str] | None = None) -> int:
     try:
         args = parser().parse_args(argv)
+        if args.read_only_self_check:
+            payload = run_read_only_self_check([
+                (args.state_path, "json"), (args.journal_path, "jsonl"),
+                (args.shadow_path, "jsonl"),
+                (PROJECT_ROOT / "state/bybit_controller.lock", "optional_file"),
+            ])
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if payload["status"] == "ok" else 3
         if args.max_candle_age_minutes <= 0:
             raise ValueError("--max-candle-age-minutes must be positive")
         payload, status = build_status(args)

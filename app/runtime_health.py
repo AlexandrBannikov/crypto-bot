@@ -78,9 +78,9 @@ def check_lock(path: Path, *, now: datetime | None = None) -> HealthCheckResult:
     if not path.exists():
         return HealthCheckResult("controller_lock", HealthStatus.OK, "lock file absent", {}, checked)
     try:
-        with path.open("a+", encoding="utf-8") as handle:
+        with path.open("r", encoding="utf-8") as handle:
             try:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
             except BlockingIOError:
                 handle.seek(0)
                 metadata_text = handle.read().strip()

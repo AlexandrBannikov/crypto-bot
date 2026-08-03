@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 from app.runtime_health import read_jsonl_safely
 from app.scored_observability import aggregate, breakdown_from_record, format_breakdown
+from app.read_only_self_check import run_read_only_self_check
 
 
 def parser() -> argparse.ArgumentParser:
@@ -19,6 +20,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--latest", action="store_true")
     result.add_argument("--components", action="store_true")
     result.add_argument("--json", action="store_true")
+    result.add_argument("--read-only-self-check", action="store_true")
     result.add_argument("--last", type=int, metavar="HOURS")
     result.add_argument("--aggregate", choices=("24h", "7d", "all"))
     return result
@@ -26,6 +28,10 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.read_only_self_check:
+        payload = run_read_only_self_check([(args.decisions, "jsonl")])
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload["status"] == "ok" else 3
     if args.last is not None and args.last <= 0:
         parser().error("--last must be positive")
     period = args.aggregate or (f"{args.last}h" if args.last else None)

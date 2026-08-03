@@ -305,10 +305,15 @@ class SnapshotStorage:
 
     def connect(self, *, readonly: bool = False) -> sqlite3.Connection:
         if readonly:
+            # immutable is safe only for a quiescent database.  A live WAL must
+            # remain visible to SQLite, so use ordinary mode=ro when it exists.
+            immutable = not Path(f"{self.path}-wal").exists()
+            parameters = "mode=ro&immutable=1" if immutable else "mode=ro"
             connection = sqlite3.connect(
-                f"file:{self.path}?mode=ro", uri=True, timeout=30
+                f"file:{self.path}?{parameters}", uri=True, timeout=30
             )
             connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only=ON")
             connection.execute("PRAGMA foreign_keys=ON")
             return connection
         self.path.parent.mkdir(parents=True, exist_ok=True)

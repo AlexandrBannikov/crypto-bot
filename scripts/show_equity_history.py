@@ -15,6 +15,7 @@ from app.equity_history import (
     load_equity_history_config,
 )
 from app.equity_integrity import check_equity_history
+from app.read_only_self_check import run_read_only_self_check
 
 
 def parser() -> argparse.ArgumentParser:
@@ -27,6 +28,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--duplicates", action="store_true")
     result.add_argument("--gaps", action="store_true")
     result.add_argument("--json", action="store_true")
+    result.add_argument("--read-only-self-check", action="store_true")
     result.add_argument(
         "--config", type=Path, default=ROOT / "config/equity_history.json"
     )
@@ -39,7 +41,10 @@ def build(args: argparse.Namespace) -> dict:
         if args.config == ROOT / "config/equity_history.json"
         else args.config.parent
     )
-    config = load_equity_history_config(args.config, root=config_root)
+    config = load_equity_history_config(
+        args.config, root=config_root,
+        require_writable_database_parent=False,
+    )
     storage = SnapshotStorage(config.database_path)
     metrics = SnapshotMetrics(storage, config)
     environments = [args.environment] if args.environment else ["production", "candidate"]
@@ -118,6 +123,12 @@ def render(report: dict) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.read_only_self_check:
+        config_root = ROOT if args.config == ROOT / "config/equity_history.json" else args.config.parent
+        config = load_equity_history_config(args.config, root=config_root, require_writable_database_parent=False)
+        payload = run_read_only_self_check([(args.config, "json"), (config.database_path, "sqlite")], sqlite_path=config.database_path)
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if payload["status"] == "ok" else 3
     report = build(args)
     print(
         json.dumps(report, ensure_ascii=False, indent=2)
