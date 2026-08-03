@@ -132,8 +132,10 @@ def test_self_check_permission_denied_is_structured(tmp_path, monkeypatch):
 def test_four_cli_self_checks_do_not_mutate_inputs(tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("EQUITY_HISTORY_DB_PATH", raising=False)
     state = tmp_path / "state.json"
+    candle = tmp_path / "trading_controller_last_candle.txt"
     journal = tmp_path / "journal.jsonl"
     state.write_text("{}", encoding="utf-8")
+    candle.write_text("1\n", encoding="utf-8")
     journal.write_text('{"candle_timestamp":1}\n', encoding="utf-8")
     database = tmp_path / "equity.db"
     _database(database)
@@ -141,7 +143,7 @@ def test_four_cli_self_checks_do_not_mutate_inputs(tmp_path, capsys, monkeypatch
     equity_config.write_text(json.dumps({"database_path": str(database)}), encoding="utf-8")
     lab_config = tmp_path / "lab.json"
     lab_config.write_text(json.dumps({"strategies":[{"strategy_id":"production","display_name":"p","enabled":True,"kind":"production","state":str(state),"trades":str(journal),"decisions":str(journal)}]}), encoding="utf-8")
-    before = {path: path.read_bytes() for path in (state, journal, database, equity_config, lab_config)}
+    before = {path: path.read_bytes() for path in (state, candle, journal, database, equity_config, lab_config)}
     assert runtime_status.main(["--read-only-self-check", "--json", "--state-path", str(state), "--journal-path", str(journal), "--shadow-path", str(journal)]) == 0
     assert show_strategy_lab.main(["--read-only-self-check", "--json", "--config", str(lab_config)]) == 0
     assert show_equity_history.main(["--read-only-self-check", "--json", "--config", str(equity_config)]) == 0

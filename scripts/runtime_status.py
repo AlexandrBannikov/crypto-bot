@@ -83,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = run_read_only_self_check([
                 (args.state_path, "json"), (args.journal_path, "jsonl"),
                 (args.shadow_path, "jsonl"),
+                (args.state_path.parent / "trading_controller_last_candle.txt", "file"),
                 (PROJECT_ROOT / "state/bybit_controller.lock", "optional_file"),
             ])
             print(json.dumps(payload, ensure_ascii=False, indent=2))

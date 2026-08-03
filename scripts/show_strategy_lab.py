@@ -45,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
         paths = [(args.config, "json")]
         for item in laboratory.strategies:
             paths.extend(((item.state, "json"), (item.trades, "jsonl"), (item.decisions, "jsonl")))
+            if item.runtime_summary:
+                paths.append((item.runtime_summary, "json"))
         if laboratory.scored_decisions:
             paths.append((laboratory.scored_decisions, "jsonl"))
         payload = run_read_only_self_check(paths)
