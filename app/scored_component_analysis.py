@@ -33,6 +33,8 @@ class ComponentObservation:
     score: float
     components: dict[str, float]
     regime: str
+    trend_distance_atr: float
+    trend_spread_change: float
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,7 @@ class ScoredAuditReport:
     technical_findings: list[dict[str, str]]
     limitations: list[str]
     verdict: dict[str, Any]
+    trend_v2_diagnostics: dict[str, Any]
     recommendation_status: str = "ANALYSIS_ONLY"
 
 
@@ -136,6 +139,8 @@ def replay_closed_candles(candles: Sequence[Candle], config: SignalScoreConfig =
     relative_atr = atr(frame, config.adx_period) / close
     direction = (fast > slow).astype(float)
     distance = (fast - slow).abs() / close
+    trend_distance_atr = distance / np.maximum(relative_atr, 1e-12)
+    trend_spread_change = (fast - slow).diff().fillna(0)
     smooth_trend = _clamp((distance - .001) / (.03 - .001))
     smooth_align = _clamp((distance - .001) / (.02 - .001))
     ema_scale = fast.clip(lower=1e-12)
@@ -164,7 +169,9 @@ def replay_closed_candles(candles: Sequence[Candle], config: SignalScoreConfig =
         values = {name: float(weighted[name].iloc[i]) for name in COMPONENTS}
         result.append(ComponentObservation(int(frame.timestamp.iloc[i]), int(frame.timestamp.iloc[i]) + 3600,
                                            float(frame.close.iloc[i]), float(total.iloc[i]), values,
-                                           f"{regime_trend[i]}_{regime_vol[i]}"))
+                                           f"{regime_trend[i]}_{regime_vol[i]}",
+                                           float(trend_distance_atr.iloc[i]),
+                                           float(trend_spread_change.iloc[i])))
     quality = {"input_candles": len(candles), "unique_candles": len(ordered),
                "duplicate_candles": duplicate_count, "warmup_excluded": len(ordered) - len(result),
                "invalid_rows_excluded": int((~finite & valid_mask).sum()), "closed_candles_only": True}
@@ -334,6 +341,19 @@ def analyze_observations(observations: Sequence[ComponentObservation], *, period
     else:
         regimes = [r for r in regime_breakdown.values() if r["observations"] >= 100]
         verdict = "MARKET_REGIME_EFFECT" if regimes and max(r["trend_zero_pct"] for r in regimes) - min(r["trend_zero_pct"] for r in regimes) >= 40 else "HEALTHY_SELECTIVE"
+    trend_distance_atr_values = [o.trend_distance_atr for o in obs]
+    trend_spread_change_values = [o.trend_spread_change for o in obs]
+
+    trend_v2_diagnostics = {
+        "trend_distance_atr": _stats(trend_distance_atr_values),
+        "trend_spread_change": {
+            **_stats(trend_spread_change_values),
+            "percentage_positive": float(sum(x > 0 for x in trend_spread_change_values) * 100 / n) if n else 0,
+            "percentage_zero": float(sum(x == 0 for x in trend_spread_change_values) * 100 / n) if n else 0,
+            "percentage_negative": float(sum(x < 0 for x in trend_spread_change_values) * 100 / n) if n else 0,
+        }
+    }
+
     return ScoredAuditReport(period, datetime.fromtimestamp(obs[0].timestamp, timezone.utc).isoformat() if n else None,
         datetime.fromtimestamp(obs[-1].close_timestamp, timezone.utc).isoformat() if n else None, n,
         {"type": source, "formula_version": config.version}, quality or {}, distributions,
@@ -348,7 +368,9 @@ def analyze_observations(observations: Sequence[ComponentObservation], *, period
           "score_gte_80_pct": float((scores >= 80).mean() * 100) if n else 0,
           "trend_zero_pct": distributions["trend"]["percentages"]["exactly_zero"],
           "ema_alignment_zero_pct": distributions["ema_alignment"]["percentages"]["exactly_zero"]},
-         "limitations": "Outcome relationships are observational and historical."}, "ANALYSIS_ONLY")
+         "limitations": "Outcome relationships are observational and historical."},
+         trend_v2_diagnostics=trend_v2_diagnostics,
+         recommendation_status="ANALYSIS_ONLY")
 
 
 def select_period(candles: Sequence[Candle], period: str, now_timestamp: int | None = None) -> tuple[Candle, ...]:

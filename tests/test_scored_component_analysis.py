@@ -24,7 +24,7 @@ def observations(values, component="trend"):
     for i, value in enumerate(values):
         components = {name: MAXIMA[name] * .5 for name in COMPONENTS}
         components[component] = value
-        rows.append(ComponentObservation(i * 3600, (i + 1) * 3600, 100 + i, sum(components.values()), components, "RANGE_NORMAL"))
+        rows.append(ComponentObservation(i * 3600, (i + 1) * 3600, 100 + i, sum(components.values()), components, "RANGE_NORMAL", trend_distance_atr=0.0, trend_spread_change=0.0))
     return rows
 
 
@@ -90,7 +90,7 @@ def test_forward_tail_is_censored(count):
 @pytest.mark.parametrize("score", (0, 19.999, 20, 39.999, 40, 49.999, 50, 64.999, 65, 79.999, 80, 100))
 def test_score_bands_cover_boundaries(score):
     row = observations([1])[0]
-    row = ComponentObservation(row.timestamp, row.close_timestamp, row.market_price, score, row.components, row.regime)
+    row = ComponentObservation(row.timestamp, row.close_timestamp, row.market_price, score, row.components, row.regime, trend_distance_atr=0.0, trend_spread_change=0.0)
     report = asdict(analyze_observations([row], period="all"))
     assert sum(x["count"] for x in report["score_distribution"]["bands"].values()) == 1
 
@@ -139,7 +139,7 @@ def test_threshold_reachability_never_and_sometimes():
     low = observations([0] * 10)
     for i, row in enumerate(low):
         low[i] = ComponentObservation(row.timestamp, row.close_timestamp, row.market_price, 0,
-                                      {c: 0 for c in COMPONENTS}, row.regime)
+                                      {c: 0 for c in COMPONENTS}, row.regime, trend_distance_atr=0.0, trend_spread_change=0.0)
     assert asdict(analyze_observations(low, period="all"))["threshold_reachability"]["physically_capable_65"] == 0
     high = observations([MAXIMA["trend"]] * 10)
     assert asdict(analyze_observations(high, period="all"))["threshold_reachability"]["physically_capable_65"] == 10
@@ -206,7 +206,7 @@ def test_report_schema_and_json_are_complete():
     required = {"period", "start", "end", "observations", "data_source", "data_quality", "component_distributions",
         "zero_streaks", "score_distribution", "threshold_reachability", "limiter_frequency", "regime_breakdown",
         "time_breakdown", "forward_outcomes", "score_outcomes", "counterfactuals", "technical_findings",
-        "limitations", "verdict", "recommendation_status"}
+        "limitations", "verdict", "recommendation_status", "trend_v2_diagnostics"}
     assert required == set(report)
     json.dumps(report, allow_nan=False)
 

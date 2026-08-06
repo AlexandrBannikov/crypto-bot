@@ -137,6 +137,11 @@ def evaluate_signal(candles: Sequence[Candle], config: SignalScoreConfig = Signa
     previous_slow = float(slow.iloc[-2])
     trend_direction = 1.0 if fast.iloc[-1] > slow.iloc[-1] else 0.0
     trend_distance = abs(float(fast.iloc[-1] - slow.iloc[-1])) / current.close
+    trend_distance_atr = trend_distance / max(atr_relative, 1e-12)
+    trend_spread_change = (
+        float(fast.iloc[-1] - slow.iloc[-1])
+        - float(fast.iloc[-2] - slow.iloc[-2])
+    )
     trend = _clamp(trend_direction * _smooth(trend_distance, 0.001, 0.03))
     alignment = _clamp(trend_direction * (0.5 + 0.5 * _smooth(trend_distance, 0.001, 0.02)))
     adx_quality = _smooth(adx_value, config.adx_low, config.adx_full)
@@ -185,7 +190,16 @@ def evaluate_signal(candles: Sequence[Candle], config: SignalScoreConfig = Signa
     hard_blocks: list[str] = []
     if current.close <= 0:
         hard_blocks.append("invalid_market_data")
-    return SignalScore(total, components["trend"], components["ema_alignment"], components["adx"], components["pullback"], components["momentum"], components["volatility"], components["cost"], tuple(hard_blocks), contributions, config.version, {"ema_fast": float(fast.iloc[-1]), "ema_slow": float(slow.iloc[-1]), "adx": adx_value, "atr_relative": atr_relative, "previous_ema_fast": previous_fast, "previous_ema_slow": previous_slow})
+    return SignalScore(total, components["trend"], components["ema_alignment"], components["adx"], components["pullback"], components["momentum"], components["volatility"], components["cost"], tuple(hard_blocks), contributions, config.version, {
+        "ema_fast": float(fast.iloc[-1]),
+        "ema_slow": float(slow.iloc[-1]),
+        "adx": adx_value,
+        "atr_relative": atr_relative,
+        "previous_ema_fast": previous_fast,
+        "previous_ema_slow": previous_slow,
+        "trend_distance_atr": trend_distance_atr,
+        "trend_spread_change": trend_spread_change,
+    })
 
 
 def _blocked_score(config: SignalScoreConfig, reason: str) -> SignalScore:

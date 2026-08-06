@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import math
 from app.candle import Candle
 from app.risk_allocation import RiskAllocationConfig, risk_fraction, size_for_score
 from app.scored_candidate import ScoredCandidateStateStore, evaluate_shadow_candles
@@ -49,7 +50,16 @@ def test_position_sizing_respects_stop_and_zero_allocation():
     assert size_for_score(score=40, balance=1000, entry_price=100, stop_loss=98, side=PositionSide.LONG).position is None
 
 
-def test_shadow_runtime_is_idempotent_and_does_not_trade(tmp_path: Path):
+def test_indicators_are_present_and_valid(tmp_path: Path):
+    config = SignalScoreConfig()
+    result = evaluate_signal(candles(), config)
+    assert "trend_distance_atr" in result.indicators
+    assert "trend_spread_change" in result.indicators
+    trend_distance_atr = result.indicators["trend_distance_atr"]
+    trend_spread_change = result.indicators["trend_spread_change"]
+    assert math.isfinite(trend_distance_atr)
+    assert math.isfinite(trend_spread_change)
+    assert trend_distance_atr >= 0
     state_path = tmp_path / "state.json"
     journal = tmp_path / "decisions.jsonl"
     evaluate_shadow_candles(candles(), state_store=ScoredCandidateStateStore(state_path), decision_path=journal)
