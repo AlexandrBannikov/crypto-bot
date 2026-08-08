@@ -130,6 +130,12 @@ def test_format_morning_report(tmp_path) -> None:
     assert "Реальная торговля: выключена" in report
     assert "REGIME_FILTER_MODE: shadow" in report
     assert "Shadow would block: 1" in report
+    assert "Scored shadow: 65 vs 62" in report
+    assert "Break-even shadow +1%" in report
+    assert (
+        "Период: 2026-07-27T21:00:00+09:00 — "
+        "2026-07-28T13:00:00+09:00"
+    ) in report
 
 
 def test_format_evening_report(tmp_path) -> None:
@@ -157,6 +163,21 @@ def test_format_evening_report(tmp_path) -> None:
     assert "Day total return 0.000%" in report
     assert "Production open position: FLAT" in report
     assert "Beginning/ending balance" not in report
+    assert "Scored shadow: 65 vs 62" in report
+    assert "Break-even shadow +1%" in report
+    assert (
+        "Period: 2026-07-29T00:00:00+09:00 — "
+        "2026-07-29T01:00:00+09:00"
+    ) in report
+    assert "report generated at 2026-07-29T01:00:00+09:00" in report
+
+
+def test_telegram_config_defaults_to_yakutsk(monkeypatch) -> None:
+    monkeypatch.delenv("CRYPTO_TELEGRAM_TIMEZONE", raising=False)
+
+    config = TelegramConfig.from_env()
+
+    assert config.timezone == "Asia/Yakutsk"
 
 
 def test_evening_open_position_separates_cash_equity_and_realized(tmp_path) -> None:

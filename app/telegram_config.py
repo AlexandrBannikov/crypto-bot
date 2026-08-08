@@ -31,7 +31,7 @@ class TelegramConfig:
     enabled: bool = False
     token: str | None = None
     chat_id: str | None = None
-    timezone: str = "Asia/Yekaterinburg"
+    timezone: str = "Asia/Yakutsk"
     morning_time: time = time(9, 0)
     evening_time: time = time(21, 0)
 
@@ -58,7 +58,7 @@ class TelegramConfig:
             token=os.environ.get("CRYPTO_TELEGRAM_BOT_TOKEN") or None,
             chat_id=os.environ.get("CRYPTO_TELEGRAM_CHAT_ID") or None,
             timezone=os.environ.get(
-                "CRYPTO_TELEGRAM_TIMEZONE", "Asia/Yekaterinburg"
+                "CRYPTO_TELEGRAM_TIMEZONE", "Asia/Yakutsk"
             ),
             morning_time=_clock(
                 "CRYPTO_TELEGRAM_MORNING_TIME", "09:00"

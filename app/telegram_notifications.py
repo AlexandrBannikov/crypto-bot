@@ -56,6 +56,8 @@ class TelegramPaths:
     candidate_runtime_summary: Path = Path("state/bybit_candidate_runtime.json")
     scored_candidate_decisions: Path = Path("state/scored_candidate_shadow/decisions.jsonl")
     scored_threshold60_decisions: Path = Path("state/scored_candidate_threshold60/decisions.jsonl")
+    scored_threshold62_decisions: Path = Path("state/scored_candidate_threshold62/decisions.jsonl")
+    break_even_shadow_journal: Path = Path("state/break_even_shadow.jsonl")
     experiments_root: Path = Path("state/experiments")
 
     @classmethod
@@ -134,6 +136,18 @@ class TelegramPaths:
                 os.environ.get(
                     "SCORED_THRESHOLD60_DECISION_PATH",
                     "state/scored_candidate_threshold60/decisions.jsonl",
+                )
+            ),
+            scored_threshold62_decisions=Path(
+                os.environ.get(
+                    "SCORED_THRESHOLD62_DECISION_PATH",
+                    "state/scored_candidate_threshold62/decisions.jsonl",
+                )
+            ),
+            break_even_shadow_journal=Path(
+                os.environ.get(
+                    "BE_SHADOW_JOURNAL_PATH",
+                    "state/break_even_shadow.jsonl",
                 )
             ),
             experiments_root=Path(
@@ -777,7 +791,7 @@ def format_morning_report(
     paths: TelegramPaths,
     *,
     now: datetime | None = None,
-    timezone_name: str = "Asia/Yekaterinburg",
+    timezone_name: str = "Asia/Yakutsk",
 ) -> str:
     zone = ZoneInfo(timezone_name)
     current = (now or datetime.now(timezone.utc)).astimezone(zone)
@@ -843,7 +857,17 @@ def format_morning_report(
             f"Active halt: {snapshot.active_halt_reason or 'none'}",
         ]
     )
-    return production + "\n\n" + _candidate_report_block(paths) + "\n\n" + _scored_candidate_report_block(paths)
+    return (
+        production
+        + "\n\n"
+        + _candidate_report_block(paths)
+        + "\n\n"
+        + _scored_candidate_report_block(paths)
+        + "\n\n"
+        + _scored_65_62_report_block(paths)
+        + "\n\n"
+        + _break_even_shadow_report_block(paths)
+    )
 
 
 def format_evening_report(
@@ -851,7 +875,7 @@ def format_evening_report(
     paths: TelegramPaths,
     *,
     now: datetime | None = None,
-    timezone_name: str = "Asia/Yekaterinburg",
+    timezone_name: str = "Asia/Yakutsk",
 ) -> str:
     zone = ZoneInfo(timezone_name)
     current = (now or datetime.now(timezone.utc)).astimezone(zone)
@@ -954,6 +978,10 @@ def format_evening_report(
         + _candidate_report_block(paths)
         + "\n\n"
         + _scored_candidate_report_block(paths)
+        + "\n\n"
+        + _scored_65_62_report_block(paths)
+        + "\n\n"
+        + _break_even_shadow_report_block(paths)
         + "\n\n"
         + format_daily_comparison(paths, now=now, timezone_name=timezone_name)
         + "\n\n"
@@ -1139,6 +1167,65 @@ def _scored_candidate_report_block(paths: TelegramPaths | None = None) -> str:
         return "Scored Candidate — shadow\nStatus: diagnostic unavailable"
 
 
+def _scored_65_62_report_block(paths: TelegramPaths) -> str:
+    """Render a compact, read-only threshold comparison for daily reports."""
+    from app.scored_threshold62_diagnostics import summarize_scored_65_62
+
+    try:
+        reports = summarize_scored_65_62(
+            paths.scored_candidate_decisions,
+            paths.scored_threshold62_decisions,
+        )
+        baseline = reports["scored_candidate_65"]
+        candidate = reports["scored_candidate_62"]
+        return "\n".join(
+            [
+                "Scored shadow: 65 vs 62",
+                (
+                    "65: candles {total}; ENTER_LONG {enter}; HOLD {hold}"
+                ).format(
+                    total=baseline["total_candles"],
+                    enter=baseline["counters"]["ENTER_LONG"],
+                    hold=baseline["counters"]["HOLD"],
+                ),
+                (
+                    "62: candles {total}; ENTER_LONG {enter}; HOLD {hold}"
+                ).format(
+                    total=candidate["total_candles"],
+                    enter=candidate["counters"]["ENTER_LONG"],
+                    hold=candidate["counters"]["HOLD"],
+                ),
+                "Mode: shadow only; orders: disabled",
+            ]
+        )
+    except (OSError, TypeError, ValueError):
+        return "Scored shadow: 65 vs 62\nStatus: diagnostic unavailable"
+
+
+def _break_even_shadow_report_block(paths: TelegramPaths) -> str:
+    """Summarize the observation-only +1% break-even contour."""
+    try:
+        rows = (
+            read_jsonl_safely(paths.break_even_shadow_journal)[0]
+            if paths.break_even_shadow_journal.exists()
+            else []
+        )
+        last = rows[-1] if rows else {}
+        return "\n".join(
+            [
+                "Break-even shadow +1%",
+                f"Status: {last.get('be_shadow_status', 'not initialized')}",
+                f"Observations: {len(rows)}",
+                f"Triggered: {sum(row.get('be_shadow_status') == 'triggered' for row in rows)}",
+                f"Saved losses: {sum(row.get('saved_loss') is True for row in rows)}",
+                f"Worsened winners: {sum(row.get('worsened_winner') is True for row in rows)}",
+                "Mode: observation only; production exits unchanged",
+            ]
+        )
+    except (OSError, TypeError, ValueError):
+        return "Break-even shadow +1%\nStatus: diagnostic unavailable"
+
+
 def format_trades(paths: TelegramPaths, limit: int = 5) -> str:
     if not paths.trade_journal.exists():
         return "Paper-сделок ещё не было: trade journal отсутствует."
@@ -1261,7 +1348,7 @@ def format_daily_comparison(
     paths: TelegramPaths,
     *,
     now: datetime | None = None,
-    timezone_name: str = "Asia/Yekaterinburg",
+    timezone_name: str = "Asia/Yakutsk",
 ) -> str:
     from app.strategy_lab import (
         LaboratoryConfig,

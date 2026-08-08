@@ -1,8 +1,8 @@
 [Unit]
-Description=Send crypto paper morning report at 09:00 Asia/Yekaterinburg
+Description=Send crypto paper morning report at 09:00 Asia/Yakutsk
 
 [Timer]
-OnCalendar=*-*-* 09:00:00 Asia/Yekaterinburg
+OnCalendar=*-*-* 09:00:00 Asia/Yakutsk
 Persistent=true
 Unit=crypto-telegram-morning.service
 

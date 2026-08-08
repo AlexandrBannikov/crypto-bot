@@ -1,4 +1,6 @@
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from scripts.telegram_bot import parser as bot_parser
 from scripts.telegram_health import parser as health_parser
@@ -49,3 +51,25 @@ def test_report_services_do_not_allocate_state_directories() -> None:
     ):
         unit = (SYSTEMD / name).read_text(encoding="utf-8")
         assert "StateDirectory=" not in unit
+
+
+def test_report_timers_use_yakutsk_local_schedule() -> None:
+    morning = (SYSTEMD / "crypto-telegram-morning.timer").read_text(
+        encoding="utf-8"
+    )
+    evening = (SYSTEMD / "crypto-telegram-evening.timer").read_text(
+        encoding="utf-8"
+    )
+
+    assert "OnCalendar=*-*-* 09:00:00 Asia/Yakutsk\n" in morning
+    assert "OnCalendar=*-*-* 21:00:00 Asia/Yakutsk\n" in evening
+
+
+def test_yakutsk_schedule_uses_iana_timezone_without_manual_dst() -> None:
+    yakutsk = ZoneInfo("Asia/Yakutsk")
+    for month in (1, 7):
+        morning = datetime(2026, month, 1, 9, tzinfo=yakutsk)
+        evening = datetime(2026, month, 1, 21, tzinfo=yakutsk)
+
+        assert morning.astimezone(timezone.utc).hour == 0
+        assert evening.astimezone(timezone.utc).hour == 12
