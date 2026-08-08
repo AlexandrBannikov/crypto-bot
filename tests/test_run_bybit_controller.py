@@ -166,6 +166,11 @@ def install_successful_run(
     *,
     journal_entry,
 ) -> None:
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "run_break_even_shadow_observer",
+        lambda **kwargs: True,
+    )
     candle = SimpleNamespace(timestamp=123, close=100.0)
     feed = SimpleNamespace(get_candles=lambda: (candle,))
     monkeypatch.setattr(

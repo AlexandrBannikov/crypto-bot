@@ -19,6 +19,11 @@ from app.bybit_market_data import (
     BybitMarketDataConfig,
     BybitMarketDataFeed,
 )
+from app.break_even_shadow import (
+    BreakEvenShadowJournal,
+    BreakEvenShadowStateStore,
+    observe_break_even_shadow,
+)
 from app.config import (
     PaperStrategyConfig,
     PaperStrategyMode,
@@ -125,6 +130,47 @@ DEFAULT_LOCK_PATH = (
         )
     )
 )
+BE_SHADOW_STATE_PATH = Path(
+    os.environ.get("BE_SHADOW_STATE_PATH", "state/break_even_shadow.json")
+)
+BE_SHADOW_JOURNAL_PATH = Path(
+    os.environ.get(
+        "BE_SHADOW_JOURNAL_PATH", "state/break_even_shadow.jsonl"
+    )
+)
+
+
+def run_break_even_shadow_observer(
+    *,
+    candle,
+    production_before: TradingControllerState,
+    production_after: TradingControllerState,
+    production_exit_pnl: Decimal | None,
+    state_path: Path | None = None,
+    journal_path: Path | None = None,
+) -> bool:
+    """Persist one best-effort observation after production processing."""
+    try:
+        state_path = state_path or BE_SHADOW_STATE_PATH
+        journal_path = journal_path or BE_SHADOW_JOURNAL_PATH
+        be_store = BreakEvenShadowStateStore(state_path)
+        be_update = observe_break_even_shadow(
+            be_store.load(),
+            candle=candle,
+            production_before=production_before,
+            production_after=production_after,
+            production_exit_pnl=production_exit_pnl,
+        )
+        BreakEvenShadowJournal(journal_path).append(be_update.observation)
+        be_store.save(be_update.state)
+    except Exception as exc:
+        print(
+            "Break-even shadow observer warning: "
+            f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -575,6 +621,19 @@ def run_controller(args: argparse.Namespace) -> int:
         ),
         exit_reason=(
             "stop_loss" if stop_triggered else "signal"
+        ),
+    )
+
+    # Observation only: this component cannot emit an execution request or
+    # mutate TradingControllerState. Failures must not affect paper trading.
+    run_break_even_shadow_observer(
+        candle=latest_candle,
+        production_before=before_state,
+        production_after=result.state,
+        production_exit_pnl=(
+            result.accounting.net_pnl
+            if result.accounting is not None
+            else None
         ),
     )
 
