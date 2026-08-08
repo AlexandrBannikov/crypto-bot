@@ -1,0 +1,12 @@
+[Unit]
+Description=Run optional threshold-62 shadow contour after threshold 65
+
+[Timer]
+OnCalendar=*-*-* *:02:30 UTC
+Persistent=true
+AccuracySec=1s
+Unit=crypto-scored-threshold62-shadow.service
+
+[Install]
+WantedBy=timers.target
+
