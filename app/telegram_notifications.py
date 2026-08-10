@@ -1211,14 +1211,29 @@ def _break_even_shadow_report_block(paths: TelegramPaths) -> str:
             else []
         )
         last = rows[-1] if rows else {}
+        triggered = {
+            row.get("triggered_at_candle")
+            for row in rows
+            if row.get("triggered_at_candle") is not None
+        }
+        saved_losses = {
+            (row.get("opened_at"), row.get("triggered_at_candle"))
+            for row in rows
+            if row.get("saved_loss") is True
+        }
+        worsened_winners = {
+            (row.get("opened_at"), row.get("triggered_at_candle"))
+            for row in rows
+            if row.get("worsened_winner") is True
+        }
         return "\n".join(
             [
                 "Break-even shadow +1%",
                 f"Status: {last.get('be_shadow_status', 'not initialized')}",
                 f"Observations: {len(rows)}",
-                f"Triggered: {sum(row.get('be_shadow_status') == 'triggered' for row in rows)}",
-                f"Saved losses: {sum(row.get('saved_loss') is True for row in rows)}",
-                f"Worsened winners: {sum(row.get('worsened_winner') is True for row in rows)}",
+                f"Triggered: {len(triggered)}",
+                f"Saved losses: {len(saved_losses)}",
+                f"Worsened winners: {len(worsened_winners)}",
                 "Mode: observation only; production exits unchanged",
             ]
         )

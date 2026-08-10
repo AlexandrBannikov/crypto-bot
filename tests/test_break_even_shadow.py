@@ -1,4 +1,5 @@
 from decimal import Decimal
+import json
 
 from app.break_even_shadow import (
     BreakEvenShadowJournal,
@@ -6,6 +7,7 @@ from app.break_even_shadow import (
     BreakEvenShadowState,
     BreakEvenShadowStateStore,
     observe_break_even_shadow,
+    reconcile_break_even_shadow,
 )
 from app.candle import Candle
 from app.trading_controller import TradingControllerState
@@ -23,9 +25,17 @@ def flat() -> TradingControllerState:
     return TradingControllerState()
 
 
-def opened() -> TradingControllerState:
+def opened(
+    *,
+    entry_price: str = "100",
+    quantity: str = "2",
+    opened_at: str = "1970-01-01T01:00:00+00:00",
+) -> TradingControllerState:
     return TradingControllerState(
-        position_quantity=D("2"), entry_price=D("100"), stop_loss=D("98")
+        position_quantity=D(quantity),
+        entry_price=D(entry_price),
+        stop_loss=D(entry_price) * D("0.98"),
+        opened_at=opened_at,
     )
 
 
@@ -146,6 +156,131 @@ def test_state_survives_store_restart(tmp_path) -> None:
     expected = enter()
     BreakEvenShadowStateStore(path).save(expected)
     assert BreakEvenShadowStateStore(path).load() == expected
+
+
+def replay_candles(*prices: tuple[float, float]) -> tuple[Candle, ...]:
+    return tuple(
+        candle(3600 * (index + 1), high=high, low=low)
+        for index, (high, low) in enumerate(prices)
+    )
+
+
+def test_reconciliation_before_activation_restores_inactive_position() -> None:
+    production = opened()
+    restored = reconcile_break_even_shadow(
+        BreakEvenShadowState(), production=production,
+        candles=replay_candles((100.5, 99), (100.9, 99.5)),
+    )
+    assert restored.be_shadow_status == "inactive"
+    assert restored.entry_price == D("100")
+    assert restored.quantity == D("2")
+    assert restored.opened_at == production.opened_at
+
+
+def test_reconciliation_after_activation_restores_armed() -> None:
+    production = opened()
+    restored = reconcile_break_even_shadow(
+        BreakEvenShadowState(), production=production,
+        candles=replay_candles((100.5, 99), (102, 99), (102, 101)),
+    )
+    assert restored.be_shadow_status == "armed"
+    assert restored.armed_at_candle == 7200
+
+
+def test_reconciliation_after_retrace_restores_triggered() -> None:
+    production = opened()
+    restored = reconcile_break_even_shadow(
+        BreakEvenShadowState(), production=production,
+        candles=replay_candles((100.5, 99), (102, 99), (102, 100)),
+    )
+    assert restored.be_shadow_status == "triggered"
+    assert restored.triggered_at_candle == 10800
+
+
+def test_reconciliation_does_not_trigger_inside_activation_candle() -> None:
+    production = opened()
+    restored = reconcile_break_even_shadow(
+        BreakEvenShadowState(), production=production,
+        candles=replay_candles((102, 99)),
+    )
+    assert restored.be_shadow_status == "armed"
+    assert restored.triggered_at_candle is None
+
+
+def test_reconciliation_is_idempotent_and_does_not_duplicate_journal(
+    tmp_path,
+) -> None:
+    production = opened()
+    candles = replay_candles((100.5, 99), (102, 101))
+    first = reconcile_break_even_shadow(
+        BreakEvenShadowState(), production=production, candles=candles,
+    )
+    second = reconcile_break_even_shadow(
+        first, production=production, candles=candles,
+    )
+    assert second == first
+    state_path = tmp_path / "state.json"
+    journal_path = tmp_path / "journal.jsonl"
+    for _ in range(2):
+        assert run_bybit_controller.run_break_even_shadow_observer(
+            candle=candles[-1], production_before=production,
+            production_after=production, production_exit_pnl=None,
+            historical_candles=candles, state_path=state_path,
+            journal_path=journal_path,
+        ) is True
+    assert len(journal_path.read_text().splitlines()) == 1
+
+
+def test_mismatched_position_state_is_reconciled() -> None:
+    old = opened(opened_at="1970-01-01T00:00:00+00:00")
+    stale = observe_break_even_shadow(
+        BreakEvenShadowState(), candle=candle(0, high=100, low=99),
+        production_before=flat(), production_after=old,
+    ).state
+    current = opened()
+    restored = reconcile_break_even_shadow(
+        stale, production=current, candles=replay_candles((100.5, 99)),
+    )
+    assert restored.opened_at == current.opened_at
+    assert restored.entry_candle == 0
+
+
+def test_triggered_state_survives_store_restart(tmp_path) -> None:
+    production = opened()
+    triggered = reconcile_break_even_shadow(
+        BreakEvenShadowState(), production=production,
+        candles=replay_candles((102, 99), (101, 100)),
+    )
+    path = tmp_path / "be-state.json"
+    BreakEvenShadowStateStore(path).save(triggered)
+    assert BreakEvenShadowStateStore(path).load() == triggered
+
+
+def test_armed_state_survives_store_restart(tmp_path) -> None:
+    production = opened()
+    armed = reconcile_break_even_shadow(
+        BreakEvenShadowState(), production=production,
+        candles=replay_candles((102, 101)),
+    )
+    path = tmp_path / "be-state.json"
+    BreakEvenShadowStateStore(path).save(armed)
+    assert BreakEvenShadowStateStore(path).load() == armed
+
+
+def test_production_runtime_never_uses_test_candle(tmp_path) -> None:
+    production = opened()
+    state_path = tmp_path / "state.json"
+    journal_path = tmp_path / "journal.jsonl"
+    runtime_candle = candle(3600, high=100.5, low=99)
+    assert run_bybit_controller.run_break_even_shadow_observer(
+        candle=runtime_candle, production_before=production,
+        production_after=production, production_exit_pnl=None,
+        historical_candles=(runtime_candle,), state_path=state_path,
+        journal_path=journal_path,
+    )
+    row = json.loads(journal_path.read_text())
+    assert row["candle_timestamp"] == 3600
+    assert row["candle_timestamp"] != 123
 
 
 def test_failed_exit_reset_save_recovers_on_next_cycle(

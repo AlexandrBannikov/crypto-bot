@@ -31,6 +31,20 @@ with ProcessLock(sys.argv[1]):
 """
 
 
+@pytest.fixture(autouse=True)
+def isolate_break_even_shadow_paths(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "BE_SHADOW_STATE_PATH",
+        tmp_path / "state/break_even_shadow.json",
+    )
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "BE_SHADOW_JOURNAL_PATH",
+        tmp_path / "state/break_even_shadow.jsonl",
+    )
+
+
 def start_lock_holder(path):
     process = subprocess.Popen(
         [sys.executable, "-c", HOLDER_CODE, str(path)],

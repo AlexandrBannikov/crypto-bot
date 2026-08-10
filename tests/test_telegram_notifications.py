@@ -42,6 +42,7 @@ def paths(tmp_path: Path) -> TelegramPaths:
         trade_journal=state / "trades.jsonl",
         decision_journal=state / "decisions.jsonl",
         notification_state=state / "telegram.json",
+        break_even_shadow_journal=state / "break_even_shadow.jsonl",
     )
 
 
@@ -170,6 +171,31 @@ def test_format_evening_report(tmp_path) -> None:
         "2026-07-29T01:00:00+09:00"
     ) in report
     assert "report generated at 2026-07-29T01:00:00+09:00" in report
+
+
+def test_break_even_trigger_is_counted_once_per_unique_event(tmp_path) -> None:
+    runtime_paths = paths(tmp_path)
+    rows = [
+        {
+            "candle_timestamp": timestamp,
+            "be_shadow_status": "triggered",
+            "triggered_at_candle": 7200,
+            "opened_at": "2026-07-28T00:00:00+00:00",
+            "saved_loss": timestamp == 10800,
+            "worsened_winner": False,
+        }
+        for timestamp in (7200, 10800, 14400)
+    ]
+    runtime_paths.break_even_shadow_journal.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+    from app.telegram_notifications import _break_even_shadow_report_block
+
+    report = _break_even_shadow_report_block(runtime_paths)
+    assert "Observations: 3" in report
+    assert "Triggered: 1" in report
+    assert "Saved losses: 1" in report
+    assert "Worsened winners: 0" in report
 
 
 def test_telegram_config_defaults_to_yakutsk(monkeypatch) -> None:

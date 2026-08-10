@@ -23,6 +23,7 @@ from app.break_even_shadow import (
     BreakEvenShadowJournal,
     BreakEvenShadowStateStore,
     observe_break_even_shadow,
+    reconcile_break_even_shadow,
 )
 from app.config import (
     PaperStrategyConfig,
@@ -146,6 +147,7 @@ def run_break_even_shadow_observer(
     production_before: TradingControllerState,
     production_after: TradingControllerState,
     production_exit_pnl: Decimal | None,
+    historical_candles=(),
     state_path: Path | None = None,
     journal_path: Path | None = None,
 ) -> bool:
@@ -154,8 +156,18 @@ def run_break_even_shadow_observer(
         state_path = state_path or BE_SHADOW_STATE_PATH
         journal_path = journal_path or BE_SHADOW_JOURNAL_PATH
         be_store = BreakEvenShadowStateStore(state_path)
+        be_state = be_store.load()
+        if (
+            production_before.has_open_position
+            and production_after.has_open_position
+        ):
+            be_state = reconcile_break_even_shadow(
+                be_state,
+                production=production_before,
+                candles=historical_candles,
+            )
         be_update = observe_break_even_shadow(
-            be_store.load(),
+            be_state,
             candle=candle,
             production_before=production_before,
             production_after=production_after,
@@ -635,6 +647,7 @@ def run_controller(args: argparse.Namespace) -> int:
             if result.accounting is not None
             else None
         ),
+        historical_candles=candles,
     )
 
     operational_state.last_processed_closed_candle = latest_candle.timestamp

@@ -7,11 +7,12 @@ only fully closed candles.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from decimal import Decimal
 import json
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Sequence
 
 from app.candle import Candle
 from app.trade_accounting import calculate_long_trade_accounting
@@ -27,6 +28,7 @@ class BreakEvenShadowState:
     be_shadow_status: BreakEvenShadowStatus = "inactive"
     entry_price: Decimal | None = None
     quantity: Decimal | None = None
+    opened_at: str | None = None
     activation_price: Decimal | None = None
     protective_price: Decimal | None = None
     entry_candle: int | None = None
@@ -49,6 +51,7 @@ class BreakEvenShadowObservation:
     saved_loss: bool | None = None
     worsened_winner: bool | None = None
     production_exit_pnl: Decimal | None = None
+    opened_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +65,75 @@ def protective_price(entry_price: Decimal, fee_rate: Decimal) -> Decimal:
     if entry_price <= 0 or fee_rate < 0 or fee_rate >= 1:
         raise ValueError("invalid break-even price inputs")
     return entry_price * (D("1") + fee_rate) / (D("1") - fee_rate)
+
+
+def _position_matches(
+    state: BreakEvenShadowState,
+    production: TradingControllerState,
+) -> bool:
+    return (
+        production.has_open_position
+        and state.entry_price == production.entry_price
+        and state.quantity == production.position_quantity
+        and state.opened_at == production.opened_at
+    )
+
+
+def reconcile_break_even_shadow(
+    state: BreakEvenShadowState,
+    *,
+    production: TradingControllerState,
+    candles: Sequence[Candle],
+    fee_rate: Decimal = D("0.001"),
+) -> BreakEvenShadowState:
+    """Rebuild missing or mismatched shadow state from closed candles."""
+    if not production.has_open_position:
+        return state
+    if _position_matches(state, production):
+        return state
+    if (
+        production.entry_price is None
+        or production.position_quantity <= 0
+        or production.opened_at is None
+    ):
+        raise ValueError("open production position has no stable identity")
+
+    ordered = tuple(sorted(candles, key=lambda item: item.timestamp))
+    if not ordered:
+        raise ValueError("reconciliation requires historical candles")
+    opened_timestamp = int(
+        datetime.fromisoformat(production.opened_at).timestamp()
+    )
+    deltas = [
+        later.timestamp - earlier.timestamp
+        for earlier, later in zip(ordered, ordered[1:])
+        if later.timestamp > earlier.timestamp
+    ]
+    interval = min(deltas) if deltas else 3600
+    entry_candle = opened_timestamp // interval * interval - interval
+    first_replay_candle = entry_candle + interval
+    if ordered[0].timestamp > first_replay_candle:
+        raise ValueError("historical candles do not cover production entry")
+
+    current = BreakEvenShadowState(
+        entry_price=production.entry_price,
+        quantity=production.position_quantity,
+        opened_at=production.opened_at,
+        activation_price=production.entry_price * D("1.01"),
+        protective_price=protective_price(production.entry_price, fee_rate),
+        entry_candle=entry_candle,
+    )
+    for candle in ordered:
+        if candle.timestamp <= entry_candle:
+            continue
+        current = observe_break_even_shadow(
+            current,
+            candle=candle,
+            production_before=production,
+            production_after=production,
+            fee_rate=fee_rate,
+        ).state
+    return current
 
 
 def observe_break_even_shadow(
@@ -93,6 +165,7 @@ def observe_break_even_shadow(
         current = BreakEvenShadowState(
             entry_price=entry,
             quantity=production_after.position_quantity,
+            opened_at=production_after.opened_at,
             activation_price=entry * D("1.01"),
             protective_price=protective_price(entry, fee_rate),
             entry_candle=candle.timestamp,
@@ -161,6 +234,7 @@ def observe_break_even_shadow(
         saved_loss=saved_loss,
         worsened_winner=worsened_winner,
         production_exit_pnl=production_exit_pnl if closed else None,
+        opened_at=snapshot.opened_at,
     )
     return BreakEvenShadowUpdate(current, observation)
 
