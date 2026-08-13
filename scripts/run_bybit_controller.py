@@ -60,6 +60,7 @@ from app.shadow_decision_journal import (
 )
 from app.trade_signal import TradeSignal
 from app.trade_journal import JsonlTradeJournal
+from app.trade_diagnostics import build_and_append_trade_card
 from app.trading_controller import (
     TradingController,
     TradingControllerState,
@@ -137,6 +138,24 @@ BE_SHADOW_STATE_PATH = Path(
 BE_SHADOW_JOURNAL_PATH = Path(
     os.environ.get(
         "BE_SHADOW_JOURNAL_PATH", "state/break_even_shadow.jsonl"
+    )
+)
+TRADE_DIAGNOSTICS_JOURNAL_PATH = Path(
+    os.environ.get(
+        "TRADE_DIAGNOSTICS_JOURNAL_PATH",
+        "state/production_trade_diagnostics.jsonl",
+    )
+)
+SCORED_65_DECISION_PATH = Path(
+    os.environ.get(
+        "SCORED_CANDIDATE_DECISION_PATH",
+        "state/scored_candidate_shadow/decisions.jsonl",
+    )
+)
+SCORED_62_DECISION_PATH = Path(
+    os.environ.get(
+        "SCORED_THRESHOLD62_DECISION_PATH",
+        "state/scored_candidate_threshold62/decisions.jsonl",
     )
 )
 
@@ -649,6 +668,33 @@ def run_controller(args: argparse.Namespace) -> int:
         ),
         historical_candles=candles,
     )
+
+    # Observation only. A diagnostics failure must never affect PAPER state,
+    # execution, signals, stops, scoring, or position sizing.
+    if result.journal_entry is not None:
+        try:
+            card, appended = build_and_append_trade_card(
+                trade=result.journal_entry,
+                candles=candles,
+                exit_candle_timestamp=latest_candle.timestamp,
+                timeframe_minutes=int(INTERVAL),
+                journal_path=TRADE_DIAGNOSTICS_JOURNAL_PATH,
+                production_decision_path=diagnostics_path,
+                scored65_path=SCORED_65_DECISION_PATH,
+                scored62_path=SCORED_62_DECISION_PATH,
+                break_even_path=BE_SHADOW_JOURNAL_PATH,
+            )
+            if appended:
+                print(
+                    "Trade diagnostics card saved: "
+                    f"{card['trade_id']} -> {TRADE_DIAGNOSTICS_JOURNAL_PATH}"
+                )
+        except Exception as exc:
+            print(
+                "Trade diagnostics observer warning: "
+                f"{type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
 
     operational_state.last_processed_closed_candle = latest_candle.timestamp
     operational_state.last_journal_sequence += 1

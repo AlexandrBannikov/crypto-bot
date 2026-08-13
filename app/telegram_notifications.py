@@ -58,6 +58,7 @@ class TelegramPaths:
     scored_threshold60_decisions: Path = Path("state/scored_candidate_threshold60/decisions.jsonl")
     scored_threshold62_decisions: Path = Path("state/scored_candidate_threshold62/decisions.jsonl")
     break_even_shadow_journal: Path = Path("state/break_even_shadow.jsonl")
+    trade_diagnostics_journal: Path = Path("state/production_trade_diagnostics.jsonl")
     experiments_root: Path = Path("state/experiments")
 
     @classmethod
@@ -148,6 +149,12 @@ class TelegramPaths:
                 os.environ.get(
                     "BE_SHADOW_JOURNAL_PATH",
                     "state/break_even_shadow.jsonl",
+                )
+            ),
+            trade_diagnostics_journal=Path(
+                os.environ.get(
+                    "TRADE_DIAGNOSTICS_JOURNAL_PATH",
+                    "state/production_trade_diagnostics.jsonl",
                 )
             ),
             experiments_root=Path(
@@ -867,6 +874,8 @@ def format_morning_report(
         + _scored_65_62_report_block(paths)
         + "\n\n"
         + _break_even_shadow_report_block(paths)
+        + "\n\n"
+        + _trade_diagnostics_period_block(paths, start, current)
     )
 
 
@@ -982,6 +991,8 @@ def format_evening_report(
         + _scored_65_62_report_block(paths)
         + "\n\n"
         + _break_even_shadow_report_block(paths)
+        + "\n\n"
+        + _trade_diagnostics_period_block(paths, start, current)
         + "\n\n"
         + format_daily_comparison(paths, now=now, timezone_name=timezone_name)
         + "\n\n"
@@ -1200,6 +1211,58 @@ def _scored_65_62_report_block(paths: TelegramPaths) -> str:
         )
     except (OSError, TypeError, ValueError):
         return "Scored shadow: 65 vs 62\nStatus: diagnostic unavailable"
+
+
+def _trade_diagnostics_period_block(
+    paths: TelegramPaths, start: datetime, end: datetime, *, limit: int = 4,
+) -> str:
+    """Compact cards closed in this report period; diagnostics only."""
+    try:
+        rows = read_jsonl_safely(paths.trade_diagnostics_journal)[0]
+    except (OSError, ValueError):
+        return "🔬 Закрытые PAPER-сделки: diagnostics unavailable"
+    selected = []
+    for row in rows:
+        try:
+            closed = datetime.fromisoformat(row["exit"]["exit_time"])
+            if closed.tzinfo is None:
+                closed = closed.replace(tzinfo=timezone.utc)
+            if start <= closed.astimezone(start.tzinfo) <= end:
+                selected.append(row)
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not selected:
+        return "🔬 Закрытых PAPER-сделок за период нет"
+    blocks = []
+    for row in selected[-limit:]:
+        entry, exit_, excursion = row["entry"], row["exit"], row["excursion"]
+        scored = row.get("scored_entry_observation")
+        comparison = row.get("decision_comparison", {})
+        be = row.get("break_even_shadow", {})
+        hold_seconds = int(exit_.get("hold_time_seconds", 0))
+        score = (
+            scored.get("total_score") if isinstance(scored, dict)
+            else "unavailable"
+        )
+        blocks.append("\n".join([
+            "🔬 Последняя закрытая PAPER-сделка",
+            f"ENTRY {entry['entry_price']}",
+            f"→ MFE {excursion['maximum_price_after_entry']} ({float(excursion['mfe_pct']):+.2f}%)",
+            f"→ MAE {excursion['minimum_price_after_entry']} ({float(excursion['mae_pct']):+.2f}%)",
+            f"→ EXIT {exit_['exit_price']}",
+            f"Net PnL: {exit_['net_pnl']} USDT ({float(exit_['net_return_pct']):+.2f}%)",
+            f"Hold: {hold_seconds // 3600}h",
+            f"Scored at entry: {score}",
+            f"65: {comparison.get('score65', 'unavailable')}",
+            f"62: {comparison.get('score62', 'unavailable')}",
+            f"BE +1%: {'triggered' if be.get('triggered') else 'armed' if be.get('armed') else 'not armed'}",
+            f"Saved loss: {'yes' if be.get('effect') == 'saved_loss' else 'no'}",
+            f"Предварительно: {row.get('preliminary_classification', 'insufficient')}",
+        ]))
+    omitted = len(selected) - len(blocks)
+    if omitted > 0:
+        blocks.append(f"Ещё закрытых сделок за период: {omitted}")
+    return "\n\n".join(blocks)
 
 
 def _break_even_shadow_report_block(paths: TelegramPaths) -> str:
