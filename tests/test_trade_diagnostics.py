@@ -157,6 +157,7 @@ def telegram_paths(tmp_path):
 def test_telegram_block_one_and_multiple_trades(tmp_path):
     paths = telegram_paths(tmp_path)
     first = card(); second = {**first, "trade_id": "second"}
+    paths.trade_journal.write_text(json.dumps(trade().to_dict()) + "\n")
     paths.trade_diagnostics_journal.write_text(json.dumps(first) + "\n" + json.dumps(second) + "\n")
     block = _trade_diagnostics_period_block(
         paths, datetime(1970, 1, 1, tzinfo=timezone.utc),
@@ -164,6 +165,56 @@ def test_telegram_block_one_and_multiple_trades(tmp_path):
     )
     assert block.count("Последняя закрытая PAPER-сделка") == 2
     assert "ENTRY 100" in block and "Предварительно:" in block
+
+
+def test_telegram_block_missing_diagnostics_and_no_closed_trades(tmp_path):
+    paths = telegram_paths(tmp_path)
+    paths.trade_journal.write_text("")
+    assert _trade_diagnostics_period_block(
+        paths, datetime(1970, 1, 1, tzinfo=timezone.utc),
+        datetime(1970, 1, 2, tzinfo=timezone.utc),
+    ) == "🔬 Закрытых PAPER-сделок за период нет"
+
+
+def test_telegram_block_missing_diagnostics_and_closed_trade(tmp_path):
+    paths = telegram_paths(tmp_path)
+    paths.trade_journal.write_text(json.dumps(trade().to_dict()) + "\n")
+    assert _trade_diagnostics_period_block(
+        paths, datetime(1970, 1, 1, tzinfo=timezone.utc),
+        datetime(1970, 1, 2, tzinfo=timezone.utc),
+    ) == "🔬 Закрытые PAPER-сделки: diagnostics unavailable"
+
+
+def test_telegram_block_empty_diagnostics_and_closed_trade(tmp_path):
+    paths = telegram_paths(tmp_path)
+    paths.trade_journal.write_text(json.dumps(trade().to_dict()) + "\n")
+    paths.trade_diagnostics_journal.write_text("")
+    assert _trade_diagnostics_period_block(
+        paths, datetime(1970, 1, 1, tzinfo=timezone.utc),
+        datetime(1970, 1, 2, tzinfo=timezone.utc),
+    ) == "🔬 Закрытые PAPER-сделки: diagnostics unavailable"
+
+
+def test_telegram_block_corrupt_diagnostics_and_closed_trade(tmp_path):
+    paths = telegram_paths(tmp_path)
+    paths.trade_journal.write_text(json.dumps(trade().to_dict()) + "\n")
+    paths.trade_diagnostics_journal.write_text("not-json\n")
+    assert _trade_diagnostics_period_block(
+        paths, datetime(1970, 1, 1, tzinfo=timezone.utc),
+        datetime(1970, 1, 2, tzinfo=timezone.utc),
+    ) == "🔬 Закрытые PAPER-сделки: diagnostics unavailable"
+
+
+def test_telegram_block_valid_diagnostic_card(tmp_path):
+    paths = telegram_paths(tmp_path)
+    paths.trade_journal.write_text(json.dumps(trade().to_dict()) + "\n")
+    paths.trade_diagnostics_journal.write_text(json.dumps(card()) + "\n")
+    block = _trade_diagnostics_period_block(
+        paths, datetime(1970, 1, 1, tzinfo=timezone.utc),
+        datetime(1970, 1, 2, tzinfo=timezone.utc),
+    )
+    assert "🔬 Последняя закрытая PAPER-сделка" in block
+    assert "ENTRY 100" in block
 
 
 def test_historical_1915_regression():

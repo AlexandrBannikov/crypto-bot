@@ -1217,22 +1217,39 @@ def _trade_diagnostics_period_block(
     paths: TelegramPaths, start: datetime, end: datetime, *, limit: int = 4,
 ) -> str:
     """Compact cards closed in this report period; diagnostics only."""
+    def in_period(value: str) -> bool:
+        closed = datetime.fromisoformat(value)
+        if closed.tzinfo is None:
+            closed = closed.replace(tzinfo=timezone.utc)
+        return start <= closed.astimezone(start.tzinfo) <= end
+
+    try:
+        trades = read_jsonl_safely(
+            paths.trade_journal, parser=TradeJournalEntry.from_dict
+        )[0]
+        expected = [trade for trade in trades if in_period(trade.closed_at)]
+    except (OSError, TypeError, ValueError):
+        return "🔬 Закрытые PAPER-сделки: diagnostics unavailable"
+    if not expected:
+        return "🔬 Закрытых PAPER-сделок за период нет"
+
     try:
         rows = read_jsonl_safely(paths.trade_diagnostics_journal)[0]
-    except (OSError, ValueError):
+    except (OSError, TypeError, ValueError):
         return "🔬 Закрытые PAPER-сделки: diagnostics unavailable"
     selected = []
     for row in rows:
         try:
-            closed = datetime.fromisoformat(row["exit"]["exit_time"])
-            if closed.tzinfo is None:
-                closed = closed.replace(tzinfo=timezone.utc)
-            if start <= closed.astimezone(start.tzinfo) <= end:
+            if in_period(row["exit"]["exit_time"]):
                 selected.append(row)
         except (KeyError, TypeError, ValueError):
             continue
-    if not selected:
-        return "🔬 Закрытых PAPER-сделок за период нет"
+    diagnosed = {
+        (row.get("entry", {}).get("entry_time"), row.get("exit", {}).get("exit_time"))
+        for row in selected
+    }
+    if any((trade.opened_at, trade.closed_at) not in diagnosed for trade in expected):
+        return "🔬 Закрытые PAPER-сделки: diagnostics unavailable"
     blocks = []
     for row in selected[-limit:]:
         entry, exit_, excursion = row["entry"], row["exit"], row["excursion"]
