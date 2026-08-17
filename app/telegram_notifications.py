@@ -58,6 +58,7 @@ class TelegramPaths:
     scored_threshold60_decisions: Path = Path("state/scored_candidate_threshold60/decisions.jsonl")
     scored_threshold62_decisions: Path = Path("state/scored_candidate_threshold62/decisions.jsonl")
     break_even_shadow_journal: Path = Path("state/break_even_shadow.jsonl")
+    trailing_shadow_journal: Path = Path("state/trailing_stop_shadow.jsonl")
     trade_diagnostics_journal: Path = Path("state/production_trade_diagnostics.jsonl")
     experiments_root: Path = Path("state/experiments")
 
@@ -149,6 +150,12 @@ class TelegramPaths:
                 os.environ.get(
                     "BE_SHADOW_JOURNAL_PATH",
                     "state/break_even_shadow.jsonl",
+                )
+            ),
+            trailing_shadow_journal=Path(
+                os.environ.get(
+                    "TRAILING_SHADOW_JOURNAL_PATH",
+                    "state/trailing_stop_shadow.jsonl",
                 )
             ),
             trade_diagnostics_journal=Path(
@@ -875,6 +882,8 @@ def format_morning_report(
         + "\n\n"
         + _break_even_shadow_report_block(paths)
         + "\n\n"
+        + _trailing_shadow_report_block(paths)
+        + "\n\n"
         + _trade_diagnostics_period_block(paths, start, current)
     )
 
@@ -991,6 +1000,8 @@ def format_evening_report(
         + _scored_65_62_report_block(paths)
         + "\n\n"
         + _break_even_shadow_report_block(paths)
+        + "\n\n"
+        + _trailing_shadow_report_block(paths)
         + "\n\n"
         + _trade_diagnostics_period_block(paths, start, current)
         + "\n\n"
@@ -1256,11 +1267,16 @@ def _trade_diagnostics_period_block(
         scored = row.get("scored_entry_observation")
         comparison = row.get("decision_comparison", {})
         be = row.get("break_even_shadow", {})
+        trailing = row.get("trailing_shadows", {})
         hold_seconds = int(exit_.get("hold_time_seconds", 0))
         score = (
             scored.get("total_score") if isinstance(scored, dict)
             else "unavailable"
         )
+        trailing_lines = ["Trailing shadows:"] + [
+            f"{name}: {item.get('effect', 'no_effect')}, Δ {item.get('delta_usdt', '0')} USDT ({float(item.get('delta_pct') or 0):+.2f}%)"
+            for name, item in trailing.items()
+        ]
         blocks.append("\n".join([
             "🔬 Последняя закрытая PAPER-сделка",
             f"ENTRY {entry['entry_price']}",
@@ -1274,6 +1290,7 @@ def _trade_diagnostics_period_block(
             f"62: {comparison.get('score62', 'unavailable')}",
             f"BE +1%: {'triggered' if be.get('triggered') else 'armed' if be.get('armed') else 'not armed'}",
             f"Saved loss: {'yes' if be.get('effect') == 'saved_loss' else 'no'}",
+            *trailing_lines,
             f"Предварительно: {row.get('preliminary_classification', 'insufficient')}",
         ]))
     omitted = len(selected) - len(blocks)
@@ -1319,6 +1336,63 @@ def _break_even_shadow_report_block(paths: TelegramPaths) -> str:
         )
     except (OSError, TypeError, ValueError):
         return "Break-even shadow +1%\nStatus: diagnostic unavailable"
+
+
+def _trailing_shadow_report_block(paths: TelegramPaths) -> str:
+    """Current lifecycle and cumulative research results for all variants."""
+    try:
+        rows = (
+            read_jsonl_safely(paths.trailing_shadow_journal)[0]
+            if paths.trailing_shadow_journal.exists() else []
+        )
+        if not rows:
+            return "Trailing shadow\nStatus: not initialized"
+        last = rows[-1]
+        lines = [
+            "Trailing shadow",
+            f"Peak: {last.get('peak_price') or '—'}",
+            "Activation +0.5%: " + (
+                "reached" if any(v.get("activated_at_candle") is not None for v in last.get("variants", ()))
+                else "not reached"
+            ),
+        ]
+        for item in last.get("variants", ()):
+            lines.append(
+                f"{item.get('variant')}: floor {item.get('current_floor') or '—'} / status {item.get('status', 'inactive')}"
+            )
+        lines.append("Cumulative statistics:")
+        opened = {row.get("opened_at") for row in rows if row.get("opened_at")}
+        for name in ("0.5%", "1.0%", "1.5%", "2.0%"):
+            history = [
+                item for row in rows for item in row.get("variants", ())
+                if item.get("variant") == name
+            ]
+            closed = [item for item in history if item.get("production_net_pnl") is not None]
+            deltas = [Decimal(str(item.get("delta_usdt", 0))) for item in closed]
+            activated = {
+                row.get("opened_at") for row in rows
+                if any(v.get("variant") == name and v.get("activated_at_candle") is not None for v in row.get("variants", ()))
+            }
+            triggered = {
+                row.get("opened_at") for row in rows
+                if any(v.get("variant") == name and v.get("triggered_at_candle") is not None for v in row.get("variants", ()))
+            }
+            counts = {effect: sum(item.get("effect") == effect for item in closed) for effect in (
+                "saved_loss", "protected_profit", "worsened_winner", "no_effect"
+            )}
+            total = sum(deltas, Decimal("0"))
+            average = total / len(deltas) if deltas else Decimal("0")
+            median = Decimal(str(statistics.median(deltas))) if deltas else Decimal("0")
+            lines.append(
+                f"{name}: observed {len(opened)}, activated {len(activated)}, triggered {len(triggered)}; "
+                f"saved {counts['saved_loss']}, protected {counts['protected_profit']}, "
+                f"worsened {counts['worsened_winner']}, no effect {counts['no_effect']}; "
+                f"Δ sum/avg/median {total}/{average}/{median} USDT"
+            )
+        lines.append("Mode: observation only; production exits unchanged")
+        return "\n".join(lines)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return "Trailing shadow\nStatus: diagnostic unavailable"
 
 
 def format_trades(paths: TelegramPaths, limit: int = 5) -> str:

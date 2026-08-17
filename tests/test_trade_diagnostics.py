@@ -102,6 +102,23 @@ def test_break_even_lifecycle_and_effect(be, effect, armed, triggered):
     assert result["break_even_shadow"]["triggered"] is triggered
 
 
+def test_trailing_variants_are_added_to_closed_trade_card():
+    variants = tuple({
+        "variant": name, "status": "triggered", "current_floor": "104",
+        "activated_at_candle": 3600, "triggered_at_candle": 7200,
+        "hypothetical_exit_price": "104", "comparison_hypothetical_net_pnl": "3.7",
+        "production_net_pnl": "-2.2", "delta_usdt": "5.9",
+        "delta_pct": "5.9", "effect": "saved_loss",
+    } for name in ("0.5%", "1.0%", "1.5%", "2.0%"))
+    result = card(trailing_observations=({
+        "opened_at": "1970-01-01T01:00:00+00:00",
+        "candle_timestamp": 10800, "variants": variants,
+    },))
+    assert tuple(result["trailing_shadows"]) == ("0.5%", "1.0%", "1.5%", "2.0%")
+    assert result["trailing_shadows"]["0.5%"]["effect"] == "saved_loss"
+    assert result["trailing_shadows"]["2.0%"]["delta_usdt"] == "5.9"
+
+
 def test_scored_65_hold_and_62_hold():
     result = card(scored65_observations=(score(61),), scored62_observations=(score(61),))
     assert result["decision_comparison"] == {"production": "entered", "score65": "HOLD", "score62": "HOLD"}

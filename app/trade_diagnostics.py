@@ -97,6 +97,7 @@ def build_trade_card(
     scored65_observations: Iterable[dict[str, Any]] = (),
     scored62_observations: Iterable[dict[str, Any]] = (),
     break_even_observations: Iterable[dict[str, Any]] = (),
+    trailing_observations: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     interval = timeframe_minutes * 60
     entry_candle = _entry_candle(trade.opened_at, interval)
@@ -140,6 +141,12 @@ def build_trade_card(
         and int(row.get("candle_timestamp", -1)) <= exit_candle_timestamp
     ]
     be = be_matches[-1] if be_matches else {}
+    trailing_matches = [
+        row for row in trailing_observations
+        if row.get("opened_at") == trade.opened_at
+        and int(row.get("candle_timestamp", -1)) <= exit_candle_timestamp
+    ]
+    trailing = trailing_matches[-1] if trailing_matches else {}
     armed_at = be.get("armed_at_candle")
     triggered_at = be.get("triggered_at_candle")
     if be.get("saved_loss"):
@@ -195,6 +202,17 @@ def build_trade_card(
             "triggered_at_candle": triggered_at,
             "hypothetical_exit_price": be.get("hypothetical_exit_price"),
             "hypothetical_pnl": be.get("hypothetical_pnl"), "effect": effect,
+        },
+        "trailing_shadows": {
+            str(item.get("variant")): {
+                key: item.get(key) for key in (
+                    "status", "current_floor", "activated_at_candle",
+                    "triggered_at_candle", "hypothetical_exit_price",
+                    "comparison_hypothetical_net_pnl", "production_net_pnl",
+                    "delta_usdt", "delta_pct", "effect",
+                )
+            }
+            for item in trailing.get("variants", ())
         },
     }
     card["preliminary_classification"] = _classification(
@@ -261,6 +279,7 @@ def build_and_append_trade_card(*, trade: TradeJournalEntry, candles: Sequence[C
                                 exit_candle_timestamp: int, journal_path: Path,
                                 production_decision_path: Path, scored65_path: Path,
                                 scored62_path: Path, break_even_path: Path,
+                                trailing_path: Path | None = None,
                                 timeframe_minutes: int = 60) -> tuple[dict[str, Any], bool]:
     card = build_trade_card(
         trade, candles=candles, exit_candle_timestamp=exit_candle_timestamp,
@@ -269,5 +288,6 @@ def build_and_append_trade_card(*, trade: TradeJournalEntry, candles: Sequence[C
         scored65_observations=_rows(scored65_path),
         scored62_observations=_rows(scored62_path),
         break_even_observations=_rows(break_even_path),
+        trailing_observations=_rows(trailing_path) if trailing_path else (),
     )
     return card, TradeDiagnosticsJournal(journal_path).append(card)

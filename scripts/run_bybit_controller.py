@@ -61,6 +61,12 @@ from app.shadow_decision_journal import (
 from app.trade_signal import TradeSignal
 from app.trade_journal import JsonlTradeJournal
 from app.trade_diagnostics import build_and_append_trade_card
+from app.trailing_stop_shadow import (
+    TrailingShadowJournal,
+    TrailingShadowStateStore,
+    observe_trailing_shadow,
+    reconcile_trailing_shadow,
+)
 from app.trading_controller import (
     TradingController,
     TradingControllerState,
@@ -140,6 +146,12 @@ BE_SHADOW_JOURNAL_PATH = Path(
         "BE_SHADOW_JOURNAL_PATH", "state/break_even_shadow.jsonl"
     )
 )
+TRAILING_SHADOW_STATE_PATH = Path(
+    os.environ.get("TRAILING_SHADOW_STATE_PATH", "state/trailing_stop_shadow.json")
+)
+TRAILING_SHADOW_JOURNAL_PATH = Path(
+    os.environ.get("TRAILING_SHADOW_JOURNAL_PATH", "state/trailing_stop_shadow.jsonl")
+)
 TRADE_DIAGNOSTICS_JOURNAL_PATH = Path(
     os.environ.get(
         "TRADE_DIAGNOSTICS_JOURNAL_PATH",
@@ -198,6 +210,38 @@ def run_break_even_shadow_observer(
         print(
             "Break-even shadow observer warning: "
             f"{type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def run_trailing_shadow_observer(
+    *, candle, production_before: TradingControllerState,
+    production_after: TradingControllerState,
+    production_exit_pnl: Decimal | None, historical_candles=(),
+    state_path: Path | None = None, journal_path: Path | None = None,
+) -> bool:
+    """Persist research-only trailing observations after production processing."""
+    try:
+        store = TrailingShadowStateStore(state_path or TRAILING_SHADOW_STATE_PATH)
+        state = store.load()
+        if production_before.has_open_position and production_after.has_open_position:
+            state = reconcile_trailing_shadow(
+                state, production=production_before, candles=historical_candles
+            )
+        update = observe_trailing_shadow(
+            state, candle=candle, production_before=production_before,
+            production_after=production_after,
+            production_net_pnl=production_exit_pnl,
+        )
+        TrailingShadowJournal(journal_path or TRAILING_SHADOW_JOURNAL_PATH).append(
+            update.observation
+        )
+        store.save(update.state)
+    except Exception as exc:
+        print(
+            f"Trailing shadow observer warning: {type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
         return False
@@ -668,6 +712,15 @@ def run_controller(args: argparse.Namespace) -> int:
         ),
         historical_candles=candles,
     )
+    run_trailing_shadow_observer(
+        candle=latest_candle,
+        production_before=before_state,
+        production_after=result.state,
+        production_exit_pnl=(
+            result.accounting.net_pnl if result.accounting is not None else None
+        ),
+        historical_candles=candles,
+    )
 
     # Observation only. A diagnostics failure must never affect PAPER state,
     # execution, signals, stops, scoring, or position sizing.
@@ -683,6 +736,7 @@ def run_controller(args: argparse.Namespace) -> int:
                 scored65_path=SCORED_65_DECISION_PATH,
                 scored62_path=SCORED_62_DECISION_PATH,
                 break_even_path=BE_SHADOW_JOURNAL_PATH,
+                trailing_path=TRAILING_SHADOW_JOURNAL_PATH,
             )
             if appended:
                 print(
