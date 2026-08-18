@@ -59,6 +59,7 @@ class TelegramPaths:
     scored_threshold62_decisions: Path = Path("state/scored_candidate_threshold62/decisions.jsonl")
     break_even_shadow_journal: Path = Path("state/break_even_shadow.jsonl")
     trailing_shadow_journal: Path = Path("state/trailing_stop_shadow.jsonl")
+    profit_lock_shadow_journal: Path = Path("state/profit_lock_shadow.jsonl")
     trade_diagnostics_journal: Path = Path("state/production_trade_diagnostics.jsonl")
     experiments_root: Path = Path("state/experiments")
 
@@ -156,6 +157,12 @@ class TelegramPaths:
                 os.environ.get(
                     "TRAILING_SHADOW_JOURNAL_PATH",
                     "state/trailing_stop_shadow.jsonl",
+                )
+            ),
+            profit_lock_shadow_journal=Path(
+                os.environ.get(
+                    "PROFIT_LOCK_SHADOW_JOURNAL_PATH",
+                    "state/profit_lock_shadow.jsonl",
                 )
             ),
             trade_diagnostics_journal=Path(
@@ -884,6 +891,8 @@ def format_morning_report(
         + "\n\n"
         + _trailing_shadow_report_block(paths)
         + "\n\n"
+        + _profit_lock_shadow_report_block(paths)
+        + "\n\n"
         + _trade_diagnostics_period_block(paths, start, current)
     )
 
@@ -1002,6 +1011,8 @@ def format_evening_report(
         + _break_even_shadow_report_block(paths)
         + "\n\n"
         + _trailing_shadow_report_block(paths)
+        + "\n\n"
+        + _profit_lock_shadow_report_block(paths)
         + "\n\n"
         + _trade_diagnostics_period_block(paths, start, current)
         + "\n\n"
@@ -1268,6 +1279,7 @@ def _trade_diagnostics_period_block(
         comparison = row.get("decision_comparison", {})
         be = row.get("break_even_shadow", {})
         trailing = row.get("trailing_shadows", {})
+        profit_lock = row.get("profit_lock_shadows", {})
         hold_seconds = int(exit_.get("hold_time_seconds", 0))
         score = (
             scored.get("total_score") if isinstance(scored, dict)
@@ -1276,6 +1288,10 @@ def _trade_diagnostics_period_block(
         trailing_lines = ["Trailing shadows:"] + [
             f"{name}: {item.get('effect', 'no_effect')}, Δ {item.get('delta_usdt', '0')} USDT ({float(item.get('delta_pct') or 0):+.2f}%)"
             for name, item in trailing.items()
+        ]
+        profit_lock_lines = ["Profit Lock shadows:"] + [
+            f"{name}: {item.get('status', 'inactive')}, Δ {item.get('delta_usdt', '0')} USDT"
+            for name, item in profit_lock.items()
         ]
         blocks.append("\n".join([
             "🔬 Последняя закрытая PAPER-сделка",
@@ -1291,6 +1307,7 @@ def _trade_diagnostics_period_block(
             f"BE +1%: {'triggered' if be.get('triggered') else 'armed' if be.get('armed') else 'not armed'}",
             f"Saved loss: {'yes' if be.get('effect') == 'saved_loss' else 'no'}",
             *trailing_lines,
+            *profit_lock_lines,
             f"Предварительно: {row.get('preliminary_classification', 'insufficient')}",
         ]))
     omitted = len(selected) - len(blocks)
@@ -1393,6 +1410,53 @@ def _trailing_shadow_report_block(paths: TelegramPaths) -> str:
         return "\n".join(lines)
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return "Trailing shadow\nStatus: diagnostic unavailable"
+
+
+def _profit_lock_shadow_report_block(paths: TelegramPaths) -> str:
+    """Compact current floors plus completed-trade aggregate comparisons."""
+    try:
+        from app.profit_lock_shadow import aggregate_profit_lock_statistics
+
+        rows = (
+            read_jsonl_safely(paths.profit_lock_shadow_journal)[0]
+            if paths.profit_lock_shadow_journal.exists() else []
+        )
+        if not rows:
+            return "Profit Lock shadow\nStatus: not initialized"
+        last = rows[-1]
+        variants = last.get("variants", ())
+        lines = [
+            "Profit Lock shadow",
+            "Activation +0.5%: " + (
+                "reached" if any(v.get("activated_at_candle") is not None for v in variants)
+                else "not reached"
+            ),
+            f"Fee-aware BE: {last.get('fee_aware_be') or '—'}",
+        ]
+        be = Decimal(str(last["fee_aware_be"])) if last.get("fee_aware_be") else None
+        lines.append(f"BE+0.1%: {be * Decimal('1.001') if be is not None else '—'}")
+        for label, marker in (("BE group", " + BE"), ("BE+0.1 group", " + BE+0.1%")):
+            selected = [item for item in variants if str(item.get("variant", "")).endswith(marker)]
+            lines.append(label + ":")
+            lines.append(" | ".join(
+                f"{item.get('trailing_pct')}:{item.get('effective_floor') or '—'}/{item.get('status', 'inactive')}"
+                for item in selected
+            ) or "—")
+        statistics_by_variant = aggregate_profit_lock_statistics(rows)
+        lines.append("Completed comparisons:")
+        for name, values in statistics_by_variant.items():
+            lines.append(
+                f"{name}: obs {values['positions_observed']}, act {values['activated']}, "
+                f"trg {values['triggered']}, S/P/W/N {values['saved_losses']}/"
+                f"{values['protected_profits']}/{values['worsened_winners']}/"
+                f"{values['no_effect']}, Δ {values['cumulative_delta_usdt']} USDT, "
+                f"avg/med {values['average_delta_usdt']}/{values['median_delta_usdt']}, "
+                f"W/L {values['hypothetical_winners']}/{values['hypothetical_losers']}"
+            )
+        lines.append("Mode: observation only; production exits unchanged")
+        return "\n".join(lines)
+    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+        return "Profit Lock shadow\nStatus: diagnostic unavailable"
 
 
 def format_trades(paths: TelegramPaths, limit: int = 5) -> str:

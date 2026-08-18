@@ -119,6 +119,31 @@ def test_trailing_variants_are_added_to_closed_trade_card():
     assert result["trailing_shadows"]["2.0%"]["delta_usdt"] == "5.9"
 
 
+def test_profit_lock_variants_are_added_to_closed_trade_card():
+    names = tuple(
+        f"{trail} + {lock}"
+        for lock in ("BE", "BE+0.1%")
+        for trail in ("0.5%", "1.0%", "1.5%", "2.0%")
+    )
+    variants = tuple({
+        "variant": name, "status": "triggered", "trailing_floor": "99",
+        "profit_lock_floor": "100.2", "effective_floor": "100.2",
+        "activated_at_candle": 3600, "triggered_at_candle": 7200,
+        "hypothetical_exit_price": "100.2", "hypothetical_net_pnl": "0",
+        "hypothetical_gross_pnl": ".2", "hypothetical_entry_fee": ".1",
+        "hypothetical_exit_fee": ".1", "hypothetical_return_pct": "0",
+        "comparison_hypothetical_net_pnl": "0", "production_net_pnl": "-2.2",
+        "delta_usdt": "2.2", "delta_pct": "2.2", "effect": "saved_loss",
+    } for name in names)
+    result = card(profit_lock_observations=({
+        "opened_at": "1970-01-01T01:00:00+00:00",
+        "candle_timestamp": 10800, "variants": variants,
+    },))
+    assert tuple(result["profit_lock_shadows"]) == names
+    assert result["profit_lock_shadows"]["0.5% + BE"]["effect"] == "saved_loss"
+    assert result["profit_lock_shadows"]["2.0% + BE+0.1%"]["delta_usdt"] == "2.2"
+
+
 def test_scored_65_hold_and_62_hold():
     result = card(scored65_observations=(score(61),), scored62_observations=(score(61),))
     assert result["decision_comparison"] == {"production": "entered", "score65": "HOLD", "score62": "HOLD"}

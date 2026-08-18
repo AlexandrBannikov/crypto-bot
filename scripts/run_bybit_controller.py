@@ -43,6 +43,12 @@ from app.paper_strategy_router import (
     PaperStrategyDecision,
     PaperStrategyRouter,
 )
+from app.profit_lock_shadow import (
+    ProfitLockShadowJournal,
+    ProfitLockShadowStateStore,
+    observe_profit_lock_shadow,
+    reconcile_profit_lock_shadow,
+)
 from app.process_lock import (
     ProcessAlreadyRunningError,
     ProcessLock,
@@ -152,6 +158,12 @@ TRAILING_SHADOW_STATE_PATH = Path(
 TRAILING_SHADOW_JOURNAL_PATH = Path(
     os.environ.get("TRAILING_SHADOW_JOURNAL_PATH", "state/trailing_stop_shadow.jsonl")
 )
+PROFIT_LOCK_SHADOW_STATE_PATH = Path(
+    os.environ.get("PROFIT_LOCK_SHADOW_STATE_PATH", "state/profit_lock_shadow.json")
+)
+PROFIT_LOCK_SHADOW_JOURNAL_PATH = Path(
+    os.environ.get("PROFIT_LOCK_SHADOW_JOURNAL_PATH", "state/profit_lock_shadow.jsonl")
+)
 TRADE_DIAGNOSTICS_JOURNAL_PATH = Path(
     os.environ.get(
         "TRADE_DIAGNOSTICS_JOURNAL_PATH",
@@ -242,6 +254,38 @@ def run_trailing_shadow_observer(
     except Exception as exc:
         print(
             f"Trailing shadow observer warning: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def run_profit_lock_shadow_observer(
+    *, candle, production_before: TradingControllerState,
+    production_after: TradingControllerState,
+    production_exit_pnl: Decimal | None, historical_candles=(),
+    state_path: Path | None = None, journal_path: Path | None = None,
+) -> bool:
+    """Persist the isolated research-only profit-lock counterfactuals."""
+    try:
+        store = ProfitLockShadowStateStore(state_path or PROFIT_LOCK_SHADOW_STATE_PATH)
+        state = store.load()
+        if production_before.has_open_position and production_after.has_open_position:
+            state = reconcile_profit_lock_shadow(
+                state, production=production_before, candles=historical_candles,
+            )
+        update = observe_profit_lock_shadow(
+            state, candle=candle, production_before=production_before,
+            production_after=production_after,
+            production_net_pnl=production_exit_pnl,
+        )
+        ProfitLockShadowJournal(journal_path or PROFIT_LOCK_SHADOW_JOURNAL_PATH).append(
+            update.observation
+        )
+        store.save(update.state)
+    except Exception as exc:
+        print(
+            f"Profit-lock shadow observer warning: {type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
         return False
@@ -721,6 +765,15 @@ def run_controller(args: argparse.Namespace) -> int:
         ),
         historical_candles=candles,
     )
+    run_profit_lock_shadow_observer(
+        candle=latest_candle,
+        production_before=before_state,
+        production_after=result.state,
+        production_exit_pnl=(
+            result.accounting.net_pnl if result.accounting is not None else None
+        ),
+        historical_candles=candles,
+    )
 
     # Observation only. A diagnostics failure must never affect PAPER state,
     # execution, signals, stops, scoring, or position sizing.
@@ -737,6 +790,7 @@ def run_controller(args: argparse.Namespace) -> int:
                 scored62_path=SCORED_62_DECISION_PATH,
                 break_even_path=BE_SHADOW_JOURNAL_PATH,
                 trailing_path=TRAILING_SHADOW_JOURNAL_PATH,
+                profit_lock_path=PROFIT_LOCK_SHADOW_JOURNAL_PATH,
             )
             if appended:
                 print(

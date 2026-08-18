@@ -53,6 +53,16 @@ def isolate_break_even_shadow_paths(tmp_path, monkeypatch) -> None:
         "TRAILING_SHADOW_JOURNAL_PATH",
         tmp_path / "state/trailing_stop_shadow.jsonl",
     )
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "PROFIT_LOCK_SHADOW_STATE_PATH",
+        tmp_path / "state/profit_lock_shadow.json",
+    )
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "PROFIT_LOCK_SHADOW_JOURNAL_PATH",
+        tmp_path / "state/profit_lock_shadow.jsonl",
+    )
 
 
 def start_lock_holder(path):
