@@ -174,7 +174,11 @@ def _mark_excursion(item: VariantState, *, low: Decimal, high: Decimal,
     drawdown = max(item.maximum_unrealized_drawdown, peak - current)
     return replace(item, peak_unrealized_pnl=peak,
                    maximum_unrealized_drawdown=drawdown,
-                   mae=min(item.mae, low_pnl), mfe=max(item.mfe, high_pnl))
+                   mae=min(item.mae, low_pnl), mfe=max(item.mfe, high_pnl),
+                   peak_exposure_pct=max(
+                       item.peak_exposure_pct,
+                       high * item.quantity / INITIAL_BALANCE * 100,
+                   ))
 
 
 def observe_pyramiding_shadow(

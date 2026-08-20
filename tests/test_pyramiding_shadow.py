@@ -93,6 +93,7 @@ def test_fees_capital_exit_accounting_and_excursions():
     assert item["net_pnl"] == D("0.29550")
     assert item["delta_pnl_vs_production"] == D("0.19550")
     assert item["mae"] < 0 < item["mfe"]
+    assert item["peak_exposure_pct"] == D("0.2600")
 
 
 def test_restart_reconciliation_already_open_idempotency_and_no_future_score(tmp_path):
