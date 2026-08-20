@@ -60,6 +60,7 @@ class TelegramPaths:
     break_even_shadow_journal: Path = Path("state/break_even_shadow.jsonl")
     trailing_shadow_journal: Path = Path("state/trailing_stop_shadow.jsonl")
     profit_lock_shadow_journal: Path = Path("state/profit_lock_shadow.jsonl")
+    pyramiding_shadow_journal: Path = Path("state/pyramiding_shadow.jsonl")
     trade_diagnostics_journal: Path = Path("state/production_trade_diagnostics.jsonl")
     experiments_root: Path = Path("state/experiments")
 
@@ -164,6 +165,9 @@ class TelegramPaths:
                     "PROFIT_LOCK_SHADOW_JOURNAL_PATH",
                     "state/profit_lock_shadow.jsonl",
                 )
+            ),
+            pyramiding_shadow_journal=Path(
+                os.environ.get("PYRAMIDING_SHADOW_JOURNAL_PATH", "state/pyramiding_shadow.jsonl")
             ),
             trade_diagnostics_journal=Path(
                 os.environ.get(
@@ -893,6 +897,8 @@ def format_morning_report(
         + "\n\n"
         + _profit_lock_shadow_report_block(paths)
         + "\n\n"
+        + _pyramiding_shadow_report_block(paths)
+        + "\n\n"
         + _trade_diagnostics_period_block(paths, start, current)
     )
 
@@ -1013,6 +1019,8 @@ def format_evening_report(
         + _trailing_shadow_report_block(paths)
         + "\n\n"
         + _profit_lock_shadow_report_block(paths)
+        + "\n\n"
+        + _pyramiding_shadow_report_block(paths)
         + "\n\n"
         + _trade_diagnostics_period_block(paths, start, current)
         + "\n\n"
@@ -1280,6 +1288,7 @@ def _trade_diagnostics_period_block(
         be = row.get("break_even_shadow", {})
         trailing = row.get("trailing_shadows", {})
         profit_lock = row.get("profit_lock_shadows", {})
+        pyramiding = row.get("pyramiding_shadow", {})
         hold_seconds = int(exit_.get("hold_time_seconds", 0))
         score = (
             scored.get("total_score") if isinstance(scored, dict)
@@ -1292,6 +1301,13 @@ def _trade_diagnostics_period_block(
         profit_lock_lines = ["Profit Lock shadows:"] + [
             f"{name}: {item.get('status', 'inactive')}, Δ {item.get('delta_usdt', '0')} USDT"
             for name, item in profit_lock.items()
+        ]
+        pyramiding_lines = ["Pyramiding shadow:"] + [
+            (f"{name}: no adds" if not int(item.get('add_count') or 0) else
+             f"{name}: +{item.get('add_count')} adds / qty {item.get('quantity')} / "
+             f"avg {item.get('weighted_average_entry')} / PnL {item.get('net_pnl')} / "
+             f"Δ {item.get('delta_pnl_vs_production')}")
+            for name, item in pyramiding.items()
         ]
         blocks.append("\n".join([
             "🔬 Последняя закрытая PAPER-сделка",
@@ -1308,6 +1324,7 @@ def _trade_diagnostics_period_block(
             f"Saved loss: {'yes' if be.get('effect') == 'saved_loss' else 'no'}",
             *trailing_lines,
             *profit_lock_lines,
+            *pyramiding_lines,
             f"Предварительно: {row.get('preliminary_classification', 'insufficient')}",
         ]))
     omitted = len(selected) - len(blocks)
@@ -1457,6 +1474,36 @@ def _profit_lock_shadow_report_block(paths: TelegramPaths) -> str:
         return "\n".join(lines)
     except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
         return "Profit Lock shadow\nStatus: diagnostic unavailable"
+
+
+def _pyramiding_shadow_report_block(paths: TelegramPaths) -> str:
+    """Compact live variants and completed aggregate research metrics."""
+    try:
+        from app.pyramiding_shadow import aggregate_pyramiding_statistics
+        rows = (read_jsonl_safely(paths.pyramiding_shadow_journal)[0]
+                if paths.pyramiding_shadow_journal.exists() else [])
+        if not rows:
+            return "Pyramiding shadow\nStatus: not initialized"
+        last = rows[-1]
+        lines = ["Pyramiding shadow"]
+        for item in last.get("variants", ()):
+            lines.append(
+                f"{item.get('threshold')}: +{item.get('add_count', 0)} / qty {item.get('quantity')} / "
+                f"avg {item.get('weighted_average_entry')} / PnL {item.get('unrealized_pnl')} / "
+                f"next {'yes' if item.get('eligible') and not int(item.get('cooldown_remaining') or 0) else 'no'} / score {item.get('score') or '—'} / "
+                f"cd {item.get('cooldown_remaining', 0)}"
+            )
+        stats = aggregate_pyramiding_statistics(rows)
+        if any(v["positions_observed"] for v in stats.values()):
+            lines.append("Aggregate: " + " | ".join(
+                f"{name}: pos/adds {v['positions_observed']}/{v['total_add_ons']}, "
+                f"Δ {v['cumulative_delta_vs_production']}"
+                for name, v in stats.items()
+            ))
+        lines.append("Mode: observation only; close-only; orders disabled")
+        return "\n".join(lines)
+    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+        return "Pyramiding shadow\nStatus: diagnostic unavailable"
 
 
 def format_trades(paths: TelegramPaths, limit: int = 5) -> str:

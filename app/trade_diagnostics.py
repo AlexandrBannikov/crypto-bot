@@ -99,6 +99,7 @@ def build_trade_card(
     break_even_observations: Iterable[dict[str, Any]] = (),
     trailing_observations: Iterable[dict[str, Any]] = (),
     profit_lock_observations: Iterable[dict[str, Any]] = (),
+    pyramiding_observations: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     interval = timeframe_minutes * 60
     entry_candle = _entry_candle(trade.opened_at, interval)
@@ -154,6 +155,12 @@ def build_trade_card(
         and int(row.get("candle_timestamp", -1)) <= exit_candle_timestamp
     ]
     profit_lock = profit_lock_matches[-1] if profit_lock_matches else {}
+    pyramiding_matches = [
+        row for row in pyramiding_observations
+        if row.get("opened_at") == trade.opened_at
+        and int(row.get("candle_timestamp", -1)) <= exit_candle_timestamp
+    ]
+    pyramiding = pyramiding_matches[-1] if pyramiding_matches else {}
     armed_at = be.get("armed_at_candle")
     triggered_at = be.get("triggered_at_candle")
     if be.get("saved_loss"):
@@ -235,6 +242,18 @@ def build_trade_card(
             }
             for item in profit_lock.get("variants", ())
         },
+        "pyramiding_shadow": {
+            str(item.get("threshold")): {
+                key: item.get(key) for key in (
+                    "add_count", "quantity", "weighted_average_entry",
+                    "total_entry_fees", "exit_fee", "net_pnl",
+                    "return_on_deployed_capital_pct", "maximum_total_notional",
+                    "peak_exposure_pct", "mfe", "mae",
+                    "maximum_unrealized_drawdown", "delta_pnl_vs_production",
+                )
+            }
+            for item in pyramiding.get("variants", ())
+        },
     }
     card["preliminary_classification"] = _classification(
         net=net_return, mfe=mfe_pct, mae=mae_pct,
@@ -302,6 +321,7 @@ def build_and_append_trade_card(*, trade: TradeJournalEntry, candles: Sequence[C
                                 scored62_path: Path, break_even_path: Path,
                                 trailing_path: Path | None = None,
                                 profit_lock_path: Path | None = None,
+                                pyramiding_path: Path | None = None,
                                 timeframe_minutes: int = 60) -> tuple[dict[str, Any], bool]:
     card = build_trade_card(
         trade, candles=candles, exit_candle_timestamp=exit_candle_timestamp,
@@ -312,5 +332,6 @@ def build_and_append_trade_card(*, trade: TradeJournalEntry, candles: Sequence[C
         break_even_observations=_rows(break_even_path),
         trailing_observations=_rows(trailing_path) if trailing_path else (),
         profit_lock_observations=_rows(profit_lock_path) if profit_lock_path else (),
+        pyramiding_observations=_rows(pyramiding_path) if pyramiding_path else (),
     )
     return card, TradeDiagnosticsJournal(journal_path).append(card)

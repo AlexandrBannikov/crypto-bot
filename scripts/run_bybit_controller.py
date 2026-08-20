@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -48,6 +49,13 @@ from app.profit_lock_shadow import (
     ProfitLockShadowStateStore,
     observe_profit_lock_shadow,
     reconcile_profit_lock_shadow,
+)
+from app.pyramiding_shadow import (
+    PyramidingShadowJournal,
+    PyramidingShadowStateStore,
+    observe_pyramiding_shadow,
+    reconcile_pyramiding_shadow,
+    score_for_candle,
 )
 from app.process_lock import (
     ProcessAlreadyRunningError,
@@ -164,6 +172,12 @@ PROFIT_LOCK_SHADOW_STATE_PATH = Path(
 PROFIT_LOCK_SHADOW_JOURNAL_PATH = Path(
     os.environ.get("PROFIT_LOCK_SHADOW_JOURNAL_PATH", "state/profit_lock_shadow.jsonl")
 )
+PYRAMIDING_SHADOW_STATE_PATH = Path(
+    os.environ.get("PYRAMIDING_SHADOW_STATE_PATH", "state/pyramiding_shadow.json")
+)
+PYRAMIDING_SHADOW_JOURNAL_PATH = Path(
+    os.environ.get("PYRAMIDING_SHADOW_JOURNAL_PATH", "state/pyramiding_shadow.jsonl")
+)
 TRADE_DIAGNOSTICS_JOURNAL_PATH = Path(
     os.environ.get(
         "TRADE_DIAGNOSTICS_JOURNAL_PATH",
@@ -182,6 +196,13 @@ SCORED_62_DECISION_PATH = Path(
         "state/scored_candidate_threshold62/decisions.jsonl",
     )
 )
+
+
+def _read_score_rows(path: Path) -> tuple[dict, ...]:
+    if not path.exists():
+        return ()
+    return tuple(json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
+                 if line.strip())
 
 
 def run_break_even_shadow_observer(
@@ -288,6 +309,39 @@ def run_profit_lock_shadow_observer(
             f"Profit-lock shadow observer warning: {type(exc).__name__}: {exc}",
             file=sys.stderr,
         )
+        return False
+    return True
+
+
+def run_pyramiding_shadow_observer(
+    *, candle, production_before: TradingControllerState,
+    production_after: TradingControllerState,
+    production_exit_pnl: Decimal | None, historical_candles=(),
+    score_rows=(), state_path: Path | None = None, journal_path: Path | None = None,
+) -> bool:
+    """Persist isolated close-only pyramiding counterfactuals; never place orders."""
+    try:
+        store = PyramidingShadowStateStore(state_path or PYRAMIDING_SHADOW_STATE_PATH)
+        state = store.load()
+        if production_before.has_open_position and production_after.has_open_position:
+            state = reconcile_pyramiding_shadow(
+                state, production=production_before, candles=historical_candles,
+                score_rows=score_rows, timeframe_seconds=int(INTERVAL) * 60,
+            )
+        update = observe_pyramiding_shadow(
+            state, candle=candle, production_before=production_before,
+            production_after=production_after,
+            score=score_for_candle(score_rows, candle.timestamp),
+            production_net_pnl=production_exit_pnl,
+            available_equity=production_before.virtual_balance,
+            timeframe_seconds=int(INTERVAL) * 60,
+        )
+        PyramidingShadowJournal(journal_path or PYRAMIDING_SHADOW_JOURNAL_PATH).append(
+            update.observation
+        )
+        store.save(update.state)
+    except Exception as exc:
+        print(f"Pyramiding shadow observer warning: {type(exc).__name__}: {exc}", file=sys.stderr)
         return False
     return True
 
@@ -774,6 +828,16 @@ def run_controller(args: argparse.Namespace) -> int:
         ),
         historical_candles=candles,
     )
+    run_pyramiding_shadow_observer(
+        candle=latest_candle,
+        production_before=before_state,
+        production_after=result.state,
+        production_exit_pnl=(
+            result.accounting.net_pnl if result.accounting is not None else None
+        ),
+        historical_candles=candles,
+        score_rows=_read_score_rows(SCORED_65_DECISION_PATH),
+    )
 
     # Observation only. A diagnostics failure must never affect PAPER state,
     # execution, signals, stops, scoring, or position sizing.
@@ -791,6 +855,7 @@ def run_controller(args: argparse.Namespace) -> int:
                 break_even_path=BE_SHADOW_JOURNAL_PATH,
                 trailing_path=TRAILING_SHADOW_JOURNAL_PATH,
                 profit_lock_path=PROFIT_LOCK_SHADOW_JOURNAL_PATH,
+                pyramiding_path=PYRAMIDING_SHADOW_JOURNAL_PATH,
             )
             if appended:
                 print(
