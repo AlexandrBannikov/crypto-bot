@@ -1,7 +1,7 @@
 """Research-only pyramiding for production PAPER LONG positions.
 
-Decisions are made once per fully closed hourly candle and execute at that
-candle's close, matching production PAPER close-decision semantics.  The
+Decisions are made once per fully closed hourly candle and execute at the next
+candle open.  The
 observer never reads a later candle (including its high/low), emits no order,
 and never mutates production state.
 """
@@ -17,6 +17,10 @@ import statistics
 from typing import Any, Iterable, Sequence
 
 from app.candle import Candle
+from app.runtime_versions import (
+    EXECUTION_POLICY_VERSION, FEATURE_VERSION, LEDGER_SCHEMA_VERSION,
+    STRATEGY_LOGIC_VERSION,
+)
 from app.trading_controller import TradingControllerState
 
 
@@ -26,10 +30,13 @@ ADD_QUANTITY = D("0.01")
 MAX_ADDS = 3
 COOLDOWN_CANDLES = 3
 INITIAL_BALANCE = D("1000")
+INITIAL_NOTIONAL_CAP_PCT = D("0.10")
+TOTAL_NOTIONAL_CAP_PCT = D("0.15")
 
 
 @dataclass(frozen=True, slots=True)
 class AddOn:
+    signal_timestamp: int
     candle_timestamp: int
     price: Decimal
     quantity: Decimal
@@ -60,6 +67,8 @@ class VariantState:
     maximum_unrealized_drawdown: Decimal = D("0")
     mae: Decimal = D("0")
     mfe: Decimal = D("0")
+    pending_add_signal_timestamp: int | None = None
+    pending_add_score: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +76,7 @@ class PyramidingShadowState:
     opened_at: str | None = None
     entry_price: Decimal | None = None
     initial_quantity: Decimal | None = None
+    production_initial_quantity: Decimal | None = None
     entry_candle: int | None = None
     variants: tuple[VariantState, ...] = ()
 
@@ -81,24 +91,32 @@ def _new_position(production: TradingControllerState, entry_candle: int,
                   fee_rate: Decimal) -> PyramidingShadowState:
     if production.entry_price is None or production.position_quantity <= 0 or not production.opened_at:
         raise ValueError("open production position has no stable identity")
-    notional = production.entry_price * production.position_quantity
+    production_notional = production.entry_price * production.position_quantity
+    notional = min(
+        production_notional, INITIAL_BALANCE * INITIAL_NOTIONAL_CAP_PCT,
+    )
+    quantity = notional / production.entry_price
     fee = notional * fee_rate
     variants = tuple(VariantState(
-        threshold=value, quantity=production.position_quantity,
+        threshold=value, quantity=quantity,
         total_cost_basis=notional, weighted_average_entry=production.entry_price,
         total_entry_fees=fee, initial_notional=notional,
         maximum_total_notional=notional,
-        maximum_total_quantity=production.position_quantity,
+        maximum_total_quantity=quantity,
         peak_exposure_pct=notional / INITIAL_BALANCE * 100,
     ) for value in THRESHOLDS)
-    return PyramidingShadowState(production.opened_at, production.entry_price,
-                                  production.position_quantity, entry_candle, variants)
+    return PyramidingShadowState(
+        opened_at=production.opened_at, entry_price=production.entry_price,
+        initial_quantity=quantity,
+        production_initial_quantity=production.position_quantity,
+        entry_candle=entry_candle, variants=variants,
+    )
 
 
 def _matches(state: PyramidingShadowState, production: TradingControllerState) -> bool:
     return (production.has_open_position and state.opened_at == production.opened_at
             and state.entry_price == production.entry_price
-            and state.initial_quantity == production.position_quantity
+            and state.production_initial_quantity == production.position_quantity
             and tuple(v.threshold for v in state.variants) == THRESHOLDS)
 
 
@@ -158,7 +176,9 @@ def _gate(item: VariantState, *, price: Decimal, score: dict[str, Any] | None,
         return False, "adx_not_confirmed", total, cooldown
     if cooldown:
         return False, "cooldown", total, cooldown
-    if item.total_cost_basis + price * ADD_QUANTITY > available_equity:
+    if item.total_cost_basis + price * ADD_QUANTITY > min(
+        available_equity, INITIAL_BALANCE * TOTAL_NOTIONAL_CAP_PCT,
+    ):
         return False, "insufficient_capital", total, cooldown
     return True, "eligible", total, cooldown
 
@@ -190,7 +210,15 @@ def observe_pyramiding_shadow(
     fee_rate: Decimal = D("0.001"), available_equity: Decimal | None = None,
     timeframe_seconds: int = 3600,
 ) -> PyramidingShadowUpdate:
-    """Advance one closed candle using its close as the hypothetical fill."""
+    """Advance one candle; prior decisions fill at open, new ones stay pending."""
+    if score is None:
+        return PyramidingShadowUpdate(state, {
+            "research_only": True, "processing_status": "PENDING",
+            "candle_timestamp": candle.timestamp, "reason": "score_pending",
+            "appended": False, "feature_version": FEATURE_VERSION,
+        })
+    if int(score.get("candle_timestamp", candle.timestamp)) != candle.timestamp:
+        raise ValueError("stale pyramiding score is forbidden")
     opened = not production_before.has_open_position and production_after.has_open_position
     closed = production_before.has_open_position and not production_after.has_open_position
     current = state
@@ -199,13 +227,50 @@ def observe_pyramiding_shadow(
     if opened:
         current = _new_position(production_after, candle.timestamp, fee_rate)
 
-    price, low, high = map(lambda x: D(str(x)), (candle.close, candle.low, candle.high))
+    price, open_price, low, high = map(
+        lambda x: D(str(x)),
+        (candle.close, candle.open, candle.low, candle.high),
+    )
     equity = available_equity if available_equity is not None else production_before.virtual_balance
     rows: list[dict[str, Any]] = []
     updated: list[VariantState] = []
     if production_before.has_open_position and current.variants:
         for original in current.variants:
-            item = _mark_excursion(original, low=low, high=high, close=price)
+            item = original
+            filled_add: AddOn | None = None
+            if (
+                item.pending_add_signal_timestamp is not None
+                and item.pending_add_score is not None
+                and not closed
+                and item.total_cost_basis + open_price * ADD_QUANTITY
+                <= min(equity, INITIAL_BALANCE * TOTAL_NOTIONAL_CAP_PCT)
+            ):
+                notional = open_price * ADD_QUANTITY
+                fee = notional * fee_rate
+                quantity = item.quantity + ADD_QUANTITY
+                cost = item.total_cost_basis + notional
+                average = cost / quantity
+                filled_add = AddOn(
+                    item.pending_add_signal_timestamp, candle.timestamp,
+                    open_price, ADD_QUANTITY, notional, fee, average,
+                    quantity, cost, item.pending_add_score,
+                )
+                item = replace(
+                    item, quantity=quantity, total_cost_basis=cost,
+                    weighted_average_entry=average,
+                    total_entry_fees=item.total_entry_fees + fee,
+                    added_notional=item.added_notional + notional,
+                    maximum_total_notional=max(item.maximum_total_notional, cost),
+                    maximum_total_quantity=max(item.maximum_total_quantity, quantity),
+                    peak_exposure_pct=max(
+                        item.peak_exposure_pct,
+                        open_price * quantity / INITIAL_BALANCE * 100,
+                    ),
+                    add_ons=item.add_ons + (filled_add,),
+                    last_add_candle=candle.timestamp,
+                    pending_add_signal_timestamp=None, pending_add_score=None,
+                )
+            item = _mark_excursion(item, low=low, high=high, close=price)
             effective_score = None if closed else score
             allowed, reason, total, cooldown = _gate(
                 item, price=price, score=effective_score, candle_timestamp=candle.timestamp,
@@ -214,28 +279,12 @@ def observe_pyramiding_shadow(
             if closed:
                 reason = "production_exit"
             if allowed:
-                notional = price * ADD_QUANTITY
-                fee = notional * fee_rate
-                quantity = item.quantity + ADD_QUANTITY
-                cost = item.total_cost_basis + notional
-                average = cost / quantity
-                add = AddOn(candle.timestamp, price, ADD_QUANTITY, notional, fee,
-                            average, quantity, cost, total or D("0"))
                 item = replace(
-                    item, quantity=quantity, total_cost_basis=cost,
-                    weighted_average_entry=average,
-                    total_entry_fees=item.total_entry_fees + fee,
-                    added_notional=item.added_notional + notional,
-                    maximum_total_notional=max(item.maximum_total_notional, cost),
-                    maximum_total_quantity=max(item.maximum_total_quantity, quantity),
-                    peak_exposure_pct=max(item.peak_exposure_pct,
-                                          price * quantity / INITIAL_BALANCE * 100),
-                    add_ons=item.add_ons + (add,), last_add_candle=candle.timestamp,
-                    peak_unrealized_pnl=max(
-                        item.peak_unrealized_pnl,
-                        price * quantity - cost - item.total_entry_fees - fee,
-                    ),
+                    item, pending_add_signal_timestamp=candle.timestamp,
+                    pending_add_score=total,
                 )
+                reason = "add_pending"
+            elif filled_add is not None:
                 reason, cooldown = "added", COOLDOWN_CANDLES
             item = replace(item, last_observed_candle=candle.timestamp)
             current_value = price * item.quantity
@@ -271,10 +320,15 @@ def observe_pyramiding_shadow(
 
     observation = {
         "research_only": True, "look_ahead": False,
-        "execution_semantics": "fully_closed_candle_close",
+        "processing_status": "PROCESSED",
+        "execution_semantics": "signal_close_fill_next_candle_open",
         "candle_timestamp": candle.timestamp, "opened_at": current.opened_at,
         "entry_price": current.entry_price, "initial_quantity": current.initial_quantity,
         "variants": tuple(rows),
+        "strategy_logic_version": STRATEGY_LOGIC_VERSION,
+        "feature_version": FEATURE_VERSION,
+        "execution_policy_version": EXECUTION_POLICY_VERSION,
+        "ledger_schema_version": LEDGER_SCHEMA_VERSION,
     }
     return PyramidingShadowUpdate(PyramidingShadowState() if closed else current, observation)
 
@@ -327,9 +381,14 @@ class PyramidingShadowStateStore:
                 "total_entry_fees", "initial_notional", "added_notional", "maximum_total_notional",
                 "maximum_total_quantity", "peak_exposure_pct", "peak_unrealized_pnl",
                 "maximum_unrealized_drawdown", "mae", "mfe")
-            variants.append(VariantState(**{**raw, **{k: D(str(raw[k])) for k in decimal_keys}}, add_ons=adds))
-        for key in ("entry_price", "initial_quantity"):
+            converted = {k: D(str(raw[k])) for k in decimal_keys}
+            if raw.get("pending_add_score") is not None:
+                converted["pending_add_score"] = D(str(raw["pending_add_score"]))
+            variants.append(VariantState(**{**raw, **converted}, add_ons=adds))
+        for key in ("entry_price", "initial_quantity", "production_initial_quantity"):
             if data.get(key) is not None: data[key] = D(str(data[key]))
+        if data.get("production_initial_quantity") is None:
+            data["production_initial_quantity"] = data.get("initial_quantity")
         return PyramidingShadowState(**data, variants=tuple(variants))
     def save(self, state: PyramidingShadowState) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

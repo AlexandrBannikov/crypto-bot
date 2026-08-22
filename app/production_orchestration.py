@@ -37,6 +37,7 @@ class ProductionCandleCycle:
     fast_ema: float
     slow_ema: float
     decision: PaperStrategyDecision
+    effective_action: TradeAction
     open_step: CausalStepResult
     close_execution: TradingControllerResult | None
     state_before: object
@@ -154,6 +155,7 @@ def process_production_candles(
             fast_ema=fast,
             slow_ema=slow,
             decision=decision,
+            effective_action=action,
             open_step=open_step,
             close_execution=close_execution,
             state_before=state_before,

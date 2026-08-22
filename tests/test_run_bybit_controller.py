@@ -9,6 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 from app import trade_reporting
+from app.candle import Candle
+from app.config import PaperStrategyConfig, PaperStrategyMode
 from app.trade_journal import JsonlTradeJournal
 from app.trade_reporting import TradeReportError
 from app.strategies import Signal
@@ -201,11 +203,21 @@ def install_successful_run(
     journal_entry,
 ) -> None:
     monkeypatch.setattr(
+        run_bybit_controller.PaperStrategyConfig,
+        "from_env",
+        lambda **kwargs: PaperStrategyConfig(
+            mode=PaperStrategyMode.OFF,
+            shadow_diagnostics_enabled=False,
+        ),
+    )
+    monkeypatch.setattr(
         run_bybit_controller,
         "run_break_even_shadow_observer",
         lambda **kwargs: True,
     )
-    candle = SimpleNamespace(timestamp=123, close=100.0)
+    monkeypatch.setattr(run_bybit_controller, "run_pyramiding_shadow_observer", lambda **kwargs: True)
+    monkeypatch.setattr(run_bybit_controller, "run_strategy_v2_shadow_observer", lambda **kwargs: True)
+    candle = Candle(timestamp=0, open=100, high=101, low=99, close=100, volume=1)
     feed = SimpleNamespace(get_candles=lambda: (candle,))
     monkeypatch.setattr(
         run_bybit_controller,
@@ -216,6 +228,10 @@ def install_successful_run(
         run_bybit_controller,
         "load_last_candle_timestamp",
         lambda: None,
+    )
+    monkeypatch.setattr(
+        run_bybit_controller, "_prepare_canonical_features",
+        lambda candles: SimpleNamespace(),
     )
     monkeypatch.setattr(
         run_bybit_controller,
@@ -245,13 +261,32 @@ def install_successful_run(
         journal_entry=journal_entry,
     )
     controller = SimpleNamespace(
-        state=state,
+        state=state, _state=state, state_store=store,
         process_signal=lambda **kwargs: result,
     )
     monkeypatch.setattr(
         run_bybit_controller,
         "TradingController",
         lambda runtime, state_store, trade_journal: controller,
+    )
+    cycle = SimpleNamespace(
+        candle=candle,
+        open_step=SimpleNamespace(executions=((result,) if journal_entry is not None else ())),
+        close_execution=None,
+        score_snapshot=None,
+        state_before=state,
+        state_after=state,
+        decision=SimpleNamespace(
+            baseline_signal=SimpleNamespace(action=TradeAction.HOLD),
+        ),
+        effective_action=TradeAction.HOLD,
+        unresolved_gap=False,
+        score_status="PENDING",
+        strategy_signal=Signal.HOLD,
+    )
+    monkeypatch.setattr(
+        run_bybit_controller, "process_production_candles",
+        lambda *args, **kwargs: (cycle,),
     )
 
 
@@ -300,9 +335,8 @@ def test_reports_are_not_created_before_successful_processing(
             raise RuntimeError("trading failed")
 
     monkeypatch.setattr(
-        run_bybit_controller,
-        "TradingController",
-        lambda runtime, state_store, trade_journal: FailedController(),
+        run_bybit_controller, "process_production_candles",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("trading failed")),
     )
     text_path = tmp_path / "report.txt"
     png_path = tmp_path / "report.png"
@@ -359,88 +393,36 @@ def test_second_run_recovers_reports_without_duplicate_trade(
     tmp_path,
     monkeypatch,
 ) -> None:
-    candle = SimpleNamespace(timestamp=123, close=100.0)
     journal_path = tmp_path / "state/journal.jsonl"
-    state_path = tmp_path / "state/controller.json"
     timestamp_path = tmp_path / "state/last-candle.txt"
     text_path = tmp_path / "reports/statistics.txt"
     png_path = tmp_path / "reports/statistics.png"
     entry = make_entry()
+    JsonlTradeJournal(journal_path).append(entry)
+    install_successful_run(monkeypatch, journal_entry=entry)
+    monkeypatch.setattr(run_bybit_controller, "JOURNAL_PATH", journal_path)
+
     process_calls = 0
-    controller_constructions = 0
     timestamp_writes = 0
+    original_process = run_bybit_controller.process_production_candles
 
-    monkeypatch.setattr(
-        run_bybit_controller,
-        "JOURNAL_PATH",
-        journal_path,
-    )
-    monkeypatch.setattr(
-        run_bybit_controller,
-        "STATE_PATH",
-        state_path,
-    )
-    monkeypatch.setattr(
-        run_bybit_controller,
-        "LAST_CANDLE_PATH",
-        timestamp_path,
-    )
-    monkeypatch.setattr(
-        run_bybit_controller,
-        "BybitMarketDataFeed",
-        lambda config: SimpleNamespace(
-            get_candles=lambda: (candle,)
-        ),
-    )
-    monkeypatch.setattr(
-        run_bybit_controller,
-        "calculate_latest_signal",
-        lambda candles: (Signal.HOLD, 99.0, 100.0),
-    )
+    def process(*args, **kwargs):
+        nonlocal process_calls
+        process_calls += 1
+        return original_process(*args, **kwargs)
 
-    original_save_timestamp = (
-        run_bybit_controller.save_last_candle_timestamp
-    )
+    def load_timestamp():
+        return int(timestamp_path.read_text()) if timestamp_path.exists() else None
 
-    def save_timestamp(timestamp):
+    def save_timestamp(timestamp: int):
         nonlocal timestamp_writes
         timestamp_writes += 1
-        original_save_timestamp(timestamp)
+        timestamp_path.parent.mkdir(parents=True, exist_ok=True)
+        timestamp_path.write_text(f"{timestamp}\n")
 
-    monkeypatch.setattr(
-        run_bybit_controller,
-        "save_last_candle_timestamp",
-        save_timestamp,
-    )
-
-    class FileBackedController:
-        def __init__(self, runtime, *, state_store, trade_journal):
-            nonlocal controller_constructions
-            controller_constructions += 1
-            self.state_store = state_store
-            self.trade_journal = trade_journal
-            self.state = TradingControllerState()
-
-        def process_signal(self, **kwargs):
-            nonlocal process_calls
-            process_calls += 1
-            self.state = TradingControllerState(closed_trades=1)
-            self.state_store.save(self.state)
-            self.trade_journal.append(entry)
-            return SimpleNamespace(
-                action=SimpleNamespace(value="CLOSE_LONG"),
-                execution=None,
-                skipped_reason=None,
-                state=self.state,
-                accounting=None,
-                journal_entry=entry,
-            )
-
-    monkeypatch.setattr(
-        run_bybit_controller,
-        "TradingController",
-        FileBackedController,
-    )
+    monkeypatch.setattr(run_bybit_controller, "process_production_candles", process)
+    monkeypatch.setattr(run_bybit_controller, "load_last_candle_timestamp", load_timestamp)
+    monkeypatch.setattr(run_bybit_controller, "save_last_candle_timestamp", save_timestamp)
 
     original_plot_writer = (
         trade_reporting.save_trade_statistics_plot
@@ -468,15 +450,14 @@ def test_second_run_recovers_reports_without_duplicate_trade(
 
     assert run_bybit_controller.main(arguments) == 1
     assert len(JsonlTradeJournal(journal_path).read_all()) == 1
-    assert timestamp_path.read_text(encoding="utf-8") == "123\n"
+    assert timestamp_path.read_text(encoding="utf-8") == "0\n"
     assert text_path.exists()
     assert not png_path.exists()
 
     assert run_bybit_controller.main(arguments) == 0
     assert len(JsonlTradeJournal(journal_path).read_all()) == 1
-    assert timestamp_path.read_text(encoding="utf-8") == "123\n"
+    assert timestamp_path.read_text(encoding="utf-8") == "0\n"
     assert process_calls == 1
-    assert controller_constructions == 1
     assert timestamp_writes == 1
     assert plot_attempts == 2
     assert text_path.exists()
@@ -559,6 +540,19 @@ def test_unchanged_journal_skips_report_generation(
         ),
     )
 
+    assert run_bybit_controller.main([]) == 0
+
+
+def test_frozen_trailing_and_profit_lock_observers_are_not_called(monkeypatch) -> None:
+    install_successful_run(monkeypatch, journal_entry=None)
+    monkeypatch.setattr(
+        run_bybit_controller, "run_trailing_shadow_observer",
+        lambda **kwargs: pytest.fail("frozen trailing observer was called"),
+    )
+    monkeypatch.setattr(
+        run_bybit_controller, "run_profit_lock_shadow_observer",
+        lambda **kwargs: pytest.fail("frozen profit-lock observer was called"),
+    )
     assert run_bybit_controller.main([]) == 0
 
 

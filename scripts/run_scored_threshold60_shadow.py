@@ -25,6 +25,12 @@ def main() -> int:
     parser.add_argument("--symbol", default="ETHUSDT")
     parser.add_argument("--interval", default="60")
     args = parser.parse_args()
+    print(
+        "threshold-60 observations are frozen; historical state is preserved"
+    )
+    return 0
+    # Frozen reference implementation below is intentionally retained for
+    # reproducibility, but no runtime path may append new observations.
     try:
         with ProcessLock(args.lock_file):
             bootstrap = not args.state.exists() and args.threshold65_decisions.exists()

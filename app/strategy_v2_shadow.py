@@ -16,6 +16,10 @@ import tempfile
 from typing import Any, Iterable
 
 from app.candle import Candle
+from app.runtime_versions import (
+    EXECUTION_POLICY_VERSION, FEATURE_VERSION, LEDGER_SCHEMA_VERSION,
+    STRATEGY_LOGIC_VERSION,
+)
 
 D = Decimal
 INITIAL_BALANCE = D("1000")
@@ -91,6 +95,9 @@ class StrategyV2State:
     exposure_sum: D = D("0")
     exposure_samples: int = 0
     current_trade: dict[str, Any] | None = None
+    pending_action: str | None = None
+    pending_signal_timestamp: int | None = None
+    pending_score: D | None = None
 
     @property
     def is_long(self) -> bool:
@@ -102,6 +109,7 @@ _DECIMAL_FIELDS = {
     "peak", "hard_stop", "profit_floor", "trailing_floor", "effective_floor",
     "realised_pnl", "unrealised_pnl", "fees", "entry_fees", "gross_profit",
     "gross_loss", "max_equity", "max_drawdown", "exposure_sum", "last_score",
+    "pending_score",
 }
 
 
@@ -166,7 +174,8 @@ def _mark(state: StrategyV2State, price: D) -> None:
     state.exposure_samples += 1
 
 
-def _buy(state: StrategyV2State, price: D, timestamp: int, score: D, *, add: bool) -> None:
+def _buy(state: StrategyV2State, price: D, timestamp: int, score: D, *, add: bool,
+         signal_timestamp: int | None = None) -> None:
     notional = price * ENTRY_QUANTITY
     fee = notional * FEE_RATE
     if state.cash < notional + fee:
@@ -179,7 +188,11 @@ def _buy(state: StrategyV2State, price: D, timestamp: int, score: D, *, add: boo
     state.fees += fee
     state.weighted_average_entry = state.cost_basis / state.quantity
     state.hard_stop = state.weighted_average_entry * (D("1") - HARD_STOP_PCT)
-    fill = {"timestamp": timestamp, "price": str(price), "quantity": str(ENTRY_QUANTITY), "fee": str(fee), "score": str(score), "weighted_average_entry": str(state.weighted_average_entry)}
+    fill = {"signal_timestamp": signal_timestamp, "fill_timestamp": timestamp,
+            "timestamp": timestamp, "price": str(price), "quantity": str(ENTRY_QUANTITY),
+            "fee": str(fee), "score": str(score),
+            "weighted_average_entry": str(state.weighted_average_entry),
+            "execution_policy_version": EXECUTION_POLICY_VERSION}
     if not add:
         state.last_entry_timestamp = timestamp
         state.last_add_timestamp = timestamp
@@ -222,6 +235,9 @@ def _close(state: StrategyV2State, price: D, timestamp: int, reason: str) -> dic
     state.profit_active = state.trailing_active = False
     state.add_count = 0
     state.current_trade = None
+    state.pending_action = None
+    state.pending_signal_timestamp = None
+    state.pending_score = None
     return trade
 
 
@@ -230,23 +246,63 @@ def process_candle(state: StrategyV2State, *, candle: Candle, score: dict[str, A
     ts = int(candle.timestamp)
     if state.last_processed_timestamp is not None and ts <= state.last_processed_timestamp:
         return state, {"candle_timestamp": ts, "event": "already_processed", "appended": False}
-    close, low, high = D(str(candle.close)), D(str(candle.low)), D(str(candle.high))
+    if score is None:
+        return state, {
+            "strategy": "strategy_v2_shadow", "research_only": True,
+            "candle_timestamp": ts, "event": "pending", "reason": "score_pending",
+            "processing_status": "PENDING", "appended": False,
+            "feature_version": FEATURE_VERSION,
+        }
+    if int(score.get("candle_timestamp", ts)) != ts:
+        raise ValueError("stale Strategy V2 score is forbidden")
+    close, open_price, low, high = map(
+        lambda value: D(str(value)),
+        (candle.close, candle.open, candle.low, candle.high),
+    )
     total = _total(score)
     state.last_score = total
     event, reason, closed_trade = "hold", None, None
+    was_long = state.is_long
+    pre_candle_protective = state.effective_floor
+    pre_candle_hard_stop = state.hard_stop
+
+    # Gap through an already-active stop exits at the open before any pending
+    # add. Intrabar fills use the stored level.
+    active_stop = pre_candle_protective or pre_candle_hard_stop
+    active_reason = "protective_floor" if pre_candle_protective is not None else "hard_stop"
+    if was_long and active_stop is not None and open_price <= active_stop:
+        event, reason = "exit", active_reason
+        closed_trade = _close(state, open_price, ts, reason)
+
+    pending = state.pending_action
+    pending_score = state.pending_score
+    pending_signal_timestamp = state.pending_signal_timestamp
+    state.pending_action = None
+    state.pending_score = None
+    state.pending_signal_timestamp = None
+    opened_this_candle = False
+    if event != "exit" and pending == "exit" and state.is_long:
+        event, reason = "exit", "ema_reversal"
+        closed_trade = _close(state, open_price, ts, reason)
+    elif event != "exit" and pending == "entry" and not state.is_long and pending_score is not None:
+        _buy(state, open_price, ts, pending_score, add=False,
+             signal_timestamp=pending_signal_timestamp)
+        event, reason, opened_this_candle = "entry", "scored65", True
+    elif event != "exit" and pending == "add" and state.is_long and pending_score is not None:
+        if state.cash >= open_price * ENTRY_QUANTITY * (D("1") + FEE_RATE):
+            _buy(state, open_price, ts, pending_score, add=True,
+                 signal_timestamp=pending_signal_timestamp)
+            event, reason = "add", "scored70"
 
     # Only pre-candle levels participate in intrabar fills.
-    if state.is_long:
-        protective = state.effective_floor
+    if state.is_long and was_long and not opened_this_candle and event != "exit":
+        protective = pre_candle_protective
         if protective is not None and low <= protective:
             event, reason = "exit", "protective_floor"
             closed_trade = _close(state, protective, ts, reason)
-        elif state.hard_stop is not None and low <= state.hard_stop:
+        elif pre_candle_hard_stop is not None and low <= pre_candle_hard_stop:
             event, reason = "exit", "hard_stop"
-            closed_trade = _close(state, state.hard_stop, ts, reason)
-        elif bearish_ema_cross:
-            event, reason = "exit", "ema_reversal"
-            closed_trade = _close(state, close, ts, reason)
+            closed_trade = _close(state, pre_candle_hard_stop, ts, reason)
 
     if state.is_long:
         avg = state.weighted_average_entry
@@ -268,19 +324,48 @@ def process_candle(state: StrategyV2State, *, candle: Candle, score: dict[str, A
             state.effective_floor = max([state.effective_floor or D("0"), *candidates])
 
         cooldown_ok = state.last_add_timestamp is None or ts - state.last_add_timestamp >= COOLDOWN_CANDLES * timeframe_seconds
-        add_ok = (total is not None and total >= ADD_THRESHOLD and _component(score, "trend") > 0 and _component(score, "ema_alignment") > 0 and _component(score, "adx") > 0 and close > avg and cooldown_ok and state.add_count < MAX_ADDS and state.quantity + ENTRY_QUANTITY <= MAX_QUANTITY and state.cash >= close * ENTRY_QUANTITY * (D("1") + FEE_RATE))
-        if add_ok:
-            _buy(state, close, ts, total, add=True)
-            event, reason = "add", "scored70"
+        if bearish_ema_cross or bool(score.get("bearish_ema_cross")):
+            state.pending_action = "exit"
+            state.pending_signal_timestamp = ts
+        else:
+            add_ok = (total is not None and total >= ADD_THRESHOLD and _component(score, "trend") > 0 and _component(score, "ema_alignment") > 0 and _component(score, "adx") > 0 and close > avg and cooldown_ok and state.add_count < MAX_ADDS and state.quantity + ENTRY_QUANTITY <= MAX_QUANTITY and state.cash >= close * ENTRY_QUANTITY * (D("1") + FEE_RATE))
+            if add_ok:
+                state.pending_action = "add"
+                state.pending_signal_timestamp = ts
+                state.pending_score = total
+                if event == "hold":
+                    event, reason = "waiting", "add_pending"
     elif event != "exit":
         entry_ok = (_decision(score) == "ENTER_LONG" and total is not None and total >= ENTRY_THRESHOLD and _component(score, "trend") > 0 and _component(score, "ema_alignment") > 0 and _component(score, "adx") > 0 and state.cash >= close * ENTRY_QUANTITY * (D("1") + FEE_RATE))
         if entry_ok:
-            _buy(state, close, ts, total, add=False)
-            event, reason = "entry", "scored65"
+            state.pending_action = "entry"
+            state.pending_signal_timestamp = ts
+            state.pending_score = total
+            event, reason = "waiting", "entry_pending"
 
     _mark(state, close)
     state.last_processed_timestamp = ts
-    record = {"strategy": "strategy_v2_shadow", "research_only": True, "candle_timestamp": ts, "event": event, "reason": reason, "close": str(close), "score": None if total is None else str(total), "cash": str(state.cash), "equity": str(state.equity), "quantity": str(state.quantity), "weighted_average_entry": None if state.weighted_average_entry is None else str(state.weighted_average_entry), "add_count": state.add_count, "peak": None if state.peak is None else str(state.peak), "hard_stop": None if state.hard_stop is None else str(state.hard_stop), "profit_floor": None if state.profit_floor is None else str(state.profit_floor), "trailing_floor": None if state.trailing_floor is None else str(state.trailing_floor), "effective_floor": None if state.effective_floor is None else str(state.effective_floor), "realised_pnl": str(state.realised_pnl), "unrealised_pnl": str(state.unrealised_pnl), "fees": str(state.fees), "closed_trades": state.closed_trades, "max_drawdown_pct": str(state.max_drawdown), "closed_trade": closed_trade, "causal_semantics": "pre_candle_floor_then_ema_then_high_for_next_candle_then_close_fill"}
+    record = {"strategy": "strategy_v2_shadow", "research_only": True,
+              "processing_status": "PROCESSED", "candle_timestamp": ts,
+              "signal_timestamp": ts, "fill_timestamp": ts if event in {"entry", "add", "exit"} else None,
+              "event": event, "reason": reason, "close": str(close),
+              "score": None if total is None else str(total), "cash": str(state.cash),
+              "equity": str(state.equity), "quantity": str(state.quantity),
+              "weighted_average_entry": None if state.weighted_average_entry is None else str(state.weighted_average_entry),
+              "add_count": state.add_count, "peak": None if state.peak is None else str(state.peak),
+              "hard_stop": None if state.hard_stop is None else str(state.hard_stop),
+              "profit_floor": None if state.profit_floor is None else str(state.profit_floor),
+              "trailing_floor": None if state.trailing_floor is None else str(state.trailing_floor),
+              "effective_floor": None if state.effective_floor is None else str(state.effective_floor),
+              "realised_pnl": str(state.realised_pnl), "unrealised_pnl": str(state.unrealised_pnl),
+              "fees": str(state.fees), "closed_trades": state.closed_trades,
+              "max_drawdown_pct": str(state.max_drawdown), "closed_trade": closed_trade,
+              "pending_action": state.pending_action,
+              "strategy_logic_version": STRATEGY_LOGIC_VERSION,
+              "feature_version": FEATURE_VERSION,
+              "execution_policy_version": EXECUTION_POLICY_VERSION,
+              "ledger_schema_version": LEDGER_SCHEMA_VERSION,
+              "causal_semantics": "prior_intent_at_open_gap_stop_then_close_signal_for_next_open"}
     return state, record
 
 

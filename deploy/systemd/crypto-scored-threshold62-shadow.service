@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=OBSERVATION_STATUS=frozen
 WorkingDirectory=/opt/crypto-bot
 EnvironmentFile=/etc/crypto-bot/paper-shadow.env
 ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/run_scored_threshold62_shadow.py --state /opt/crypto-bot/state/scored_candidate_threshold62/runtime.json --decisions /opt/crypto-bot/state/scored_candidate_threshold62/decisions.jsonl --lock-file /opt/crypto-bot/state/scored_candidate_threshold62/runtime.lock --threshold65-decisions /opt/crypto-bot/state/scored_candidate_shadow/decisions.jsonl
 StandardOutput=journal
 StandardError=journal
-

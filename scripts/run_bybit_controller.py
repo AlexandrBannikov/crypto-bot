@@ -20,6 +20,10 @@ from app.bybit_market_data import (
     BybitMarketDataConfig,
     BybitMarketDataFeed,
 )
+from app.canonical_features import (
+    CanonicalFeatureStore,
+    materialize_feature_snapshots,
+)
 from app.break_even_shadow import (
     BreakEvenShadowJournal,
     BreakEvenShadowStateStore,
@@ -40,6 +44,7 @@ from app.equity_history import (
 )
 from app.indicators import ema
 from app.paper_executor import PaperExecutor
+from app.production_orchestration import process_production_candles
 from app.paper_strategy_router import (
     PaperStrategyDecision,
     PaperStrategyRouter,
@@ -89,6 +94,7 @@ from app.trailing_stop_shadow import (
 )
 from app.trading_controller import (
     TradingController,
+    TradingControllerResult,
     TradingControllerState,
 )
 from app.trading_types import TradeAction
@@ -206,6 +212,11 @@ SCORED_62_DECISION_PATH = Path(
     os.environ.get(
         "SCORED_THRESHOLD62_DECISION_PATH",
         "state/scored_candidate_threshold62/decisions.jsonl",
+    )
+)
+CANONICAL_FEATURE_PATH = Path(
+    os.environ.get(
+        "CANONICAL_FEATURE_PATH", "state/canonical/candle_features.jsonl",
     )
 )
 
@@ -348,6 +359,8 @@ def run_pyramiding_shadow_observer(
             available_equity=production_before.virtual_balance,
             timeframe_seconds=int(INTERVAL) * 60,
         )
+        if update.observation.get("appended") is False:
+            return True
         PyramidingShadowJournal(journal_path or PYRAMIDING_SHADOW_JOURNAL_PATH).append(
             update.observation
         )
@@ -596,7 +609,7 @@ def build_execution_signal(
     return strategy_signal, False
 
 
-def run_controller(args: argparse.Namespace) -> int:
+def _run_controller_legacy_reference(args: argparse.Namespace) -> int:
     strategy_config = PaperStrategyConfig.from_env(
         mode_override=getattr(args, "strategy_mode", None)
     )
@@ -1086,6 +1099,200 @@ def run_controller(args: argparse.Namespace) -> int:
         text_report=args.statistics_report,
         png_report=args.statistics_plot,
     )
+
+
+def _prepare_canonical_features(candles: tuple) -> CanonicalFeatureStore:
+    store = CanonicalFeatureStore(CANONICAL_FEATURE_PATH)
+    materialize_feature_snapshots(
+        candles, store=store, symbol=SYMBOL,
+        timeframe_seconds=int(INTERVAL) * 60,
+    )
+    return store
+
+
+def run_controller(args: argparse.Namespace) -> int:
+    """Run every unseen candle through the canonical causal PAPER path."""
+    strategy_config = PaperStrategyConfig.from_env(
+        mode_override=getattr(args, "strategy_mode", None)
+    )
+    safety_config = RuntimeSafetyConfig.from_env()
+    runtime_store = RegimeRuntimeStateStore(RUNTIME_STATE_PATH)
+    operational = runtime_store.load()
+    router = PaperStrategyRouter(
+        strategy_config, fast_ema_period=FAST_EMA, slow_ema_period=SLOW_EMA,
+    )
+    feed = BybitMarketDataFeed(BybitMarketDataConfig(
+        symbol=SYMBOL, interval=INTERVAL, category="spot", limit=CANDLE_LIMIT,
+        closed_candles_only=True,
+    ))
+    getter = getattr(feed, "get_ready_candles", feed.get_candles)
+    try:
+        candles = getter()
+    except Exception:
+        if safety_config.halt_on_api_error:
+            operational.active_halt_reason = "api_error"
+            operational.counters.api_error_halts += 1
+            runtime_store.save(operational)
+        raise
+    latest = candles[-1]
+    last_processed = load_last_candle_timestamp()
+    if last_processed is not None and latest.timestamp <= last_processed:
+        if not args.statistics_report.exists() or not args.statistics_plot.exists():
+            return generate_reports(
+                text_report=args.statistics_report, png_report=args.statistics_plot,
+            )
+        print(f"Новых закрытых свечей нет; last={latest.timestamp}")
+        return 0
+
+    feature_store = _prepare_canonical_features(candles)
+    state_store = TradingControllerStateStore(STATE_PATH)
+    controller = TradingController(
+        TradingRuntime(ExecutionRunner(PaperExecutor(), allow_live=False)),
+        state_store=state_store,
+        trade_journal=JsonlTradeJournal(JOURNAL_PATH),
+    )
+    # Persist schema/version upgrades without modifying position identity.
+    state_store.save(controller.state)
+    now = datetime.now(timezone.utc)
+    data_age_seconds = max(0.0, now.timestamp() - float(latest.timestamp))
+    operational.update_risk(
+        controller_equity(controller.state, Decimal(str(latest.close))),
+        safety_config, now=now,
+    )
+    entries_permitted = (
+        data_age_seconds <= safety_config.max_data_age_seconds
+        and operational.permits_entry()
+    )
+    cycles = process_production_candles(
+        candles, last_processed_timestamp=last_processed,
+        timeframe_seconds=int(INTERVAL) * 60, symbol=SYMBOL,
+        controller=controller, router=router, feature_store=feature_store,
+        entry_quantity=ENTRY_QUANTITY,
+        signal_function=calculate_latest_signal,
+        entries_permitted=entries_permitted,
+    )
+    if not cycles:
+        return 0
+
+    diagnostics_path = strategy_config.shadow_diagnostics_path
+    if not diagnostics_path.is_absolute():
+        diagnostics_path = PROJECT_ROOT / diagnostics_path
+    any_closed_trade = False
+    for cycle in cycles:
+        executions = [*cycle.open_step.executions]
+        if cycle.close_execution is not None:
+            executions.append(cycle.close_execution)
+        exit_result = next(
+            (item for item in reversed(executions) if item.accounting is not None),
+            None,
+        )
+        exit_pnl = exit_result.accounting.net_pnl if exit_result else None
+        score_rows = (
+            (cycle.score_snapshot.as_score_row(),)
+            if cycle.score_snapshot is not None else ()
+        )
+        history = tuple(
+            item for item in candles if item.timestamp <= cycle.candle.timestamp
+        )
+
+        run_break_even_shadow_observer(
+            candle=cycle.candle, production_before=cycle.state_before,
+            production_after=cycle.state_after, production_exit_pnl=exit_pnl,
+            historical_candles=history,
+        )
+        # trailing-stop 0.5/1/1.5/2 and Profit Lock are frozen. Historical
+        # journals remain readable and are never deleted or rewritten.
+        run_pyramiding_shadow_observer(
+            candle=cycle.candle, production_before=cycle.state_before,
+            production_after=cycle.state_after, production_exit_pnl=exit_pnl,
+            historical_candles=history, score_rows=score_rows,
+        )
+        run_strategy_v2_shadow_observer(
+            candle=cycle.candle, score_rows=score_rows,
+            bearish_ema_cross=(
+                cycle.score_snapshot.bearish_ema_cross
+                if cycle.score_snapshot is not None else False
+            ),
+        )
+
+        for execution_result in executions:
+            if execution_result.journal_entry is None:
+                continue
+            any_closed_trade = True
+            try:
+                build_and_append_trade_card(
+                    trade=execution_result.journal_entry, candles=candles,
+                    exit_candle_timestamp=cycle.candle.timestamp,
+                    timeframe_minutes=int(INTERVAL),
+                    journal_path=TRADE_DIAGNOSTICS_JOURNAL_PATH,
+                    production_decision_path=diagnostics_path,
+                    scored65_path=SCORED_65_DECISION_PATH,
+                    scored62_path=SCORED_62_DECISION_PATH,
+                    break_even_path=BE_SHADOW_JOURNAL_PATH,
+                    trailing_path=TRAILING_SHADOW_JOURNAL_PATH,
+                    profit_lock_path=PROFIT_LOCK_SHADOW_JOURNAL_PATH,
+                    pyramiding_path=PYRAMIDING_SHADOW_JOURNAL_PATH,
+                )
+            except Exception as exc:
+                print(
+                    f"Trade diagnostics observer warning: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                )
+
+        operational.counters.signals_total += 1
+        baseline_action = cycle.decision.baseline_signal.action
+        if is_entry(baseline_action):
+            operational.counters.entry_signals_total += 1
+            if cycle.effective_action == TradeAction.HOLD:
+                reason = (
+                    "market_data_gap" if cycle.unresolved_gap
+                    else "score_pending" if cycle.score_status == "PENDING"
+                    else operational.active_halt_reason or "entry_blocked"
+                )
+                operational.counters.record_block(reason, shadow=False)
+            else:
+                operational.counters.entries_allowed += 1
+        elif is_exit(baseline_action):
+            operational.counters.exits_total += 1
+        operational.last_processed_closed_candle = cycle.candle.timestamp
+        operational.last_journal_sequence += 1
+        operational.update_risk(
+            controller_equity(controller.state, Decimal(str(cycle.candle.close))),
+            safety_config, now=now,
+        )
+        runtime_store.save(operational)
+
+        if strategy_config.shadow_diagnostics_enabled:
+            try:
+                ShadowDecisionJournal(diagnostics_path).append(build_shadow_record(
+                    decision=cycle.decision, latest_candle=cycle.candle,
+                    state=cycle.state_before, state_after=cycle.state_after,
+                    controller_run_identifier=str(uuid4()),
+                    price=Decimal(str(cycle.candle.close)),
+                    data_age_seconds=data_age_seconds,
+                    journal_sequence=operational.last_journal_sequence,
+                    baseline_trade_executed=bool(executions),
+                ))
+            except ValueError as exc:
+                print(f"Decision journal error: {exc}", file=sys.stderr)
+        save_last_candle_timestamp(cycle.candle.timestamp)
+
+    final_cycle = cycles[-1]
+    print()
+    print("===== BYBIT CONTROLLER PAPER / CAUSAL =====")
+    print(f"Инструмент: {SYMBOL}; обработано свечей: {len(cycles)}")
+    print(f"Последняя свеча: {final_cycle.candle.timestamp}")
+    print(f"Score status: {final_cycle.score_status}")
+    print(f"Сигнал: {signal_name(final_cycle.strategy_signal)}")
+    print(f"Effective action: {final_cycle.effective_action.value}")
+    print(f"Position: {'LONG' if controller.state.has_open_position else 'FLAT'}")
+    print(f"Pending: {controller.state.pending_action.value}")
+    print(f"Balance: {controller.state.virtual_balance}")
+    if any_closed_trade:
+        return generate_reports(
+            text_report=args.statistics_report, png_report=args.statistics_plot,
+        )
+    return 0
 
 
 def controller_equity(
