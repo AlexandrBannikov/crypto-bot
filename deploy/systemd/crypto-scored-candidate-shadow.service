@@ -8,5 +8,6 @@ Type=oneshot
 WorkingDirectory=/opt/crypto-bot
 EnvironmentFile=/etc/crypto-bot/paper-shadow.env
 ExecStart=/opt/crypto-bot/venv/bin/python /opt/crypto-bot/scripts/run_scored_candidate_shadow.py --state /opt/crypto-bot/state/scored_candidate_shadow/runtime.json --decisions /opt/crypto-bot/state/scored_candidate_shadow/decisions.jsonl --lock-file /opt/crypto-bot/state/scored_candidate_shadow/runtime.lock
+TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal

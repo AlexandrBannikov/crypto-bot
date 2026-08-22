@@ -1,0 +1,14 @@
+[Unit]
+Description=ETH Bybit controller paper trading iteration
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/crypto-bot
+EnvironmentFile=/etc/crypto-bot/paper-shadow.env
+ExecStart=/opt/crypto-bot/venv/bin/python -u /opt/crypto-bot/scripts/run_bybit_controller.py
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
