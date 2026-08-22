@@ -1138,6 +1138,13 @@ def run_controller(args: argparse.Namespace) -> int:
     latest = candles[-1]
     last_processed = load_last_candle_timestamp()
     if last_processed is not None and latest.timestamp <= last_processed:
+        _capture_production_equity_observation(
+            candle=latest,
+            state=TradingControllerStateStore(STATE_PATH).load(),
+            reason="startup_recovery",
+            source_cycle_id=f"production:{latest.timestamp}:recovery",
+            only_if_missing=True,
+        )
         if not args.statistics_report.exists() or not args.statistics_plot.exists():
             return generate_reports(
                 text_report=args.statistics_report, png_report=args.statistics_plot,
@@ -1279,6 +1286,12 @@ def run_controller(args: argparse.Namespace) -> int:
             except ValueError as exc:
                 print(f"Decision journal error: {exc}", file=sys.stderr)
         save_last_candle_timestamp(cycle.candle.timestamp)
+        _capture_production_equity_observation(
+            candle=cycle.candle,
+            state=cycle.state_after,
+            reason="cycle",
+            source_cycle_id=f"production:{cycle.candle.timestamp}",
+        )
 
     final_cycle = cycles[-1]
     print()
@@ -1296,6 +1309,46 @@ def run_controller(args: argparse.Namespace) -> int:
             text_report=args.statistics_report, png_report=args.statistics_plot,
         )
     return 0
+
+
+def _capture_production_equity_observation(
+    *, candle: Candle, state: TradingControllerState, reason: str,
+    source_cycle_id: str, only_if_missing: bool = False,
+) -> None:
+    """Idempotently reconcile measurement history without touching trade state."""
+    try:
+        config = load_equity_history_config(
+            PROJECT_ROOT / "config/equity_history.json", root=PROJECT_ROOT,
+        )
+        storage = SnapshotStorage(config.database_path)
+        candle_close = candle.timestamp + int(INTERVAL) * 60
+        service = SnapshotService(storage, config)
+        if only_if_missing and storage.has_candle(
+            "production", "production", candle_close,
+        ):
+            existing = storage.latest("production")
+            if existing is not None:
+                service.maybe_daily_close(existing, now=datetime.now(timezone.utc))
+            return
+        snapshot, _ = service.capture(
+            environment="production",
+            strategy_name="production",
+            state=state,
+            trades=read_equity_trades(JOURNAL_PATH),
+            market_price=Decimal(str(candle.close)),
+            candle_open_timestamp=candle.timestamp,
+            timeframe_minutes=int(INTERVAL),
+            symbol=SYMBOL,
+            reason=reason,
+            source_cycle_id=source_cycle_id,
+        )
+        if snapshot is not None:
+            service.maybe_daily_close(snapshot, now=datetime.now(timezone.utc))
+    except Exception as exc:
+        print(
+            f"Equity history observer warning: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+        )
 
 
 def controller_equity(

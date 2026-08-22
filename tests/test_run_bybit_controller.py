@@ -243,9 +243,14 @@ def install_successful_run(
         "save_last_candle_timestamp",
         lambda timestamp: None,
     )
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "_capture_production_equity_observation",
+        lambda **kwargs: None,
+    )
 
     state = TradingControllerState()
-    store = SimpleNamespace(save=lambda value: None)
+    store = SimpleNamespace(save=lambda value: None, load=lambda: state)
     monkeypatch.setattr(
         run_bybit_controller,
         "TradingControllerStateStore",
@@ -377,6 +382,18 @@ def test_no_new_candle_does_not_overwrite_reports(
         "load_last_candle_timestamp",
         lambda: 123,
     )
+    state = TradingControllerState()
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "TradingControllerStateStore",
+        lambda path: SimpleNamespace(load=lambda: state),
+    )
+    recoveries = []
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "_capture_production_equity_observation",
+        lambda **kwargs: recoveries.append(kwargs),
+    )
     text_path = tmp_path / "report.txt"
     png_path = tmp_path / "report.png"
     text_path.write_text("old text", encoding="utf-8")
@@ -392,6 +409,7 @@ def test_no_new_candle_does_not_overwrite_reports(
     ) == 0
     assert text_path.read_text(encoding="utf-8") == "old text"
     assert png_path.read_bytes() == b"old png"
+    assert recoveries[0]["only_if_missing"] is True
 
 
 def test_second_run_recovers_reports_without_duplicate_trade(
