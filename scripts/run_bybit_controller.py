@@ -35,6 +35,7 @@ from app.config import (
     PaperStrategyMode,
     RuntimeSafetyConfig,
 )
+from app.controller_ledger import ControllerLedger
 from app.execution_runner import ExecutionRunner
 from app.equity_history import (
     SnapshotService,
@@ -1146,10 +1147,12 @@ def run_controller(args: argparse.Namespace) -> int:
 
     feature_store = _prepare_canonical_features(candles)
     state_store = TradingControllerStateStore(STATE_PATH)
+    trade_journal = JsonlTradeJournal(JOURNAL_PATH)
     controller = TradingController(
         TradingRuntime(ExecutionRunner(PaperExecutor(), allow_live=False)),
         state_store=state_store,
-        trade_journal=JsonlTradeJournal(JOURNAL_PATH),
+        trade_journal=trade_journal,
+        ledger=ControllerLedger(state_store, trade_journal),
     )
     # Persist schema/version upgrades without modifying position identity.
     state_store.save(controller.state)

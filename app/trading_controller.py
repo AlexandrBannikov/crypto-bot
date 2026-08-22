@@ -53,6 +53,7 @@ class TradingControllerState:
     strategy_logic_version: str = STRATEGY_LOGIC_VERSION
     execution_policy_version: str = EXECUTION_POLICY_VERSION
     ledger_schema_version: str = LEDGER_SCHEMA_VERSION
+    last_processed_candle_timestamp: int | None = None
 
     def __post_init__(self) -> None:
         if self.position_quantity < 0:
@@ -137,6 +138,11 @@ class TradingControllerState:
             )
         ):
             raise ValueError("flat position must not carry lifecycle metadata")
+        if (
+            self.last_processed_candle_timestamp is not None
+            and self.last_processed_candle_timestamp < 0
+        ):
+            raise ValueError("last processed candle must not be negative")
 
     @property
     def has_open_position(self) -> bool:
@@ -145,6 +151,16 @@ class TradingControllerState:
 
 class TradingControllerStateStoreProtocol(Protocol):
     def load(self) -> TradingControllerState:
+        ...
+
+
+class ControllerLedgerProtocol(Protocol):
+    def recover(self) -> TradingControllerState | None:
+        ...
+
+    def commit(
+        self, state: TradingControllerState, journal_entry: TradeJournalEntry,
+    ) -> None:
         ...
 
     def save(
@@ -185,6 +201,7 @@ class TradingController:
         fee_rate: Decimal = Decimal("0.001"),
         trade_journal: TradeJournalProtocol | None = None,
         clock: Callable[[], datetime] | None = None,
+        ledger: ControllerLedgerProtocol | None = None,
     ) -> None:
         if state is not None and state_store is not None:
             raise ValueError(
@@ -204,8 +221,11 @@ class TradingController:
         self.clock = clock or (
             lambda: datetime.now(timezone.utc)
         )
+        self.ledger = ledger
 
         if state_store is not None:
+            if ledger is not None:
+                ledger.recover()
             self._state = state_store.load()
         else:
             self._state = state or TradingControllerState()
@@ -330,12 +350,14 @@ class TradingController:
             )
         )
 
-        if state_changed and self.state_store is not None:
-            self.state_store.save(self._state)
-
-        if journal_entry is not None:
-            assert self.trade_journal is not None
-            self.trade_journal.append(journal_entry)
+        if journal_entry is not None and self.ledger is not None:
+            self.ledger.commit(self._state, journal_entry)
+        else:
+            if state_changed and self.state_store is not None:
+                self.state_store.save(self._state)
+            if journal_entry is not None:
+                assert self.trade_journal is not None
+                self.trade_journal.append(journal_entry)
 
         return TradingControllerResult(
             action=action,

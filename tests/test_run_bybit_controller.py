@@ -251,6 +251,11 @@ def install_successful_run(
         "TradingControllerStateStore",
         lambda path: store,
     )
+    monkeypatch.setattr(
+        run_bybit_controller,
+        "ControllerLedger",
+        lambda *args, **kwargs: SimpleNamespace(recover=lambda: None),
+    )
 
     result = SimpleNamespace(
         action=SimpleNamespace(value="HOLD"),
@@ -267,7 +272,7 @@ def install_successful_run(
     monkeypatch.setattr(
         run_bybit_controller,
         "TradingController",
-        lambda runtime, state_store, trade_journal: controller,
+        lambda runtime, state_store, trade_journal, ledger=None: controller,
     )
     cycle = SimpleNamespace(
         candle=candle,

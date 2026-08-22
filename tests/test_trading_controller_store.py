@@ -77,6 +77,7 @@ def test_decimal_is_saved_as_string(
         "strategy_logic_version": "strategy_logic_v2_causal",
         "execution_policy_version": "next_candle_open_v1",
         "ledger_schema_version": "ledger_v2",
+        "last_processed_candle_timestamp": None,
     }
 
 

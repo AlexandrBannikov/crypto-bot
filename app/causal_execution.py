@@ -43,6 +43,7 @@ def queue_pending_action(
         pending_action=action,
         pending_signal_timestamp=(signal_timestamp if action != TradeAction.HOLD else None),
         pending_signal_price=(signal_price if action != TradeAction.HOLD else None),
+        last_processed_candle_timestamp=signal_timestamp,
     )
     if controller.state_store is not None:
         controller.state_store.save(controller.state)

@@ -120,6 +120,8 @@ class JsonlTradeJournal:
         self.path = Path(path)
 
     def append(self, entry: TradeJournalEntry) -> None:
+        if any(item.record_id == entry.record_id for item in self.read_all()):
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with self.path.open("a", encoding="utf-8") as file:
@@ -130,6 +132,9 @@ class JsonlTradeJournal:
                     separators=(",", ":"),
                 )
                 file.write("\n")
+                file.flush()
+                import os
+                os.fsync(file.fileno())
         except OSError as exc:
             raise ValueError(
                 f"failed to append trade journal {self.path}: {exc}"

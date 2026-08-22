@@ -114,6 +114,9 @@ class TradingControllerStateStore:
             ledger_schema_version=str(payload.get(
                 "ledger_schema_version", "ledger_v2"
             )),
+            last_processed_candle_timestamp=payload.get(
+                "last_processed_candle_timestamp"
+            ),
         )
 
     def save(
@@ -156,6 +159,7 @@ class TradingControllerStateStore:
             "strategy_logic_version": state.strategy_logic_version,
             "execution_policy_version": state.execution_policy_version,
             "ledger_schema_version": state.ledger_schema_version,
+            "last_processed_candle_timestamp": state.last_processed_candle_timestamp,
         }
         if state.opened_at is not None:
             payload["opened_at"] = state.opened_at

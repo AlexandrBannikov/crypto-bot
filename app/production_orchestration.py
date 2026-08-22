@@ -96,8 +96,13 @@ def process_production_candles(
     signal_function: SignalFunction = calculate_ema_signal,
     entries_permitted: bool = True,
 ) -> tuple[ProductionCandleCycle, ...]:
+    state_cursor = controller.state.last_processed_candle_timestamp
+    effective_cursor = max(
+        (value for value in (last_processed_timestamp, state_cursor) if value is not None),
+        default=None,
+    )
     selected, continuity = select_unprocessed_candles(
-        candles, last_processed_timestamp=last_processed_timestamp,
+        candles, last_processed_timestamp=effective_cursor,
         timeframe_seconds=timeframe_seconds,
     )
     if not selected:
