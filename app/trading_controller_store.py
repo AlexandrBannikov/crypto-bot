@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from app.trading_controller import TradingControllerState
+from app.trading_types import TradeAction
 
 
 class TradingControllerStateStore:
@@ -95,6 +96,24 @@ class TradingControllerStateStore:
             ),
             entry_fee=entry_fee,
             opened_at=payload.get("opened_at"),
+            pending_action=TradeAction(payload.get("pending_action", "hold")),
+            pending_signal_timestamp=payload.get("pending_signal_timestamp"),
+            pending_signal_price=self._parse_decimal(
+                payload.get("pending_signal_price"),
+                field_name="pending_signal_price", allow_none=True,
+            ),
+            position_signal_timestamp=payload.get("position_signal_timestamp"),
+            position_fill_timestamp=payload.get("position_fill_timestamp"),
+            position_lifecycle_version=payload.get("position_lifecycle_version"),
+            strategy_logic_version=str(payload.get(
+                "strategy_logic_version", "strategy_logic_v2_causal"
+            )),
+            execution_policy_version=str(payload.get(
+                "execution_policy_version", "next_candle_open_v1"
+            )),
+            ledger_schema_version=str(payload.get(
+                "ledger_schema_version", "ledger_v2"
+            )),
         )
 
     def save(
@@ -125,6 +144,18 @@ class TradingControllerStateStore:
             "realized_pnl": str(state.realized_pnl),
             "closed_trades": state.closed_trades,
             "entry_fee": str(state.entry_fee),
+            "pending_action": state.pending_action.value,
+            "pending_signal_timestamp": state.pending_signal_timestamp,
+            "pending_signal_price": (
+                str(state.pending_signal_price)
+                if state.pending_signal_price is not None else None
+            ),
+            "position_signal_timestamp": state.position_signal_timestamp,
+            "position_fill_timestamp": state.position_fill_timestamp,
+            "position_lifecycle_version": state.position_lifecycle_version,
+            "strategy_logic_version": state.strategy_logic_version,
+            "execution_policy_version": state.execution_policy_version,
+            "ledger_schema_version": state.ledger_schema_version,
         }
         if state.opened_at is not None:
             payload["opened_at"] = state.opened_at

@@ -68,6 +68,15 @@ def test_decimal_is_saved_as_string(
         "realized_pnl": "0",
         "closed_trades": 0,
         "entry_fee": "0",
+        "pending_action": "hold",
+        "pending_signal_timestamp": None,
+        "pending_signal_price": None,
+        "position_signal_timestamp": None,
+        "position_fill_timestamp": None,
+        "position_lifecycle_version": None,
+        "strategy_logic_version": "strategy_logic_v2_causal",
+        "execution_policy_version": "next_candle_open_v1",
+        "ledger_schema_version": "ledger_v2",
     }
 
 

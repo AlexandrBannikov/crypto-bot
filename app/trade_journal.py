@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, fields
+from dataclasses import MISSING, asdict, dataclass, fields
 from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
@@ -22,6 +22,8 @@ DECIMAL_FIELDS = {
     "remaining_position_quantity",
     "virtual_balance_after",
     "realized_pnl_after",
+    "signal_price",
+    "fill_price",
 }
 
 
@@ -47,11 +49,19 @@ class TradeJournalEntry:
     virtual_balance_after: Decimal
     realized_pnl_after: Decimal
     closed_trades_after: int
+    signal_timestamp: int | None = None
+    fill_timestamp: int | None = None
+    signal_price: Decimal | None = None
+    fill_price: Decimal | None = None
+    strategy_logic_version: str = "legacy"
+    execution_policy_version: str = "legacy_same_close_v1"
+    ledger_schema_version: str = "ledger_v1"
 
     def to_dict(self) -> dict[str, str | int]:
         payload = asdict(self)
         for field_name in DECIMAL_FIELDS:
-            payload[field_name] = str(payload[field_name])
+            if payload[field_name] is not None:
+                payload[field_name] = str(payload[field_name])
         return payload
 
     @classmethod
@@ -60,17 +70,26 @@ class TradeJournalEntry:
             raise ValueError("trade journal entry must be a JSON object")
 
         expected = {field.name for field in fields(cls)}
-        missing = expected - payload.keys()
+        required = {
+            field.name for field in fields(cls)
+            if field.default is MISSING and field.default_factory is MISSING
+        }
+        missing = required - payload.keys()
         if missing:
             raise ValueError(
                 "trade journal entry is missing fields: "
                 + ", ".join(sorted(missing))
             )
 
-        values = {name: payload[name] for name in expected}
+        values = {
+            field.name: payload.get(field.name, field.default)
+            for field in fields(cls)
+        }
         try:
             for field_name in DECIMAL_FIELDS:
                 value = values[field_name]
+                if value is None:
+                    continue
                 if not isinstance(value, str):
                     raise ValueError(
                         f"{field_name} must be stored as a string"

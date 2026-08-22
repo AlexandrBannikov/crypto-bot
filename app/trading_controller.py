@@ -26,6 +26,11 @@ from app.trading_runtime import (
     TradingRuntime,
 )
 from app.trading_types import TradeAction
+from app.runtime_versions import (
+    EXECUTION_POLICY_VERSION,
+    LEDGER_SCHEMA_VERSION,
+    STRATEGY_LOGIC_VERSION,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +44,15 @@ class TradingControllerState:
     closed_trades: int = 0
     entry_fee: Decimal = Decimal("0")
     opened_at: str | None = None
+    pending_action: TradeAction = TradeAction.HOLD
+    pending_signal_timestamp: int | None = None
+    pending_signal_price: Decimal | None = None
+    position_signal_timestamp: int | None = None
+    position_fill_timestamp: int | None = None
+    position_lifecycle_version: str | None = None
+    strategy_logic_version: str = STRATEGY_LOGIC_VERSION
+    execution_policy_version: str = EXECUTION_POLICY_VERSION
+    ledger_schema_version: str = LEDGER_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
         if self.position_quantity < 0:
@@ -104,6 +118,25 @@ class TradingControllerState:
                 "flat position must not have "
                 "entry_price or stop_loss"
             )
+
+        if self.pending_action == TradeAction.HOLD:
+            if self.pending_signal_timestamp is not None or self.pending_signal_price is not None:
+                raise ValueError("HOLD must not carry a pending signal")
+        else:
+            if self.pending_signal_timestamp is None or self.pending_signal_price is None:
+                raise ValueError("pending action requires signal timestamp and price")
+            if self.pending_signal_timestamp < 0 or self.pending_signal_price <= 0:
+                raise ValueError("invalid pending signal metadata")
+
+        if self.position_quantity == 0 and any(
+            value is not None
+            for value in (
+                self.position_signal_timestamp,
+                self.position_fill_timestamp,
+                self.position_lifecycle_version,
+            )
+        ):
+            raise ValueError("flat position must not carry lifecycle metadata")
 
     @property
     def has_open_position(self) -> bool:
@@ -190,6 +223,9 @@ class TradingController:
         price: Decimal,
         client_order_id: str | None = None,
         exit_reason: str = "signal",
+        signal_timestamp: int | None = None,
+        fill_timestamp: int | None = None,
+        position_lifecycle_version: str | None = None,
     ) -> TradingControllerResult:
         if entry_quantity <= 0:
             raise ValueError(
@@ -288,6 +324,9 @@ class TradingController:
                 stop_loss=stop_loss,
                 symbol=symbol,
                 exit_reason=exit_reason,
+                signal_timestamp=signal_timestamp,
+                fill_timestamp=fill_timestamp,
+                position_lifecycle_version=position_lifecycle_version,
             )
         )
 
@@ -314,6 +353,9 @@ class TradingController:
         stop_loss: Decimal | None,
         symbol: str,
         exit_reason: str,
+        signal_timestamp: int | None,
+        fill_timestamp: int | None,
+        position_lifecycle_version: str | None,
     ) -> tuple[
         bool,
         ClosedTradeAccounting | None,
@@ -355,12 +397,19 @@ class TradingController:
                 closed_trades=self._state.closed_trades,
                 entry_fee=entry_fee,
                 opened_at=self._iso_timestamp(),
+                position_signal_timestamp=signal_timestamp,
+                position_fill_timestamp=fill_timestamp,
+                position_lifecycle_version=position_lifecycle_version,
             )
             return True, None, None
 
         if action == TradeAction.CLOSE_LONG:
             accounting = None
             opened_at = self._state.opened_at
+            position_signal_timestamp = self._state.position_signal_timestamp
+            strategy_logic_version = self._state.strategy_logic_version
+            execution_policy_version = self._state.execution_policy_version
+            ledger_schema_version = self._state.ledger_schema_version
 
             if self._state.entry_price is not None:
                 accounting = calculate_long_trade_accounting(
@@ -412,6 +461,9 @@ class TradingController:
                     closed_trades=closed_trades,
                     entry_fee=remaining_entry_fee,
                     opened_at=self._state.opened_at,
+                    position_signal_timestamp=self._state.position_signal_timestamp,
+                    position_fill_timestamp=self._state.position_fill_timestamp,
+                    position_lifecycle_version=self._state.position_lifecycle_version,
                 )
 
             journal_entry = None
@@ -452,6 +504,13 @@ class TradingController:
                     ),
                     realized_pnl_after=self._state.realized_pnl,
                     closed_trades_after=self._state.closed_trades,
+                    signal_timestamp=position_signal_timestamp,
+                    fill_timestamp=fill_timestamp,
+                    signal_price=None,
+                    fill_price=execution.average_price,
+                    strategy_logic_version=strategy_logic_version,
+                    execution_policy_version=execution_policy_version,
+                    ledger_schema_version=ledger_schema_version,
                 )
 
             return True, accounting, journal_entry
