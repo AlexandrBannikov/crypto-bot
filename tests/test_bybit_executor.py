@@ -265,6 +265,10 @@ def test_get_order_status_maps_bybit_status(
             if bybit_status == "Filled"
             else Decimal("0.02")
         ),
+        average_price=(Decimal("2998") if bybit_status == "Filled" else None),
+        cumulative_execution_value=(
+            Decimal("59.96") if bybit_status == "Filled" else Decimal("0")
+        ),
     )
     executor = BybitExecutor(client, dry_run=False)
 
@@ -291,6 +295,8 @@ def test_filled_order_contains_execution_data() -> None:
         quantity=Decimal("0.02"),
         executed_quantity=Decimal("0.02"),
         remaining_quantity=Decimal("0"),
+        average_price=Decimal("2998"),
+        cumulative_execution_value=Decimal("59.96"),
     )
     executor = BybitExecutor(client, dry_run=False)
 
@@ -300,7 +306,63 @@ def test_filled_order_contains_execution_data() -> None:
     )
 
     assert result.executed_quantity == Decimal("0.02")
-    assert result.average_price == Decimal("3000")
+    assert result.average_price == Decimal("2998")
+
+
+def test_duplicate_client_order_id_does_not_submit_twice() -> None:
+    client = FakeBybitOrderClient()
+    executor = BybitExecutor(client, dry_run=False)
+    first = executor.open_position(make_request())
+    second = executor.open_position(make_request())
+    assert second == first
+    assert len(client.created_orders) == 1
+
+
+def test_partial_then_filled_reconciliation_returns_only_new_fill() -> None:
+    client = FakeBybitOrderClient()
+    executor = BybitExecutor(client, dry_run=False)
+    executor.open_position(make_request())
+    client.order_status = OrderStatus(
+        order_id="order-123", order_link_id="client-123", symbol="ETHUSDT",
+        side="Buy", order_type="Limit", order_status="PartiallyFilled",
+        price=Decimal("3000"), quantity=Decimal("0.02"),
+        executed_quantity=Decimal("0.01"), remaining_quantity=Decimal("0.01"),
+        average_price=Decimal("2999"), cumulative_execution_value=Decimal("29.99"),
+    )
+    partial = executor.get_order_status(symbol="ETHUSDT", order_id="order-123")
+    assert partial.status == ExecutionStatus.PARTIALLY_FILLED
+    assert partial.executed_quantity == Decimal("0.01")
+    assert partial.average_price == Decimal("2999")
+
+    client.order_status = OrderStatus(
+        order_id="order-123", order_link_id="client-123", symbol="ETHUSDT",
+        side="Buy", order_type="Limit", order_status="Filled",
+        price=Decimal("3000"), quantity=Decimal("0.02"),
+        executed_quantity=Decimal("0.02"), remaining_quantity=Decimal("0"),
+        average_price=Decimal("3000"), cumulative_execution_value=Decimal("60"),
+    )
+    filled = executor.get_order_status(symbol="ETHUSDT", order_id="order-123")
+    assert filled.status == ExecutionStatus.FILLED
+    assert filled.executed_quantity == Decimal("0.01")
+    assert filled.average_price == Decimal("3001")
+    duplicate = executor.get_order_status(symbol="ETHUSDT", order_id="order-123")
+    assert duplicate.status == ExecutionStatus.FILLED
+    assert duplicate.executed_quantity == 0
+    assert duplicate.average_price is None
+
+
+def test_fill_requires_exchange_actual_average_price() -> None:
+    client = FakeBybitOrderClient()
+    client.order_status = OrderStatus(
+        order_id="order-123", order_link_id="client-123", symbol="ETHUSDT",
+        side="Buy", order_type="Limit", order_status="Filled",
+        price=Decimal("3000"), quantity=Decimal("0.02"),
+        executed_quantity=Decimal("0.02"), remaining_quantity=Decimal("0"),
+    )
+    with pytest.raises(RuntimeError, match="actual average"):
+        BybitExecutor(client, dry_run=False).get_order_status(
+            symbol="ETHUSDT", order_id="order-123",
+        )
 
 
 def test_cancel_order_returns_cancelled_result() -> None:

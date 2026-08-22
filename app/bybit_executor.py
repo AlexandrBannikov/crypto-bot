@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+from decimal import Decimal
+
 from app.bybit_orders import BybitOrderClient, OrderStatus
 from app.execution import (
     ExecutionMode,
@@ -25,6 +28,31 @@ _BYBIT_STATUS_MAP = {
 }
 
 
+_TERMINAL = {
+    ExecutionStatus.FILLED, ExecutionStatus.CANCELLED,
+    ExecutionStatus.REJECTED, ExecutionStatus.FAILED,
+}
+_STATUS_RANK = {
+    ExecutionStatus.ACCEPTED: 0,
+    ExecutionStatus.OPEN: 1,
+    ExecutionStatus.PARTIALLY_FILLED: 2,
+    ExecutionStatus.FILLED: 3,
+    ExecutionStatus.CANCELLED: 3,
+    ExecutionStatus.REJECTED: 3,
+    ExecutionStatus.FAILED: 3,
+}
+
+
+@dataclass(slots=True)
+class _OrderLifecycle:
+    request: ExecutionRequest
+    bybit_side: str
+    result: ExecutionResult
+    cumulative_quantity: Decimal = Decimal("0")
+    cumulative_value: Decimal = Decimal("0")
+    status: ExecutionStatus = ExecutionStatus.ACCEPTED
+
+
 class BybitExecutor(TradeExecutor):
     def __init__(
         self,
@@ -34,6 +62,8 @@ class BybitExecutor(TradeExecutor):
     ) -> None:
         self.client = client
         self.dry_run = dry_run
+        self._by_client_id: dict[str, _OrderLifecycle] = {}
+        self._by_order_id: dict[str, _OrderLifecycle] = {}
 
     @property
     def mode(self) -> ExecutionMode:
@@ -62,6 +92,13 @@ class BybitExecutor(TradeExecutor):
         *,
         bybit_side: str,
     ) -> ExecutionResult:
+        if request.client_order_id is not None:
+            existing = self._by_client_id.get(request.client_order_id)
+            if existing is not None:
+                if existing.request != request or existing.bybit_side != bybit_side:
+                    raise ValueError("client_order_id already belongs to a different order")
+                return existing.result
+
         order = SpotLimitOrder(
             symbol=request.symbol,
             side=bybit_side,
@@ -87,7 +124,7 @@ class BybitExecutor(TradeExecutor):
                 message=str(exc),
             )
 
-        return ExecutionResult(
+        execution = ExecutionResult(
             mode=self.mode,
             status=(
                 ExecutionStatus.ACCEPTED
@@ -106,6 +143,12 @@ class BybitExecutor(TradeExecutor):
                 else None
             ),
         )
+        lifecycle = _OrderLifecycle(request, bybit_side, execution, status=execution.status)
+        if execution.client_order_id is not None:
+            self._by_client_id[execution.client_order_id] = lifecycle
+        if execution.order_id is not None:
+            self._by_order_id[execution.order_id] = lifecycle
+        return execution
 
     def get_order_status(
         self,
@@ -153,22 +196,12 @@ class BybitExecutor(TradeExecutor):
             dry_run=False,
         )
 
-        return ExecutionResult(
-            mode=self.mode,
-            status=ExecutionStatus.CANCELLED,
-            symbol=current.symbol,
-            side=self._position_side_from_order(current),
-            requested_quantity=current.quantity,
-            requested_price=current.price,
-            executed_quantity=current.executed_quantity,
-            average_price=(
-                current.price
-                if current.executed_quantity > 0
-                else None
-            ),
-            order_id=current.order_id,
-            client_order_id=current.order_link_id,
-        )
+        reconciled = self._status_to_execution_result(current)
+        lifecycle = self._find_lifecycle(current)
+        if lifecycle is not None:
+            lifecycle.status = ExecutionStatus.CANCELLED
+            lifecycle.result = replace(reconciled, status=ExecutionStatus.CANCELLED)
+        return replace(reconciled, status=ExecutionStatus.CANCELLED)
 
     def _status_to_execution_result(
         self,
@@ -179,19 +212,40 @@ class BybitExecutor(TradeExecutor):
             ExecutionStatus.FAILED,
         )
 
-        return ExecutionResult(
+        lifecycle = self._find_lifecycle(status)
+        previous_quantity = lifecycle.cumulative_quantity if lifecycle else Decimal("0")
+        previous_value = lifecycle.cumulative_value if lifecycle else Decimal("0")
+        if status.executed_quantity < previous_quantity:
+            raise RuntimeError("Bybit cumulative fill quantity regressed")
+        cumulative_value = status.cumulative_execution_value
+        if cumulative_value == 0 and status.average_price is not None:
+            cumulative_value = status.average_price * status.executed_quantity
+        if cumulative_value < previous_value:
+            raise RuntimeError("Bybit cumulative execution value regressed")
+        if lifecycle is not None and lifecycle.status in _TERMINAL:
+            if execution_status != lifecycle.status:
+                raise RuntimeError("Bybit order lifecycle regressed after terminal state")
+        if (
+            lifecycle is not None
+            and _STATUS_RANK[execution_status] < _STATUS_RANK[lifecycle.status]
+        ):
+            raise RuntimeError("Bybit order lifecycle status regressed")
+        delta_quantity = status.executed_quantity - previous_quantity
+        delta_value = cumulative_value - previous_value
+        if delta_quantity > 0 and delta_value <= 0:
+            raise RuntimeError("Bybit actual average fill price is unavailable")
+        delta_average = (
+            delta_value / delta_quantity if delta_quantity > 0 else None
+        )
+        result = ExecutionResult(
             mode=self.mode,
             status=execution_status,
             symbol=status.symbol,
             side=self._position_side_from_order(status),
             requested_quantity=status.quantity,
             requested_price=status.price,
-            executed_quantity=status.executed_quantity,
-            average_price=(
-                status.price
-                if status.executed_quantity > 0
-                else None
-            ),
+            executed_quantity=delta_quantity,
+            average_price=delta_average,
             order_id=status.order_id,
             client_order_id=status.order_link_id,
             message=(
@@ -203,6 +257,22 @@ class BybitExecutor(TradeExecutor):
                 )
             ),
         )
+        if lifecycle is not None:
+            lifecycle.cumulative_quantity = status.executed_quantity
+            lifecycle.cumulative_value = cumulative_value
+            lifecycle.status = execution_status
+            lifecycle.result = result
+        return result
+
+    def _find_lifecycle(self, status: OrderStatus) -> _OrderLifecycle | None:
+        lifecycle = self._by_order_id.get(status.order_id)
+        if lifecycle is None and status.order_link_id is not None:
+            lifecycle = self._by_client_id.get(status.order_link_id)
+        if lifecycle is not None:
+            self._by_order_id.setdefault(status.order_id, lifecycle)
+            if status.order_link_id is not None:
+                self._by_client_id.setdefault(status.order_link_id, lifecycle)
+        return lifecycle
 
     @staticmethod
     def _require_long_position(

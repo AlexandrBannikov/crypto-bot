@@ -52,6 +52,8 @@ class OrderStatus:
     quantity: Decimal
     executed_quantity: Decimal
     remaining_quantity: Decimal
+    average_price: Decimal | None = None
+    cumulative_execution_value: Decimal = Decimal("0")
 
 
 HttpGetJSON = Callable[
@@ -195,6 +197,11 @@ class BybitOrderClient:
         if raw_order_id is None:
             raise ValueError("unexpected realtime order response")
 
+        executed_quantity = self._decimal_or_zero(raw_order.get("cumExecQty"))
+        average_price = self._decimal_or_none(raw_order.get("avgPrice"))
+        cumulative_value = self._decimal_or_zero(raw_order.get("cumExecValue"))
+        if cumulative_value == 0 and average_price is not None and executed_quantity > 0:
+            cumulative_value = average_price * executed_quantity
         return OrderStatus(
             order_id=raw_order_id,
             order_link_id=self._optional_string(
@@ -210,12 +217,12 @@ class BybitOrderClient:
             ).strip(),
             price=self._decimal_or_zero(raw_order.get("price")),
             quantity=self._decimal_or_zero(raw_order.get("qty")),
-            executed_quantity=self._decimal_or_zero(
-                raw_order.get("cumExecQty")
-            ),
+            executed_quantity=executed_quantity,
             remaining_quantity=self._decimal_or_zero(
                 raw_order.get("leavesQty")
             ),
+            average_price=average_price,
+            cumulative_execution_value=cumulative_value,
         )
 
     def cancel_order(
@@ -509,6 +516,16 @@ class BybitOrderClient:
             return Decimal("0")
 
         return Decimal(normalized)
+
+    @staticmethod
+    def _decimal_or_none(value: Any) -> Decimal | None:
+        if value is None or str(value).strip() == "":
+            return None
+        try:
+            parsed = Decimal(str(value))
+        except Exception as exc:
+            raise ValueError("invalid decimal in order response") from exc
+        return parsed if parsed > 0 else None
 
     @staticmethod
     def _default_http_get_json(

@@ -18,6 +18,7 @@ class ExecutionStatus(str, Enum):
     PARTIALLY_FILLED = "partially_filled"
     FILLED = "filled"
     CANCELLED = "cancelled"
+    CANCELED = "cancelled"
     REJECTED = "rejected"
     FAILED = "failed"
 

@@ -332,6 +332,8 @@ def test_get_order_accepts_order_link_id() -> None:
                         "price": "3000",
                         "qty": "0.001",
                         "cumExecQty": "0.001",
+                        "avgPrice": "2999.50",
+                        "cumExecValue": "2.99950",
                         "leavesQty": "",
                     }
                 ]
@@ -354,6 +356,8 @@ def test_get_order_accepts_order_link_id() -> None:
 
     assert status.order_status == "Filled"
     assert status.remaining_quantity == Decimal("0")
+    assert status.average_price == Decimal("2999.50")
+    assert status.cumulative_execution_value == Decimal("2.99950")
     assert "orderLinkId=client-id" in calls[0]
 
 
