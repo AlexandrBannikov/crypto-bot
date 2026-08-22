@@ -24,7 +24,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         with ProcessLock(args.lock_file):
-            candles = BybitMarketDataFeed(BybitMarketDataConfig(symbol=args.symbol, interval=args.interval, limit=500, category="spot", max_retries=1, closed_candles_only=True)).get_candles()
+            feed = BybitMarketDataFeed(BybitMarketDataConfig(symbol=args.symbol, interval=args.interval, limit=500, category="spot", max_retries=1, closed_candles_only=True))
+            candles = feed.get_ready_candles()
             state = evaluate_shadow_candles(candles, state_store=ScoredCandidateStateStore(args.state), decision_path=args.decisions, timeframe_minutes=int(args.interval))
     except ProcessAlreadyRunningError as exc:
         print(f"Scored candidate already running: {exc}", file=sys.stderr)

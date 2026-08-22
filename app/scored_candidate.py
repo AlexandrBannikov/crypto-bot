@@ -1,16 +1,18 @@
 """Shadow-only scored candidate runtime with isolated state and journal."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
 import json
+import os
 from pathlib import Path
 import tempfile
-from typing import Sequence
+from typing import Callable, Sequence
 
 from app.candle import Candle
 from app.risk_allocation import RiskAllocationConfig, size_for_score
+from app.runtime_versions import version_fields
 from app.scored_observability import (
     ScoredReportingConfig, build_score_breakdown, load_reporting_config,
 )
@@ -45,6 +47,18 @@ class ScoredCandidateConfig:
 class ScoredCandidateState:
     last_candle: int | None = None
     hypothetical_position: bool = False
+    strategy_logic_version: str = field(
+        default_factory=lambda: version_fields()["strategy_logic_version"]
+    )
+    feature_version: str = field(
+        default_factory=lambda: version_fields()["feature_version"]
+    )
+    execution_policy_version: str = field(
+        default_factory=lambda: version_fields()["execution_policy_version"]
+    )
+    ledger_schema_version: str = field(
+        default_factory=lambda: version_fields()["ledger_schema_version"]
+    )
 
 
 class ScoredCandidateStateStore:
@@ -66,6 +80,7 @@ class ScoredCandidateStateStore:
                 json.dump(asdict(state), handle, ensure_ascii=False, indent=2)
                 handle.write("\n")
                 handle.flush()
+                os.fsync(handle.fileno())
             temporary.replace(self.path)
         finally:
             temporary.unlink(missing_ok=True)
@@ -76,15 +91,21 @@ class ScoredDecisionJournal:
         self.path = path
 
     def keys(self) -> set[tuple[str, int]]:
+        return set(self.records())
+
+    def records(self) -> dict[tuple[str, int], dict]:
         if not self.path.exists():
-            return set()
-        keys = set()
+            return {}
+        records = {}
         for line in self.path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
             row = json.loads(line)
-            keys.add((str(row.get("strategy_name")), int(row["candle_close_timestamp"])))
-        return keys
+            key = (str(row.get("strategy_name")), int(row["candle_close_timestamp"]))
+            if key in records:
+                raise ValueError(f"duplicate scored decision key: {key}")
+            records[key] = row
+        return records
 
     def append(self, record: dict) -> bool:
         key = (str(record["strategy_name"]), int(record["candle_close_timestamp"]))
@@ -95,20 +116,76 @@ class ScoredDecisionJournal:
             json.dump(record, handle, ensure_ascii=False, separators=(",", ":"))
             handle.write("\n")
             handle.flush()
+            os.fsync(handle.fileno())
         return True
+
+
+class ScoredCandidateLifecycleLedger:
+    """Recoverable state/decision transaction for the scored shadow."""
+
+    def __init__(
+        self, state_store: ScoredCandidateStateStore, decision_path: Path,
+        *, wal_path: Path | None = None,
+        crash_hook: Callable[[str], None] | None = None,
+    ) -> None:
+        self.state_store = state_store
+        self.journal = ScoredDecisionJournal(decision_path)
+        self.wal_path = wal_path or state_store.path.with_suffix(
+            state_store.path.suffix + ".wal"
+        )
+        self.crash_hook = crash_hook
+
+    def _hook(self, stage: str) -> None:
+        if self.crash_hook is not None:
+            self.crash_hook(stage)
+
+    def commit(self, state: ScoredCandidateState, decision: dict) -> None:
+        self.wal_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.wal_path.with_suffix(self.wal_path.suffix + ".tmp")
+        temporary.write_text(json.dumps({
+            "state": asdict(state), "decision": decision,
+        }, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+        with temporary.open("rb") as handle:
+            os.fsync(handle.fileno())
+        temporary.replace(self.wal_path)
+        self._hook("after_prepare")
+        self.journal.append(decision)
+        self._hook("after_decision")
+        self.state_store.save(state)
+        self._hook("after_state")
+        self.wal_path.unlink(missing_ok=True)
+
+    def recover(self) -> ScoredCandidateState | None:
+        if not self.wal_path.exists():
+            return None
+        payload = json.loads(self.wal_path.read_text(encoding="utf-8"))
+        state = ScoredCandidateState(**payload["state"])
+        self.journal.append(payload["decision"])
+        self.state_store.save(state)
+        self.wal_path.unlink(missing_ok=True)
+        return state
 
 
 def evaluate_shadow_candles(candles: Sequence[Candle], *, state_store: ScoredCandidateStateStore, decision_path: Path, config: ScoredCandidateConfig = ScoredCandidateConfig(), balance: float | None = None, timeframe_minutes: int = 60, strategy_name: str = STRATEGY_NAME) -> ScoredCandidateState:
     ordered = tuple(sorted(candles, key=lambda item: item.timestamp))
+    ledger = ScoredCandidateLifecycleLedger(state_store, decision_path)
+    ledger.recover()
     state = state_store.load()
-    journal = ScoredDecisionJournal(decision_path)
-    existing = journal.keys()
+    journal = ledger.journal
+    existing = journal.records()
     cash = float(config.initial_balance if balance is None else balance)
     for index, candle in enumerate(ordered):
         candle_close = candle.timestamp + timeframe_minutes * 60
-        if (strategy_name, candle_close) in existing:
+        existing_record = existing.get((strategy_name, candle_close))
+        if existing_record is not None:
             if state.last_candle is None or candle.timestamp > state.last_candle:
-                state = ScoredCandidateState(candle.timestamp, state.hypothetical_position)
+                action = existing_record.get("decision")
+                hypothetical_position = state.hypothetical_position
+                if action == "ENTER_LONG":
+                    hypothetical_position = True
+                elif action == "EXIT_LONG":
+                    hypothetical_position = False
+                state = ScoredCandidateState(candle.timestamp, hypothetical_position)
                 state_store.save(state)
             continue
         if state.last_candle is not None and candle.timestamp <= state.last_candle:
@@ -158,7 +235,7 @@ def evaluate_shadow_candles(candles: Sequence[Candle], *, state_store: ScoredCan
             calculated_at=calculated_at, reporting=config.reporting,
         )
         detail = breakdown.to_dict()
-        journal.append({
+        record = {
             "strategy_name": strategy_name, "candle_close_timestamp": candle_close,
             "candle_timestamp": candle.timestamp, "decision": action, "action": action,
             "signal_score": round(score.total_score, 6), "score": round(score.total_score, 6),
@@ -181,6 +258,8 @@ def evaluate_shadow_candles(candles: Sequence[Candle], *, state_store: ScoredCan
             "positive_factors": detail["positive_factors"],
             "score_consistent": detail["score_consistent"],
             "calculation_version": detail["calculation_version"],
-        })
-        state_store.save(state)
+            **version_fields(),
+        }
+        ledger.commit(state, record)
+        existing[(strategy_name, candle_close)] = record
     return state

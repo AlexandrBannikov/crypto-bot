@@ -46,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with ProcessLock(args.lock_file):
             before_state = CandidateStateStore(args.state).load()
-            candles = BybitMarketDataFeed(
+            feed = BybitMarketDataFeed(
                 BybitMarketDataConfig(
                     symbol=config.symbol,
                     interval=config.timeframe,
@@ -54,7 +54,8 @@ def main(argv: list[str] | None = None) -> int:
                     limit=500,
                     closed_candles_only=True,
                 )
-            ).get_candles()
+            )
+            candles = feed.get_ready_candles()
             state = process_candidate_candles(
                 candles,
                 state_store=CandidateStateStore(args.state),

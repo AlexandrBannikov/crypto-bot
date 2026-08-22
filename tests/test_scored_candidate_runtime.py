@@ -2,8 +2,15 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from app.candle import Candle
-from app.scored_candidate import ScoredCandidateStateStore, evaluate_shadow_candles
+from app.scored_candidate import (
+    ScoredCandidateLifecycleLedger,
+    ScoredCandidateState,
+    ScoredCandidateStateStore,
+    evaluate_shadow_candles,
+)
 from app.scored_candidate_diagnostics import summarize
 
 
@@ -62,3 +69,33 @@ def test_systemd_runtime_is_journal_only():
     assert "scored_candidate_shadow/decisions.jsonl" in service
     assert "trade" not in service.lower()
     assert "equity" not in service.lower()
+
+
+@pytest.mark.parametrize(
+    "crash_stage", ["after_prepare", "after_decision", "after_state"],
+)
+def test_scored_candidate_recovers_every_crash_boundary(tmp_path, crash_stage):
+    store = ScoredCandidateStateStore(tmp_path / "runtime.json")
+    decisions = tmp_path / "decisions.jsonl"
+    target = ScoredCandidateState(last_candle=3600, hypothetical_position=True)
+    record = {
+        "strategy_name": "scored_candidate_v1",
+        "candle_close_timestamp": 7200,
+        "candle_timestamp": 3600,
+        "decision": "ENTER_LONG",
+    }
+
+    def crash(stage):
+        if stage == crash_stage:
+            raise RuntimeError("injected crash")
+
+    ledger = ScoredCandidateLifecycleLedger(
+        store, decisions, crash_hook=crash,
+    )
+    with pytest.raises(RuntimeError, match="injected"):
+        ledger.commit(target, record)
+
+    recovered = ScoredCandidateLifecycleLedger(store, decisions).recover()
+    assert recovered == target
+    assert store.load() == target
+    assert len(decisions.read_text().splitlines()) == 1

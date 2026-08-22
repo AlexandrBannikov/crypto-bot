@@ -1,11 +1,36 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from decimal import Decimal
 from pathlib import Path
 
 from app.trading_controller import TradingControllerState
 from app.trading_types import TradeAction
+
+
+CONTROLLER_DECIMAL_FIELDS = {
+    "position_quantity", "entry_price", "stop_loss", "virtual_balance",
+    "total_fees", "realized_pnl", "entry_fee", "pending_signal_price",
+}
+
+
+def controller_state_to_dict(state: TradingControllerState) -> dict:
+    payload = asdict(state)
+    for name in CONTROLLER_DECIMAL_FIELDS:
+        if payload[name] is not None:
+            payload[name] = str(payload[name])
+    payload["pending_action"] = state.pending_action.value
+    return payload
+
+
+def controller_state_from_dict(payload: dict) -> TradingControllerState:
+    values = dict(payload)
+    for name in CONTROLLER_DECIMAL_FIELDS:
+        if values.get(name) is not None:
+            values[name] = Decimal(str(values[name]))
+    values["pending_action"] = TradeAction(values.get("pending_action", "hold"))
+    return TradingControllerState(**values)
 
 
 class TradingControllerStateStore:
@@ -128,41 +153,9 @@ class TradingControllerStateStore:
             exist_ok=True,
         )
 
-        payload = {
-            "position_quantity": str(
-                state.position_quantity
-            ),
-            "entry_price": (
-                str(state.entry_price)
-                if state.entry_price is not None
-                else None
-            ),
-            "stop_loss": (
-                str(state.stop_loss)
-                if state.stop_loss is not None
-                else None
-            ),
-            "virtual_balance": str(state.virtual_balance),
-            "total_fees": str(state.total_fees),
-            "realized_pnl": str(state.realized_pnl),
-            "closed_trades": state.closed_trades,
-            "entry_fee": str(state.entry_fee),
-            "pending_action": state.pending_action.value,
-            "pending_signal_timestamp": state.pending_signal_timestamp,
-            "pending_signal_price": (
-                str(state.pending_signal_price)
-                if state.pending_signal_price is not None else None
-            ),
-            "position_signal_timestamp": state.position_signal_timestamp,
-            "position_fill_timestamp": state.position_fill_timestamp,
-            "position_lifecycle_version": state.position_lifecycle_version,
-            "strategy_logic_version": state.strategy_logic_version,
-            "execution_policy_version": state.execution_policy_version,
-            "ledger_schema_version": state.ledger_schema_version,
-            "last_processed_candle_timestamp": state.last_processed_candle_timestamp,
-        }
-        if state.opened_at is not None:
-            payload["opened_at"] = state.opened_at
+        payload = controller_state_to_dict(state)
+        if state.opened_at is None:
+            payload.pop("opened_at")
 
         temporary_path = self.path.with_suffix(
             self.path.suffix + ".tmp"

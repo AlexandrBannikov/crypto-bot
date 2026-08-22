@@ -7,21 +7,28 @@ import math
 import os
 from pathlib import Path
 import tempfile
-from typing import Sequence
+from typing import Callable, Sequence
 
 import pandas as pd
 
 from app.candle import Candle
+from app.causal_execution import process_candle_execution, queue_pending_action
 from app.execution_runner import ExecutionRunner
 from app.indicators import adx, ema
 from app.paper_executor import PaperExecutor
+from app.market_continuity import validate_candle_continuity
+from app.runtime_versions import version_fields
 from app.strategy_v2_relaxed import (
     RelaxedPullbackConfig,
     RelaxedPullbackMode,
     confirms_pullback,
 )
-from app.trade_journal import JsonlTradeJournal
+from app.trade_journal import JsonlTradeJournal, TradeJournalEntry
 from app.trading_controller import TradingController, TradingControllerState
+from app.trading_controller_store import (
+    controller_state_from_dict,
+    controller_state_to_dict,
+)
 from app.trading_runtime import TradingRuntime
 from app.trading_types import TradeAction
 
@@ -69,6 +76,18 @@ class CandidateState:
     timed_out: int = 0
     cancelled: int = 0
     active_halt: str | None = None
+    strategy_logic_version: str = field(
+        default_factory=lambda: version_fields()["strategy_logic_version"]
+    )
+    feature_version: str = field(
+        default_factory=lambda: version_fields()["feature_version"]
+    )
+    execution_policy_version: str = field(
+        default_factory=lambda: version_fields()["execution_policy_version"]
+    )
+    ledger_schema_version: str = field(
+        default_factory=lambda: version_fields()["ledger_schema_version"]
+    )
 
 
 class CandidateStateStore:
@@ -85,30 +104,13 @@ class CandidateStateStore:
             )
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
-            raw_controller = payload.pop("controller")
-            controller = TradingControllerState(
-                position_quantity=Decimal(raw_controller["position_quantity"]),
-                entry_price=_decimal_or_none(raw_controller["entry_price"]),
-                stop_loss=_decimal_or_none(raw_controller["stop_loss"]),
-                virtual_balance=Decimal(raw_controller["virtual_balance"]),
-                total_fees=Decimal(raw_controller["total_fees"]),
-                realized_pnl=Decimal(raw_controller["realized_pnl"]),
-                closed_trades=int(raw_controller["closed_trades"]),
-                entry_fee=Decimal(raw_controller["entry_fee"]),
-                opened_at=raw_controller.get("opened_at"),
-            )
-            return CandidateState(controller=controller, **payload)
+            return self.from_dict(payload)
         except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
             raise ValueError(f"invalid candidate state: {exc}") from exc
 
     def save(self, state: CandidateState) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        controller = asdict(state.controller)
-        for key, value in controller.items():
-            if isinstance(value, Decimal):
-                controller[key] = str(value)
-        payload = asdict(state)
-        payload["controller"] = controller
+        payload = self.to_dict(state)
         descriptor, name = tempfile.mkstemp(
             dir=self.path.parent, prefix=f".{self.path.name}.", suffix=".tmp"
         )
@@ -123,20 +125,110 @@ class CandidateStateStore:
         finally:
             temporary.unlink(missing_ok=True)
 
+    @staticmethod
+    def to_dict(state: CandidateState) -> dict:
+        payload = asdict(state)
+        payload["controller"] = controller_state_to_dict(state.controller)
+        return payload
 
-def _decimal_or_none(value) -> Decimal | None:
-    return None if value is None else Decimal(str(value))
+    @staticmethod
+    def from_dict(payload: dict) -> CandidateState:
+        values = dict(payload)
+        raw_controller = values.pop("controller")
+        return CandidateState(
+            controller=controller_state_from_dict(raw_controller), **values,
+        )
 
 
 class CandidateDecisionJournal:
     def __init__(self, path: Path):
         self.path = path
 
-    def append(self, record: dict) -> None:
+    def append(self, record: dict) -> bool:
+        key = (record["strategy_id"], int(record["candle_timestamp"]))
+        if self.path.exists():
+            for line in self.path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                existing = json.loads(line)
+                if (existing.get("strategy_id"), existing.get("candle_timestamp")) == key:
+                    return False
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as handle:
             json.dump(record, handle, ensure_ascii=False, separators=(",", ":"))
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        return True
+
+
+class _BufferedTradeJournal:
+    def __init__(self) -> None:
+        self.entries: list[TradeJournalEntry] = []
+
+    def append(self, entry: TradeJournalEntry) -> None:
+        self.entries.append(entry)
+
+
+class CandidateLifecycleLedger:
+    """WAL for candidate strategy state plus both lifecycle journals."""
+
+    def __init__(
+        self,
+        state_store: CandidateStateStore,
+        trade_journal_path: Path,
+        decision_journal_path: Path,
+        *,
+        wal_path: Path | None = None,
+        crash_hook: Callable[[str], None] | None = None,
+    ) -> None:
+        self.state_store = state_store
+        self.trade_journal = JsonlTradeJournal(trade_journal_path)
+        self.decision_journal = CandidateDecisionJournal(decision_journal_path)
+        self.wal_path = wal_path or state_store.path.with_suffix(
+            state_store.path.suffix + ".wal"
+        )
+        self.crash_hook = crash_hook
+
+    def _hook(self, stage: str) -> None:
+        if self.crash_hook is not None:
+            self.crash_hook(stage)
+
+    def commit(
+        self, state: CandidateState, decision: dict,
+        trades: Sequence[TradeJournalEntry],
+    ) -> None:
+        self.wal_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.wal_path.with_suffix(self.wal_path.suffix + ".tmp")
+        temporary.write_text(json.dumps({
+            "state": self.state_store.to_dict(state),
+            "decision": decision,
+            "trades": [entry.to_dict() for entry in trades],
+        }, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+        with temporary.open("rb") as handle:
+            os.fsync(handle.fileno())
+        temporary.replace(self.wal_path)
+        self._hook("after_prepare")
+        for entry in trades:
+            self.trade_journal.append(entry)
+        self._hook("after_trades")
+        self.decision_journal.append(decision)
+        self._hook("after_decision")
+        self.state_store.save(state)
+        self._hook("after_state")
+        self.wal_path.unlink(missing_ok=True)
+
+    def recover(self) -> CandidateState | None:
+        if not self.wal_path.exists():
+            return None
+        payload = json.loads(self.wal_path.read_text(encoding="utf-8"))
+        state = self.state_store.from_dict(payload["state"])
+        for raw in payload["trades"]:
+            self.trade_journal.append(TradeJournalEntry.from_dict(raw))
+        self.decision_journal.append(payload["decision"])
+        self.state_store.save(state)
+        self.wal_path.unlink(missing_ok=True)
+        return state
 
 
 def ensure_paper_only(environ: dict[str, str] | None = None) -> None:
@@ -172,8 +264,17 @@ def process_candidate_candles(
     ensure_paper_only()
     if len(candles) < config.slow_ema + 2:
         raise RuntimeError("insufficient closed candle history for candidate")
-    ordered = tuple(sorted(candles, key=lambda item: item.timestamp))
+    ledger = CandidateLifecycleLedger(
+        state_store, trade_journal_path, decision_journal_path,
+    )
+    ledger.recover()
     state = state_store.load()
+    continuity = validate_candle_continuity(
+        candles,
+        timeframe_seconds=int(config.timeframe) * 60,
+        last_processed_timestamp=state.last_processed_candle,
+    )
+    ordered = continuity.candles
     latest = ordered[-1]
     if state.last_processed_candle is None:
         state.last_processed_candle = latest.timestamp
@@ -190,11 +291,24 @@ def process_candidate_candles(
         return state
 
     runtime = TradingRuntime(ExecutionRunner(PaperExecutor(), allow_live=False))
-    decision_journal = CandidateDecisionJournal(decision_journal_path)
     for candle in new_candles:
         position_before = (
             "LONG" if state.controller.has_open_position else "FLAT"
         )
+        buffered_trades = _BufferedTradeJournal()
+        controller = TradingController(
+            runtime,
+            state=state.controller,
+            fee_rate=config.fee_rate,
+            trade_journal=buffered_trades,
+        )
+        open_step = process_candle_execution(
+            controller,
+            symbol=config.symbol,
+            candle=candle,
+            entry_quantity=config.entry_quantity,
+        )
+        state.controller = controller.state
         causal = tuple(c for c in ordered if c.timestamp <= candle.timestamp)
         frame = _features(causal, config)
         row = frame.iloc[-1]
@@ -264,12 +378,18 @@ def process_candidate_candles(
                 state.pullback_confirmations += 1
                 state.total_pullback_wait_bars += state.bars_waited
                 if adx_value >= config.adx_minimum:
-                    decision = "ENTER"
-                    reason = "HYBRID pullback confirmed and ADX threshold passed"
-                    reason_code = "entry_allowed"
-                    action = TradeAction.OPEN_LONG
-                    allowed = True
-                    state.entries += 1
+                    if continuity.unresolved_gap:
+                        decision = "HOLD"
+                        reason = "unresolved market-data gap blocks new entries"
+                        reason_code = "market_gap"
+                        blocked = True
+                    else:
+                        decision = "ENTER"
+                        reason = "HYBRID pullback confirmed; entry queued for next open"
+                        reason_code = "entry_allowed"
+                        action = TradeAction.OPEN_LONG
+                        allowed = True
+                        state.entries += 1
                 else:
                     decision = "HOLD"
                     reason = (
@@ -290,20 +410,13 @@ def process_candidate_candles(
                 reason = "pending HYBRID pullback has not confirmed"
                 reason_code = "pullback_not_detected"
 
-        controller = TradingController(
-            runtime,
-            state=state.controller,
-            fee_rate=config.fee_rate,
-            trade_journal=JsonlTradeJournal(trade_journal_path),
+        queue_pending_action(
+            controller,
+            action=action,
+            signal_timestamp=candle.timestamp,
+            signal_price=Decimal(str(candle.close)),
         )
-        result = controller.process_signal(
-            symbol=config.symbol,
-            signal=action,
-            entry_quantity=config.entry_quantity,
-            price=Decimal(str(candle.close)),
-            client_order_id=f"candidate-{candle.timestamp}",
-        )
-        state.controller = result.state
+        state.controller = controller.state
         state.last_processed_candle = candle.timestamp
         state.active_halt = None
         record = {
@@ -331,12 +444,26 @@ def process_candidate_candles(
             "reason_code": reason_code,
             "position_after": "LONG" if state.controller.has_open_position else "FLAT",
             "price": candle.close,
+            "signal_timestamp": candle.timestamp if action != TradeAction.HOLD else None,
+            "signal_price": candle.close if action != TradeAction.HOLD else None,
+            "fill_timestamps": [
+                candle.timestamp
+                for item in open_step.executions
+                if item.execution is not None
+                and item.execution.executed_quantity > 0
+            ],
+            "fill_prices": [
+                str(item.execution.average_price)
+                for item in open_step.executions
+                if item.execution is not None and item.execution.average_price is not None
+            ],
+            "unresolved_gap": continuity.unresolved_gap,
             "decision_status": "produced",
             "status_reason": None,
             "balance_after": str(state.controller.virtual_balance),
+            **version_fields(),
         }
-        decision_journal.append(record)
-        state_store.save(state)
+        ledger.commit(state, record, buffered_trades.entries)
     return state
 
 

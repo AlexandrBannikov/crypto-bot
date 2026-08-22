@@ -7,11 +7,14 @@ import pytest
 from app.candle import Candle
 from app.candidate_runtime import (
     CandidateConfig,
+    CandidateLifecycleLedger,
     CandidateState,
     CandidateStateStore,
     ensure_paper_only,
     process_candidate_candles,
 )
+from app.trade_journal import JsonlTradeJournal
+from tests.test_trade_journal import make_entry
 from app.strategy_v2_relaxed import RelaxedPullbackMode
 from app.trading_controller import TradingControllerState
 
@@ -122,13 +125,22 @@ def test_pending_pullback_enters_once_when_hybrid_and_adx_confirm(monkeypatch, t
         trade_journal_path=tmp_path / "candidate-trades.jsonl",
         decision_journal_path=decisions,
     )
-    assert result.controller.has_open_position
+    assert not result.controller.has_open_position
+    assert result.controller.pending_action.value == "open_long"
     assert result.entries == 1
     assert result.pullback_confirmations == 1
     assert '"decision":"ENTER"' in decisions.read_text()
+    next_market = candles(62)
+    filled = process_candidate_candles(
+        next_market, state_store=store,
+        trade_journal_path=tmp_path / "candidate-trades.jsonl",
+        decision_journal_path=decisions,
+    )
+    assert filled.controller.has_open_position
+    assert filled.controller.entry_price == Decimal(str(next_market[-1].open))
     before = decisions.read_bytes()
     process_candidate_candles(
-        market, state_store=store,
+        next_market, state_store=store,
         trade_journal_path=tmp_path / "candidate-trades.jsonl",
         decision_journal_path=decisions,
     )
@@ -192,10 +204,48 @@ def test_exit_is_not_filtered(monkeypatch, tmp_path):
         trade_journal_path=tmp_path / "candidate-trades.jsonl",
         decision_journal_path=tmp_path / "candidate-decisions.jsonl",
     )
-    assert not result.controller.has_open_position
+    assert result.controller.has_open_position
+    assert result.controller.pending_action.value == "close_long"
     assert result.exits == 1
+    result = process_candidate_candles(
+        candles(62), state_store=store,
+        trade_journal_path=tmp_path / "candidate-trades.jsonl",
+        decision_journal_path=tmp_path / "candidate-decisions.jsonl",
+    )
+    assert not result.controller.has_open_position
     assert (tmp_path / "candidate-trades.jsonl").exists()
 
 
 def test_trade_and_decision_journals_are_different_paths(tmp_path):
     assert tmp_path / "candidate-trades.jsonl" != tmp_path / "candidate-decisions.jsonl"
+
+
+@pytest.mark.parametrize(
+    "crash_stage", ["after_prepare", "after_trades", "after_decision", "after_state"],
+)
+def test_candidate_lifecycle_recovers_every_crash_boundary(tmp_path, crash_stage):
+    store = CandidateStateStore(tmp_path / "candidate.json")
+    trades = tmp_path / "trades.jsonl"
+    decisions = tmp_path / "decisions.jsonl"
+    target = CandidateState(last_processed_candle=3600, entries=1)
+    decision = {
+        "strategy_id": "candidate_adx_hybrid",
+        "candle_timestamp": 3600,
+        "decision": "ENTER",
+    }
+
+    def crash(stage):
+        if stage == crash_stage:
+            raise RuntimeError("injected crash")
+
+    ledger = CandidateLifecycleLedger(
+        store, trades, decisions, crash_hook=crash,
+    )
+    with pytest.raises(RuntimeError, match="injected"):
+        ledger.commit(target, decision, [make_entry()])
+
+    recovered = CandidateLifecycleLedger(store, trades, decisions).recover()
+    assert recovered == target
+    assert store.load() == target
+    assert [item.record_id for item in JsonlTradeJournal(trades).read_all()] == ["record-1"]
+    assert len(decisions.read_text().splitlines()) == 1
