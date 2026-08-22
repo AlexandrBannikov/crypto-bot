@@ -133,6 +133,9 @@ class TradingControllerStateStore:
             strategy_logic_version=str(payload.get(
                 "strategy_logic_version", "strategy_logic_v2_causal"
             )),
+            feature_version=str(payload.get(
+                "feature_version", "scored_features_v1"
+            )),
             execution_policy_version=str(payload.get(
                 "execution_policy_version", "next_candle_open_v1"
             )),

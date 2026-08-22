@@ -54,6 +54,7 @@ class TradeJournalEntry:
     signal_price: Decimal | None = None
     fill_price: Decimal | None = None
     strategy_logic_version: str = "legacy"
+    feature_version: str = "legacy"
     execution_policy_version: str = "legacy_same_close_v1"
     ledger_schema_version: str = "ledger_v1"
 

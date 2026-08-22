@@ -75,6 +75,7 @@ def test_decimal_is_saved_as_string(
         "position_fill_timestamp": None,
         "position_lifecycle_version": None,
         "strategy_logic_version": "strategy_logic_v2_causal",
+        "feature_version": "scored_features_v1",
         "execution_policy_version": "next_candle_open_v1",
         "ledger_schema_version": "ledger_v2",
         "last_processed_candle_timestamp": None,

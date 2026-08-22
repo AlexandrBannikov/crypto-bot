@@ -28,6 +28,7 @@ from app.trading_runtime import (
 from app.trading_types import TradeAction
 from app.runtime_versions import (
     EXECUTION_POLICY_VERSION,
+    FEATURE_VERSION,
     LEDGER_SCHEMA_VERSION,
     STRATEGY_LOGIC_VERSION,
 )
@@ -51,6 +52,7 @@ class TradingControllerState:
     position_fill_timestamp: int | None = None
     position_lifecycle_version: str | None = None
     strategy_logic_version: str = STRATEGY_LOGIC_VERSION
+    feature_version: str = FEATURE_VERSION
     execution_policy_version: str = EXECUTION_POLICY_VERSION
     ledger_schema_version: str = LEDGER_SCHEMA_VERSION
     last_processed_candle_timestamp: int | None = None
@@ -430,6 +432,7 @@ class TradingController:
             opened_at = self._state.opened_at
             position_signal_timestamp = self._state.position_signal_timestamp
             strategy_logic_version = self._state.strategy_logic_version
+            feature_version = self._state.feature_version
             execution_policy_version = self._state.execution_policy_version
             ledger_schema_version = self._state.ledger_schema_version
 
@@ -531,6 +534,7 @@ class TradingController:
                     signal_price=None,
                     fill_price=execution.average_price,
                     strategy_logic_version=strategy_logic_version,
+                    feature_version=feature_version,
                     execution_policy_version=execution_policy_version,
                     ledger_schema_version=ledger_schema_version,
                 )
