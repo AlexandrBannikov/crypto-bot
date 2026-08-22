@@ -30,6 +30,7 @@ def validate_candle_continuity(
         raise ValueError("timeframe_seconds must be positive")
 
     by_timestamp: dict[int, Candle] = {}
+    previous_timestamp: int | None = None
     for candle in candles:
         timestamp = candle.timestamp
         if isinstance(timestamp, bool) or not isinstance(timestamp, int):
@@ -38,6 +39,10 @@ def validate_candle_continuity(
             raise MarketContinuityError("candle timestamp is not timeframe-aligned")
         if timestamp in by_timestamp:
             raise MarketContinuityError(f"duplicate candle timestamp: {timestamp}")
+        if previous_timestamp is not None and timestamp < previous_timestamp:
+            raise MarketContinuityError(
+                f"out-of-order candle timestamp: {previous_timestamp} -> {timestamp}"
+            )
         prices = (candle.open, candle.high, candle.low, candle.close)
         if not all(math.isfinite(float(value)) and float(value) > 0 for value in prices):
             raise MarketContinuityError("candle prices must be finite and positive")
@@ -48,6 +53,7 @@ def validate_candle_continuity(
         if candle.low > min(candle.open, candle.high, candle.close):
             raise MarketContinuityError("invalid candle low")
         by_timestamp[timestamp] = candle
+        previous_timestamp = timestamp
 
     ordered = tuple(by_timestamp[key] for key in sorted(by_timestamp))
     for left, right in zip(ordered, ordered[1:]):

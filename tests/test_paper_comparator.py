@@ -243,6 +243,10 @@ def test_profit_factor_infinity_drawdown_fees_and_balance_delta(tmp_path):
     assert math.isinf(report["candidate"]["profit_factor"])
     assert report["deltas"]["fees"] == "1"
     assert report["deltas"]["balance"] == "15"
+    assert report["deltas"]["drawdown_improvement_percent"] == str(
+        Decimal(str(report["production"]["max_drawdown_percent"]))
+        - Decimal(str(report["candidate"]["max_drawdown_percent"]))
+    )
 
 
 def test_candidate_unavailable_does_not_change_production_health(tmp_path):

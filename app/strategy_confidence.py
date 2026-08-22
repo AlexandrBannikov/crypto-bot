@@ -9,6 +9,7 @@ from pathlib import Path
 from statistics import pstdev
 from typing import Any
 
+from app.comparison_semantics import candidate_advantage, candidate_delta
 from app.strategy_lab import LaboratoryConfig, NA, build_report
 from app.runtime_health import candle_timing_diagnostics, read_jsonl_safely
 from app.equity_history import (
@@ -467,7 +468,7 @@ def compare_candidate(
     result: dict[str, Any] = {}
     for output, key in pairs.items():
         left, right = _number(candidate.get(key)), _number(production.get(key))
-        result[output] = str(left - right) if left is not None and right is not None else NA
+        result[output] = str(candidate_delta(left, right)) if left is not None and right is not None else NA
     result["delta_stability"] = (
         candidate_confidence["stability"]["score"]
         - production_confidence["stability"]["score"]
@@ -485,10 +486,13 @@ def compare_candidate(
     ):
         value = result[delta]
         numeric = _number(value)
+        production_value = _number(production.get(pairs[delta])) if delta in pairs else None
+        candidate_value = _number(candidate.get(pairs[delta])) if delta in pairs else None
         result[name] = (
             NA if numeric is None
-            else numeric < 0 if lower
-            else numeric > 0
+            else candidate_advantage(candidate_value, production_value, lower_is_better=lower) > 0
+            if candidate_value is not None and production_value is not None
+            else numeric < 0 if lower else numeric > 0
         )
     return result
 

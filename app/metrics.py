@@ -2,6 +2,8 @@ from collections.abc import Sequence
 
 import pandas as pd
 
+from app.comparison_semantics import max_drawdown_percent
+
 
 def calculate_return_percent(
     start_balance: float,
@@ -24,8 +26,4 @@ def calculate_max_drawdown(
     if (equity <= 0).any():
         raise ValueError("Значения капитала должны быть больше нуля")
 
-    running_max = equity.cummax()
-    drawdown = (equity - running_max) / running_max
-
-    return float(drawdown.min() * 100)
-
+    return float(max_drawdown_percent(equity.tolist()))

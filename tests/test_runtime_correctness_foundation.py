@@ -48,6 +48,11 @@ def test_continuity_rejects_duplicate_gap_and_unaligned_candles() -> None:
         validate_candle_continuity(
             (Candle(1, 100, 101, 99, 100, 1),), timeframe_seconds=HOUR,
         )
+    with pytest.raises(MarketContinuityError, match="out-of-order"):
+        validate_candle_continuity(
+            (Candle(HOUR, 100, 101, 99, 100, 1), base),
+            timeframe_seconds=HOUR,
+        )
 
 
 def test_continuity_reports_gap_from_persisted_cursor() -> None:

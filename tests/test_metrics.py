@@ -21,7 +21,7 @@ def test_start_balance_error():
 
 def test_drawdown():
     equity = [1000, 1100, 990, 1200]
-    assert calculate_max_drawdown(equity) == pytest.approx(-10.0)
+    assert calculate_max_drawdown(equity) == pytest.approx(10.0)
 
 
 def test_drawdown_zero():
@@ -31,4 +31,3 @@ def test_drawdown_zero():
 
 def test_drawdown_empty():
     assert calculate_max_drawdown([]) == 0.0
-

@@ -8,6 +8,8 @@ import json
 import math
 from pathlib import Path
 from typing import Any, Iterable
+
+from app.comparison_semantics import max_drawdown_percent as canonical_max_drawdown_percent
 from zoneinfo import ZoneInfo
 
 from app.account_snapshot import calculate_account_snapshot
@@ -284,13 +286,7 @@ def _equity_curve(
 
 
 def max_drawdown_percent(curve: Iterable[Decimal]) -> Decimal:
-    peak: Decimal | None = None
-    maximum = Decimal("0")
-    for equity in curve:
-        peak = equity if peak is None else max(peak, equity)
-        if peak > 0:
-            maximum = max(maximum, (peak - equity) / peak * Decimal("100"))
-    return maximum
+    return canonical_max_drawdown_percent(curve)
 
 
 def strategy_metrics(

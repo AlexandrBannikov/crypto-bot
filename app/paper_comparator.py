@@ -13,6 +13,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.account_snapshot import calculate_account_snapshot, market_from_decisions
+from app.comparison_semantics import candidate_advantage, candidate_delta, max_drawdown_percent
 from app.candidate_runtime import CandidateStateStore
 from app.runtime_health import read_jsonl_safely
 from app.trade_journal import TradeJournalEntry
@@ -280,13 +281,7 @@ def _metrics(
             profit_factor = NA
         balances = [trade.virtual_balance_after for trade in trades]
         initial = balances[0] - trades[0].net_pnl
-        peak = initial
-        maximum = Decimal("0")
-        for balance in balances:
-            peak = max(peak, balance)
-            if peak:
-                maximum = max(maximum, (peak - balance) / peak * Decimal("100"))
-        drawdown = float(maximum)
+        drawdown = float(max_drawdown_percent([initial, *balances]))
     actions = [_decision_action(row, candidate) for row in decisions]
     freshness, health = _runtime_freshness(last_candle, now)
     initial_balance = Decimal("1000")
@@ -656,7 +651,15 @@ def _deltas(production: dict[str, Any], candidate: dict[str, Any]) -> dict[str, 
         if left == NA or right == NA:
             result[output] = NA
         else:
-            result[output] = str(_decimal(right) - _decimal(left))
+            result[output] = str(candidate_delta(_decimal(right), _decimal(left)))
+    drawdown = result.get("drawdown_percent")
+    result["drawdown_improvement_percent"] = (
+        NA if drawdown == NA else str(candidate_advantage(
+            _decimal(candidate["max_drawdown_percent"]),
+            _decimal(production["max_drawdown_percent"]),
+            lower_is_better=True,
+        ))
+    )
     return result
 
 
