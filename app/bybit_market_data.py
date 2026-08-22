@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
+import math
 import time
 from typing import Any
 from urllib.parse import urlencode
@@ -51,6 +52,8 @@ class BybitMarketDataConfig:
     retry_delay_seconds: float = 1.0
     closed_candles_only: bool = True
     base_url: str = BYBIT_API_URL
+    readiness_timeout_seconds: float = 90.0
+    readiness_poll_seconds: float = 5.0
 
     def __post_init__(self) -> None:
         normalized_symbol = self.symbol.strip().upper()
@@ -99,6 +102,11 @@ class BybitMarketDataConfig:
                 "base_url must not be empty"
             )
 
+        if self.readiness_timeout_seconds < 0:
+            raise ValueError("readiness_timeout_seconds must not be negative")
+        if self.readiness_poll_seconds <= 0:
+            raise ValueError("readiness_poll_seconds must be positive")
+
 
 class BybitMarketDataFeed:
     def __init__(
@@ -107,6 +115,7 @@ class BybitMarketDataFeed:
         *,
         http_get_json: HttpGetJson | None = None,
         clock_ms: ClockMilliseconds | None = None,
+        sleeper: Callable[[float], None] | None = None,
     ) -> None:
         self.config = (
             config
@@ -122,6 +131,7 @@ class BybitMarketDataFeed:
             clock_ms
             or self._default_clock_ms
         )
+        self._sleep = sleeper or time.sleep
 
     def get_candles(self) -> tuple[Candle, ...]:
         request_params = {
@@ -147,7 +157,7 @@ class BybitMarketDataFeed:
                     raise
 
                 if self.config.retry_delay_seconds > 0:
-                    time.sleep(
+                    self._sleep(
                         self.config.retry_delay_seconds
                     )
 
@@ -172,9 +182,13 @@ class BybitMarketDataFeed:
             ):
                 continue
 
-            candles_by_timestamp[
-                candle.timestamp
-            ] = candle
+            if candle.timestamp in candles_by_timestamp:
+                raise ValueError(
+                    f"duplicate Bybit candle timestamp: {candle.timestamp}"
+                )
+            if candle.timestamp % (interval_ms // 1000):
+                raise ValueError("Bybit candle timestamp is not interval-aligned")
+            candles_by_timestamp[candle.timestamp] = candle
 
         candles = tuple(
             candles_by_timestamp[timestamp]
@@ -188,7 +202,37 @@ class BybitMarketDataFeed:
                 "Bybit returned no closed candles"
             )
 
+        for left, right in zip(candles, candles[1:]):
+            if right.timestamp - left.timestamp != interval_ms // 1000:
+                raise ValueError(
+                    f"Bybit candle gap: {left.timestamp} -> {right.timestamp}"
+                )
+
         return candles
+
+    def get_ready_candles(self) -> tuple[Candle, ...]:
+        """Wait for the most recently closed interval instead of racing the hour."""
+        attempts = max(
+            1,
+            math.ceil(
+                self.config.readiness_timeout_seconds
+                / self.config.readiness_poll_seconds
+            ) + 1,
+        )
+        latest: tuple[Candle, ...] | None = None
+        for attempt in range(attempts):
+            latest = self.get_candles()
+            interval_ms = int(self.config.interval) * 60 * 1000
+            now_ms = self._clock_ms()
+            expected_start = (now_ms // interval_ms - 1) * interval_ms // 1000
+            if latest[-1].timestamp >= expected_start:
+                return latest
+            if attempt + 1 < attempts:
+                self._sleep(self.config.readiness_poll_seconds)
+        assert latest is not None
+        raise RuntimeError(
+            "latest closed Bybit candle was not ready before timeout"
+        )
 
     def get_latest_candle(self) -> Candle:
         return self.get_candles()[-1]
@@ -245,6 +289,12 @@ class BybitMarketDataFeed:
             raise ValueError(
                 "invalid Bybit kline values"
             ) from error
+
+        numeric_values = (
+            open_price, high_price, low_price, close_price, volume,
+        )
+        if not all(math.isfinite(value) for value in numeric_values):
+            raise ValueError("Bybit candle values must be finite")
 
         if min(
             open_price,
