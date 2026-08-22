@@ -61,6 +61,7 @@ class TelegramPaths:
     trailing_shadow_journal: Path = Path("state/trailing_stop_shadow.jsonl")
     profit_lock_shadow_journal: Path = Path("state/profit_lock_shadow.jsonl")
     pyramiding_shadow_journal: Path = Path("state/pyramiding_shadow.jsonl")
+    strategy_v2_shadow_state: Path = Path("state/strategy_v2_shadow.json")
     trade_diagnostics_journal: Path = Path("state/production_trade_diagnostics.jsonl")
     experiments_root: Path = Path("state/experiments")
 
@@ -168,6 +169,9 @@ class TelegramPaths:
             ),
             pyramiding_shadow_journal=Path(
                 os.environ.get("PYRAMIDING_SHADOW_JOURNAL_PATH", "state/pyramiding_shadow.jsonl")
+            ),
+            strategy_v2_shadow_state=Path(
+                os.environ.get("STRATEGY_V2_SHADOW_STATE_PATH", "state/strategy_v2_shadow.json")
             ),
             trade_diagnostics_journal=Path(
                 os.environ.get(
@@ -899,6 +903,8 @@ def format_morning_report(
         + "\n\n"
         + _pyramiding_shadow_report_block(paths)
         + "\n\n"
+        + _strategy_v2_report_block(paths)
+        + "\n\n"
         + _trade_diagnostics_period_block(paths, start, current)
     )
 
@@ -1021,6 +1027,8 @@ def format_evening_report(
         + _profit_lock_shadow_report_block(paths)
         + "\n\n"
         + _pyramiding_shadow_report_block(paths)
+        + "\n\n"
+        + _strategy_v2_report_block(paths)
         + "\n\n"
         + _trade_diagnostics_period_block(paths, start, current)
         + "\n\n"
@@ -1504,6 +1512,44 @@ def _pyramiding_shadow_report_block(paths: TelegramPaths) -> str:
         return "\n".join(lines)
     except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
         return "Pyramiding shadow\nStatus: diagnostic unavailable"
+
+
+def _strategy_v2_report_block(paths: TelegramPaths) -> str:
+    """Compact independent-account benchmark against Production PAPER."""
+    try:
+        from app.strategy_v2_shadow import StrategyV2StateStore, metrics
+        state = StrategyV2StateStore(paths.strategy_v2_shadow_state).load()
+        production = TradingControllerStateStore(paths.controller_state).load()
+        rows = read_jsonl_safely(paths.decision_journal)[0] if paths.decision_journal.exists() else []
+        market = market_from_decisions(rows)
+        price = Decimal(str(market["price"] or state.weighted_average_entry or 0))
+        production_equity = production.virtual_balance + production.position_quantity * price
+        result = metrics(state)
+        pnl = state.equity - Decimal("1000")
+        lines = [
+            "🧪 Strategy V2 Shadow",
+            f"Equity: {state.equity:.2f} USDT",
+            f"PnL: {pnl:+.2f} ({pnl / Decimal('10'):+.2f}%)",
+        ]
+        if state.is_long:
+            lines.extend([
+                f"Position: LONG {state.quantity} ETH",
+                f"Avg entry: {state.weighted_average_entry:.2f}",
+                f"Adds: {state.add_count}/3",
+                f"Peak: {state.peak:.2f}",
+                f"Protection: {state.effective_floor:.2f}" if state.effective_floor is not None else "Protection: inactive",
+                f"Score: {state.last_score:.1f}" if state.last_score is not None else "Score: —",
+                f"DD: {state.max_drawdown:.2f}%",
+            ])
+        else:
+            lines.extend([
+                f"Position: FLAT | realised {state.realised_pnl:+.2f}",
+                f"Trades: {state.closed_trades} | win {result['win_rate_pct']:.1f}% | DD {state.max_drawdown:.2f}%",
+            ])
+        lines.append(f"vs Production: {state.equity - production_equity:+.2f} USDT")
+        return "\n".join(lines)
+    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+        return "🧪 Strategy V2 Shadow\nStatus: not initialized"
 
 
 def format_trades(paths: TelegramPaths, limit: int = 5) -> str:

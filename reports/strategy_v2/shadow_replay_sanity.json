@@ -1,0 +1,18 @@
+{
+  "research_only": true,
+  "parameters_changed_after_replay": false,
+  "matched_closed_candles": 1000,
+  "events": 8,
+  "entries": 4,
+  "add_ons": 0,
+  "exits": 4,
+  "closed_trades": 4,
+  "ending_equity": "999.6461402217000000000000000",
+  "realised_pnl": "-0.3538597782999999999999999981",
+  "max_drawdown_pct": "0.06816016672569050910891007175",
+  "maximum_quantity": "0.01",
+  "accounting_identity_error": "0E-25",
+  "profit_factor": "0.1277565943230204745673619759",
+  "score_source": "causally_recomputed",
+  "causal_semantics": "pre-candle levels; close decisions/fills; current high affects next candle"
+}

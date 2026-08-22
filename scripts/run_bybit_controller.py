@@ -68,6 +68,12 @@ from app.regime_runtime import (
     is_exit,
 )
 from app.strategies import Signal
+from app.strategy_v2_shadow import (
+    StrategyV2Journal,
+    StrategyV2StateStore,
+    process_candle as process_strategy_v2_candle,
+    score_for_candle as strategy_v2_score_for_candle,
+)
 from app.shadow_decision_journal import (
     ShadowDecisionJournal,
     ShadowDecisionRecord,
@@ -177,6 +183,12 @@ PYRAMIDING_SHADOW_STATE_PATH = Path(
 )
 PYRAMIDING_SHADOW_JOURNAL_PATH = Path(
     os.environ.get("PYRAMIDING_SHADOW_JOURNAL_PATH", "state/pyramiding_shadow.jsonl")
+)
+STRATEGY_V2_SHADOW_STATE_PATH = Path(
+    os.environ.get("STRATEGY_V2_SHADOW_STATE_PATH", "state/strategy_v2_shadow.json")
+)
+STRATEGY_V2_SHADOW_JOURNAL_PATH = Path(
+    os.environ.get("STRATEGY_V2_SHADOW_JOURNAL_PATH", "state/strategy_v2_shadow.jsonl")
 )
 TRADE_DIAGNOSTICS_JOURNAL_PATH = Path(
     os.environ.get(
@@ -342,6 +354,29 @@ def run_pyramiding_shadow_observer(
         store.save(update.state)
     except Exception as exc:
         print(f"Pyramiding shadow observer warning: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return False
+    return True
+
+
+def run_strategy_v2_shadow_observer(
+    *, candle, score_rows=(), bearish_ema_cross: bool = False,
+    state_path: Path | None = None, journal_path: Path | None = None,
+) -> bool:
+    """Advance the independent research account; never submit PAPER orders."""
+    try:
+        store = StrategyV2StateStore(state_path or STRATEGY_V2_SHADOW_STATE_PATH)
+        state = store.load()
+        state, observation = process_strategy_v2_candle(
+            state, candle=candle,
+            score=strategy_v2_score_for_candle(score_rows, candle.timestamp),
+            bearish_ema_cross=bearish_ema_cross,
+            timeframe_seconds=int(INTERVAL) * 60,
+        )
+        if observation.get("appended") is not False:
+            StrategyV2Journal(journal_path or STRATEGY_V2_SHADOW_JOURNAL_PATH).append(observation)
+            store.save(state)
+    except Exception as exc:
+        print(f"Strategy V2 shadow observer warning: {type(exc).__name__}: {exc}", file=sys.stderr)
         return False
     return True
 
@@ -837,6 +872,11 @@ def run_controller(args: argparse.Namespace) -> int:
         ),
         historical_candles=candles,
         score_rows=_read_score_rows(SCORED_65_DECISION_PATH),
+    )
+    run_strategy_v2_shadow_observer(
+        candle=latest_candle,
+        score_rows=_read_score_rows(SCORED_65_DECISION_PATH),
+        bearish_ema_cross=signal is Signal.SELL,
     )
 
     # Observation only. A diagnostics failure must never affect PAPER state,
