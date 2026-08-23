@@ -1516,9 +1516,14 @@ def _pyramiding_shadow_report_block(paths: TelegramPaths) -> str:
 
 def _strategy_v2_report_block(paths: TelegramPaths) -> str:
     """Compact independent-account benchmark against Production PAPER."""
+    if not paths.strategy_v2_shadow_state.exists():
+        return "🧪 Strategy V2 Shadow\nStatus: not initialized"
     try:
+        from app.runtime_versions import EXECUTION_POLICY_VERSION
         from app.strategy_v2_shadow import StrategyV2StateStore, metrics
         state = StrategyV2StateStore(paths.strategy_v2_shadow_state).load()
+        if state.last_processed_timestamp is None:
+            return "🧪 Strategy V2 Shadow\nStatus: not initialized"
         production = TradingControllerStateStore(paths.controller_state).load()
         rows = read_jsonl_safely(paths.decision_journal)[0] if paths.decision_journal.exists() else []
         market = market_from_decisions(rows)
@@ -1526,8 +1531,16 @@ def _strategy_v2_report_block(paths: TelegramPaths) -> str:
         production_equity = production.virtual_balance + production.position_quantity * price
         result = metrics(state)
         pnl = state.equity - Decimal("1000")
+        lifecycle = (
+            f"PENDING {state.pending_action.upper()}"
+            if state.pending_action is not None else "initialized"
+        )
         lines = [
             "🧪 Strategy V2 Shadow",
+            f"Status: {lifecycle}",
+            f"Last candle: {state.last_processed_timestamp}",
+            f"Pending: {state.pending_action or 'none'}",
+            f"Execution: {EXECUTION_POLICY_VERSION}",
             f"Equity: {state.equity:.2f} USDT",
             f"PnL: {pnl:+.2f} ({pnl / Decimal('10'):+.2f}%)",
         ]
@@ -1544,12 +1557,13 @@ def _strategy_v2_report_block(paths: TelegramPaths) -> str:
         else:
             lines.extend([
                 f"Position: FLAT | realised {state.realised_pnl:+.2f}",
+                f"Score: {state.last_score:.1f}" if state.last_score is not None else "Score: —",
                 f"Trades: {state.closed_trades} | win {result['win_rate_pct']:.1f}% | DD {state.max_drawdown:.2f}%",
             ])
         lines.append(f"vs Production: {state.equity - production_equity:+.2f} USDT")
         return "\n".join(lines)
     except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
-        return "🧪 Strategy V2 Shadow\nStatus: not initialized"
+        return "🧪 Strategy V2 Shadow\nStatus: diagnostic unavailable"
 
 
 def format_trades(paths: TelegramPaths, limit: int = 5) -> str:

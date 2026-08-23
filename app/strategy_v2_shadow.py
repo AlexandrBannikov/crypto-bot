@@ -136,6 +136,11 @@ class StrategyV2StateStore:
         temporary = Path(name)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                # Telegram reports run under a read-only runtime group.  A
+                # mkstemp file starts as 0600, so set the intended mode before
+                # the atomic replace instead of making every saved V2 state
+                # unreadable to that reporting contour.
+                os.fchmod(handle.fileno(), 0o640)
                 json.dump(payload, handle, ensure_ascii=False, indent=2)
                 handle.write("\n")
                 handle.flush()

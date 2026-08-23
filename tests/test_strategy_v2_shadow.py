@@ -1,5 +1,6 @@
 from decimal import Decimal as D
 import json
+import stat
 
 import pytest
 
@@ -141,6 +142,7 @@ def test_restart_idempotent_and_journal_isolated(tmp_path):
     state = opened()
     path, journal_path = tmp_path / "strategy.json", tmp_path / "strategy.jsonl"
     StrategyV2StateStore(path).save(state)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
     restored = StrategyV2StateStore(path).load()
     assert restored == state
     journal = StrategyV2Journal(journal_path)
@@ -159,6 +161,58 @@ def test_comparison_and_telegram_format(tmp_path):
     paths.controller_state.write_text(json.dumps({"virtual_balance": "1000"}))
     text = _strategy_v2_report_block(paths)
     assert "🧪 Strategy V2 Shadow" in text and "vs Production:" in text and "Adds: 0/3" in text
+
+
+def test_pending_entry_survives_restart_fills_next_open_and_renders(tmp_path):
+    state_path = tmp_path / "strategy_v2.json"
+    controller_path = tmp_path / "controller.json"
+    paths = TelegramPaths(
+        controller_path,
+        tmp_path / "runtime.json",
+        tmp_path / "last.txt",
+        tmp_path / "trades.jsonl",
+        tmp_path / "decisions.jsonl",
+        tmp_path / "notifications.json",
+        strategy_v2_shadow_state=state_path,
+    )
+    signal_timestamp = 1787400000
+    signal_candle = Candle(
+        signal_timestamp, 100.0, 102.0, 99.0, 101.0,
+    )
+    state, signal_row = process_candle(
+        StrategyV2State(), candle=signal_candle, score=score(85),
+    )
+    assert signal_row["event"] == "waiting"
+    assert signal_row["processing_status"] == "PROCESSED"
+    assert state.pending_action == "entry"
+    assert state.pending_signal_timestamp == signal_timestamp
+
+    store = StrategyV2StateStore(state_path)
+    store.save(state)
+    assert stat.S_IMODE(state_path.stat().st_mode) == 0o640
+
+    restarted = store.load()
+    fill_timestamp = signal_timestamp + 3600
+    fill_candle = Candle(fill_timestamp, 103.0, 106.0, 102.0, 105.0)
+    filled, fill_row = process_candle(
+        restarted, candle=fill_candle, score=score(20, "HOLD"),
+    )
+    assert fill_row["event"] == "entry"
+    assert fill_row["fill_timestamp"] == fill_timestamp
+    assert filled.weighted_average_entry == D("103.0")
+    assert filled.pending_action is None
+    assert filled.current_trade["initial_entry"]["signal_timestamp"] == signal_timestamp
+    assert filled.current_trade["initial_entry"]["fill_timestamp"] == fill_timestamp
+
+    store.save(filled)
+    controller_path.write_text(json.dumps({"virtual_balance": "1000"}))
+    report = _strategy_v2_report_block(paths)
+    assert "Status: initialized" in report
+    assert f"Last candle: {fill_timestamp}" in report
+    assert "Pending: none" in report
+    assert "Execution: next_candle_open_v1" in report
+    assert "Position: LONG 0.01 ETH" in report
+    assert "not initialized" not in report
 
 
 def test_known_strong_trade_regression_is_independent_and_causal():
