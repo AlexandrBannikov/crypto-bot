@@ -1,0 +1,36 @@
+[Unit]
+Description=Read-only crypto-bot Prometheus metrics exporter
+After=local-fs.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+SupplementaryGroups=crypto-bot-runtime
+WorkingDirectory=/opt/crypto-bot
+ExecStart=/opt/crypto-bot/venv/bin/python -m app.metrics_exporter --host 127.0.0.1 --port 9476 --project-root /opt/crypto-bot
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+UMask=0077
+MemoryMax=96M
+CPUQuota=10%
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

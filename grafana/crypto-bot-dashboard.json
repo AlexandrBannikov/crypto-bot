@@ -1,0 +1,311 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "panels": [],
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "crypto_production_equity_usdt", "refId": "A"}],
+      "title": "Production Equity",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "crypto_v2_equity_usdt", "refId": "A"}],
+      "title": "Strategy V2 Equity",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "crypto_v2_vs_production_equity_delta_usdt", "refId": "A"}],
+      "title": "V2 − Production",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 2, "unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "crypto_eth_price_usdt", "refId": "A"}],
+      "title": "ETH Price",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "text": "PROBLEM"}, "1": {"color": "green", "text": "OK"}}, "type": "value"}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+      "id": 6,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "crypto_trading_health_ok", "refId": "A"}],
+      "title": "Trading Health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+      "id": 7,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "crypto_market_lag_candles", "refId": "A"}],
+      "title": "Market Lag (candles)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "id": 8,
+      "panels": [],
+      "title": "Equity",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 6},
+      "id": 9,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"expr": "crypto_production_equity_usdt", "legendFormat": "Production", "refId": "A"},
+        {"expr": "crypto_v2_equity_usdt", "legendFormat": "Strategy V2", "refId": "B"}
+      ],
+      "title": "Production vs Strategy V2 Equity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 6},
+      "id": 10,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "single", "sort": "none"}},
+      "targets": [{"expr": "crypto_v2_vs_production_equity_delta_usdt", "legendFormat": "V2 − Production", "refId": "A"}],
+      "title": "Equity Delta",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "id": 11,
+      "panels": [],
+      "title": "PnL",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 15},
+      "id": 12,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"expr": "crypto_production_total_pnl_usdt", "legendFormat": "Total", "refId": "A"},
+        {"expr": "crypto_production_realized_pnl_usdt", "legendFormat": "Realised", "refId": "B"},
+        {"expr": "crypto_production_unrealized_pnl_usdt", "legendFormat": "Unrealised", "refId": "C"}
+      ],
+      "title": "Production PnL",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 15},
+      "id": 13,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"expr": "crypto_v2_total_pnl_usdt", "legendFormat": "Total", "refId": "A"},
+        {"expr": "crypto_v2_realized_pnl_usdt", "legendFormat": "Realised", "refId": "B"},
+        {"expr": "crypto_v2_unrealized_pnl_usdt", "legendFormat": "Unrealised", "refId": "C"}
+      ],
+      "title": "Strategy V2 PnL",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 22},
+      "id": 14,
+      "panels": [],
+      "title": "Position",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 4}, "overrides": [{"matcher": {"id": "byName", "options": "Entry"}, "properties": [{"id": "unit", "value": "currencyUSD"}]}, {"matcher": {"id": "byName", "options": "Price"}, "properties": [{"id": "unit", "value": "currencyUSD"}]}, {"matcher": {"id": "byName", "options": "Return"}, "properties": [{"id": "unit", "value": "percentunit"}]}]},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 23},
+      "id": 15,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [
+        {"expr": "crypto_production_position_open", "legendFormat": "Open", "refId": "A"},
+        {"expr": "crypto_production_position_quantity_eth", "legendFormat": "Quantity ETH", "refId": "B"},
+        {"expr": "crypto_production_position_entry_price_usdt", "legendFormat": "Entry", "refId": "C"},
+        {"expr": "crypto_eth_price_usdt", "legendFormat": "Price", "refId": "D"},
+        {"expr": "crypto_production_position_unrealized_return_ratio", "legendFormat": "Return", "refId": "E"}
+      ],
+      "title": "Production Position",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 4}, "overrides": [{"matcher": {"id": "byName", "options": "Average Entry"}, "properties": [{"id": "unit", "value": "currencyUSD"}]}]},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 23},
+      "id": 16,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [
+        {"expr": "crypto_v2_position_open", "legendFormat": "Open", "refId": "A"},
+        {"expr": "crypto_v2_position_quantity_eth", "legendFormat": "Quantity ETH", "refId": "B"},
+        {"expr": "crypto_v2_position_avg_entry_usdt", "legendFormat": "Average Entry", "refId": "C"},
+        {"expr": "crypto_v2_pending_entry", "legendFormat": "Pending Entry", "refId": "D"},
+        {"expr": "crypto_v2_pending_exit", "legendFormat": "Pending Exit", "refId": "E"}
+      ],
+      "title": "Strategy V2 Position",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 29},
+      "id": 17,
+      "panels": [],
+      "title": "Strategy",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 30},
+      "id": 18,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"expr": "crypto_canonical_score", "legendFormat": "Canonical score", "refId": "A"},
+        {"expr": "crypto_v2_score", "legendFormat": "V2 score", "refId": "B"}
+      ],
+      "title": "Canonical and V2 Scores",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {}, "overrides": [{"matcher": {"id": "byName", "options": "ETH"}, "properties": [{"id": "unit", "value": "currencyUSD"}]}]},
+      "gridPos": {"h": 7, "w": 6, "x": 12, "y": 30},
+      "id": 19,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"expr": "crypto_eth_price_usdt", "legendFormat": "ETH", "refId": "A"},
+        {"expr": "crypto_canonical_score", "legendFormat": "Score", "refId": "B"}
+      ],
+      "title": "ETH Price + Score",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 3}, "overrides": [{"matcher": {"id": "byName", "options": "Win Rate"}, "properties": [{"id": "unit", "value": "percentunit"}]}, {"matcher": {"id": "byName", "options": "Max DD"}, "properties": [{"id": "unit", "value": "percentunit"}]}]},
+      "gridPos": {"h": 7, "w": 6, "x": 18, "y": 30},
+      "id": 20,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [
+        {"expr": "crypto_v2_closed_trades_total", "legendFormat": "Closed Trades", "refId": "A"},
+        {"expr": "crypto_v2_win_rate_ratio", "legendFormat": "Win Rate", "refId": "B"},
+        {"expr": "crypto_v2_max_drawdown_ratio", "legendFormat": "Max DD", "refId": "C"}
+      ],
+      "title": "V2 Forward Statistics",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 37},
+      "id": 21,
+      "panels": [],
+      "title": "Health",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "red", "text": "FAIL"}, "1": {"color": "green", "text": "OK"}}, "type": "value"}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 16, "x": 0, "y": 38},
+      "id": 22,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [
+        {"expr": "crypto_metrics_exporter_up", "legendFormat": "Exporter", "refId": "A"},
+        {"expr": "crypto_api_ok", "legendFormat": "API", "refId": "B"},
+        {"expr": "crypto_market_data_ok", "legendFormat": "Market Data", "refId": "C"},
+        {"expr": "crypto_trading_health_ok", "legendFormat": "Trading", "refId": "D"},
+        {"expr": "crypto_canonical_snapshot_ready", "legendFormat": "Canonical", "refId": "E"}
+      ],
+      "title": "Subsystem Health",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"decimals": 0}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 38},
+      "id": 23,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [
+        {"expr": "crypto_market_lag_candles", "legendFormat": "Market Lag", "refId": "A"},
+        {"expr": "crypto_active_halt", "legendFormat": "Active Halt", "refId": "B"},
+        {"expr": "crypto_metrics_exporter_errors_total", "legendFormat": "Exporter Errors", "refId": "C"}
+      ],
+      "title": "Current Health Detail",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 7, "w": 24, "x": 0, "y": 43},
+      "id": 24,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [
+        {"expr": "crypto_api_errors_total", "legendFormat": "API errors", "refId": "A"},
+        {"expr": "crypto_stale_events_total", "legendFormat": "Stale events", "refId": "B"},
+        {"expr": "crypto_risk_halts_total", "legendFormat": "Risk halts", "refId": "C"}
+      ],
+      "title": "Cumulative Runtime Events",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["crypto-bot", "production", "strategy-v2"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "label": "Prometheus",
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Crypto Bot — Production vs Strategy V2",
+  "uid": "crypto-bot-prod-v2",
+  "version": 1,
+  "weekStart": ""
+}

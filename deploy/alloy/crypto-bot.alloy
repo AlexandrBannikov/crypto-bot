@@ -1,0 +1,22 @@
+// Crypto-bot exposes no public listener. Alloy scrapes the localhost-only
+// exporter and initiates outbound remote_write to Grafana Cloud.
+prometheus.scrape "crypto_bot" {
+  targets = [{
+    __address__ = "127.0.0.1:9476",
+    job         = "crypto-bot",
+  }]
+
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_CLOUD_PROM_URL")
+
+    basic_auth {
+      username = sys.env("GRAFANA_CLOUD_PROM_USER")
+      password = sys.env("GRAFANA_CLOUD_PROM_TOKEN")
+    }
+  }
+}

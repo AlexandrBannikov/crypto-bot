@@ -1,0 +1,60 @@
+groups:
+  - name: crypto-bot-infrastructure
+    interval: 60s
+    rules:
+      - alert: CryptoBotTradingHealthCritical
+        expr: crypto_trading_health_ok == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Crypto-bot persisted trading health is not OK
+      - alert: CryptoBotCanonicalSnapshotMissing
+        expr: crypto_canonical_snapshot_ready == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Latest canonical crypto-bot snapshot is unavailable
+      - alert: CryptoBotMarketDataUnavailable
+        expr: crypto_market_data_ok == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Crypto-bot market data is unavailable or stale
+      - alert: CryptoBotMarketLag
+        expr: crypto_market_lag_candles > 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Crypto-bot is more than one closed candle behind
+      - alert: CryptoBotMetricsExporterUnavailable
+        expr: absent(crypto_metrics_exporter_up == 1)
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Crypto-bot metrics exporter is unavailable
+      - alert: CryptoBotApiErrorsIncreasing
+        expr: increase(crypto_api_errors_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Crypto-bot API error counter increased
+      - alert: CryptoBotStaleEventsIncreasing
+        expr: increase(crypto_stale_events_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Crypto-bot stale-data counter increased
+      - alert: CryptoBotActiveHalt
+        expr: crypto_active_halt == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Crypto-bot controller halt is active
